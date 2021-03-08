@@ -20,13 +20,20 @@ if __name__ == "__main__":
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='Master flat generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-substracted and raw masters.')
-    parser.add_argument('-d', '--dir', action='store_true', help='combine all fits files in current directory')
-    parser.add_argument('-f', '--files', nargs="+", help='select fits files to combine')
-    parser.add_argument('-c', '--calibrated',action='store_true', help='generate bias-substracted master dark')
-    parser.add_argument('-s', '--sigmalow', help='sigma low threshold for pixel rejection', default=5)
-    parser.add_argument('-S', '--sigmahigh', help='sigma high threshold for pixel rejection', default=5)
-    parser.add_argument('-y', '--noconfirm', action='store_true', help='skip confirmation')
+    parser = argparse.ArgumentParser(
+        description='Master flat generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-substracted and raw masters.')
+    parser.add_argument('-d', '--dir', action='store_true',
+                        help='combine all fits files in current directory')
+    parser.add_argument('-f', '--files', nargs="+",
+                        help='select fits files to combine')
+    parser.add_argument('-c', '--calibrated', action='store_true',
+                        help='generate bias-substracted master dark')
+    parser.add_argument(
+        '-s', '--sigmalow', help='sigma low threshold for pixel rejection', default=5)
+    parser.add_argument(
+        '-S', '--sigmahigh', help='sigma high threshold for pixel rejection', default=5)
+    parser.add_argument('-y', '--noconfirm',
+                        action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
     if args.dir and args.files:
@@ -37,7 +44,8 @@ if __name__ == "__main__":
     if args.dir:
         flatImages = ccdp.ImageFileCollection(os.getcwd()).filter(frame='flat')
     elif args.files:
-        flatImages = ccdp.ImageFileCollection(filenames=args.files).filter(frame='flat')
+        flatImages = ccdp.ImageFileCollection(
+            filenames=args.files).filter(frame='flat')
     else:
         print('No files selected. User either --dir for the full current directory or --files for individual images.')
         parser.print_usage()
@@ -45,7 +53,8 @@ if __name__ == "__main__":
 
     if 'flatImages' in locals():
         print('\nFiles to combine:')
-        print(flatImages.summary['date-obs', 'frame', 'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        print(flatImages.summary['date-obs', 'frame', 'instrume',
+                                 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         medianCount = [np.median(data) for data in flatImages.data()]
         meanCount = [np.mean(data) for data in flatImages.data()]
@@ -82,12 +91,13 @@ if __name__ == "__main__":
             mem_limit=350e6
         )
 
-        dateObs = datetime.strptime(masterFlat.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
+        dateObs = datetime.strptime(
+            masterFlat.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
         dateString = dateObs.strftime('%Y%m%d')
-        filter = str(masterFlat.header['filter'])
+        filterCode = str(masterFlat.header['filter'])
         ccdTemp = str(masterFlat.header['ccd-temp'])
-        filename = dateString + '_masterFlat' + filter + ccdTemp + 'C.fits'
+        filename = dateString + '_masterFlat' + filterCode + ccdTemp + 'C.fits'
 
         masterFlat.meta['combined'] = True
         masterFlat.write(calibrationPath/filename, overwrite=True)
-        run(['ds9', '-asinh', calibrationPath/filename])
+        run(['ds9', '-asinh', calibrationPath/filename], check=True)

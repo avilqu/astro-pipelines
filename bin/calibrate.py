@@ -28,7 +28,7 @@ def findMasterBias(image, tempTolerance=1):
             masterBias = fname
             break
     if (match):
-        print('Master bias: ' + fname)
+        print('Master bias: ' + masterBias)
         return match
     else:
         print('Could not find a suitable master bias for temperature {}C.'.format(temp))
@@ -44,7 +44,7 @@ def findMasterDark(image, tempTolerance=1, expTolerance=0.5):
             masterDark = fname
             break
     if (match):
-        print('Master dark: ' + fname)
+        print('Master dark: ' + masterDark)
         return match
     else:
         print('Could not find a suitable master dark for exposure {} and temperature {}C.'.format(
@@ -61,7 +61,7 @@ def findCalibratedMasterDark(image, tempTolerance=1):
             masterDark = fname
             break
     if (match):
-        print('Calibrated master dark: ' + fname)
+        print('Calibrated master dark: ' + masterDark)
         return match
     else:
         print('Could not find a suitable calibrated master dark for exposure {} and temperature {}C.'.format(
@@ -70,19 +70,19 @@ def findCalibratedMasterDark(image, tempTolerance=1):
 
 def findMasterFlat(image, tempTolerance=1):
     temp = image.header['ccd-temp']
-    filter = image.header['filter']
+    filterCode = image.header['filter']
     match = False
-    for img, fname in calibrationMasters.ccds(frame='Flat', filter=filter, return_fname=True):
+    for img, fname in calibrationMasters.ccds(frame='Flat', filter=filterCode, return_fname=True):
         if (abs(img.header['ccd-temp'] - temp) <= tempTolerance):
             match = img
             masterFlat = fname
             break
     if (match):
-        print('Master flat: ' + fname)
+        print('Master flat: ' + masterFlat)
         return match
     else:
         print('Could not find a suitable master flat for filter {} and temperature {}C.'.format(
-            filter, temp))
+            filterCode, temp))
 
 
 def imageCalibration(img, fname, options):
@@ -125,9 +125,9 @@ def imageCalibration(img, fname, options):
             print('Skipping flat correction.')
 
     if (options.write):
-        calibratedPath = Path(os.getcwd() + '/reduced')
-        calibratedPath.mkdir(exist_ok=True)
-        img.write(calibratedPath / fname, overwrite=True)
+        writePath = Path(os.getcwd() + '/reduced')
+        writePath.mkdir(exist_ok=True)
+        img.write(writePath / fname, overwrite=True)
 
     print('---')
 
@@ -136,12 +136,12 @@ def imageCalibration(img, fname, options):
 
 def calibrateCollection(collection, options):
     if (options.write):
-        calibratedPath = Path(os.getcwd() + '/reduced')
-        calibratedPath.mkdir(exist_ok=True)
+        writePath = Path(os.getcwd() + '/reduced')
+        writePath.mkdir(exist_ok=True)
 
         for img, fname in collection.ccds(return_fname=True):
             imageCalibration(img, fname, options).write(
-                calibratedPath / fname, overwrite=True)
+                writePath / fname, overwrite=True)
 
         return ccdp.ImageFileCollection(calibratedPath)
 
@@ -204,6 +204,6 @@ if __name__ == "__main__":
 
         headerCorrection(lightImages)
 
-        for img, fname in lightImages.ccds(return_fname=True):
-            imageCalibration(img, fname, args).write(
-                calibratedPath / fname, overwrite=True)
+        for frame, filename in lightImages.ccds(return_fname=True):
+            imageCalibration(frame, filename, args).write(
+                calibratedPath / filename, overwrite=True)

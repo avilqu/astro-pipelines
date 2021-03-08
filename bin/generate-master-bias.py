@@ -18,12 +18,18 @@ if __name__ == "__main__":
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='Master bias generation script. Uses average combination and sigma clipping pixel rejection.')
-    parser.add_argument('-d', '--dir', action='store_true', help='combine all fits files in current directory')
-    parser.add_argument('-f', '--files', nargs="+", help='select fits files to combine')
-    parser.add_argument('-s', '--sigmalow', help='sigma low threshold for pixel rejection (default=5)', default=5)
-    parser.add_argument('-S', '--sigmahigh', help='sigma high threshold for pixel rejection (default=5)', default=5)
-    parser.add_argument('-y', '--noconfirm', action='store_true', help='skip confirmation')
+    parser = argparse.ArgumentParser(
+        description='Master bias generation script. Uses average combination and sigma clipping pixel rejection.')
+    parser.add_argument('-d', '--dir', action='store_true',
+                        help='combine all fits files in current directory')
+    parser.add_argument('-f', '--files', nargs="+",
+                        help='select fits files to combine')
+    parser.add_argument(
+        '-s', '--sigmalow', help='sigma low threshold for pixel rejection (default=5)', default=5)
+    parser.add_argument(
+        '-S', '--sigmahigh', help='sigma high threshold for pixel rejection (default=5)', default=5)
+    parser.add_argument('-y', '--noconfirm',
+                        action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
     if args.dir and args.files:
@@ -34,7 +40,8 @@ if __name__ == "__main__":
     if args.dir:
         biasImages = ccdp.ImageFileCollection(os.getcwd()).filter(frame='bias')
     elif args.files:
-        biasImages = ccdp.ImageFileCollection(filenames=args.files).filter(frame='bias')
+        biasImages = ccdp.ImageFileCollection(
+            filenames=args.files).filter(frame='bias')
     else:
         print('No files selected. User either --dir for the full current directory or --files for individual images.')
         parser.print_usage()
@@ -42,7 +49,8 @@ if __name__ == "__main__":
 
     if 'biasImages' in locals():
         print('\nFiles to combine:')
-        print(biasImages.summary['date-obs', 'frame', 'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        print(biasImages.summary['date-obs', 'frame', 'instrume',
+                                 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
             if input('\nContinue? (Y/n) ') == 'n':
@@ -62,10 +70,11 @@ if __name__ == "__main__":
         )
 
         ccdTemp = str(round(masterBias.header['ccd-temp']))
-        dateObs = datetime.strptime(masterBias.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
+        dateObs = datetime.strptime(
+            masterBias.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
         dateString = dateObs.strftime('%Y%m%d')
         filename = dateString + '_masterBias' + ccdTemp + 'C.fits'
 
         masterBias.meta['combined'] = True
         masterBias.write(calibrationPath/filename, overwrite=True)
-        run(['ds9', '-asinh', calibrationPath/filename])
+        run(['ds9', '-asinh', calibrationPath/filename], check=True)

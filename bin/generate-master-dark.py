@@ -19,13 +19,20 @@ if __name__ == "__main__":
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='Master dark generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-substracted and raw masters.')
-    parser.add_argument('-d', '--dir', action='store_true', help='combine all fits files in current directory')
-    parser.add_argument('-f', '--files', nargs="+", help='select fits files to combine')
-    parser.add_argument('-c', '--calibrated',action='store_true', help='generate bias-substracted master dark')
-    parser.add_argument('-s', '--sigmalow', help='sigma low threshold for pixel rejection (default=5)', default=5)
-    parser.add_argument('-S', '--sigmahigh', help='sigma high threshold for pixel rejection (default=5)', default=5)
-    parser.add_argument('-y', '--noconfirm', action='store_true', help='skip confirmation')
+    parser = argparse.ArgumentParser(
+        description='Master dark generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-substracted and raw masters.')
+    parser.add_argument('-d', '--dir', action='store_true',
+                        help='combine all fits files in current directory')
+    parser.add_argument('-f', '--files', nargs="+",
+                        help='select fits files to combine')
+    parser.add_argument('-c', '--calibrated', action='store_true',
+                        help='generate bias-substracted master dark')
+    parser.add_argument(
+        '-s', '--sigmalow', help='sigma low threshold for pixel rejection (default=5)', default=5)
+    parser.add_argument(
+        '-S', '--sigmahigh', help='sigma high threshold for pixel rejection (default=5)', default=5)
+    parser.add_argument('-y', '--noconfirm',
+                        action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
     if args.dir and args.files:
@@ -36,7 +43,8 @@ if __name__ == "__main__":
     if args.dir:
         darkImages = ccdp.ImageFileCollection(os.getcwd()).filter(frame='dark')
     elif args.files:
-        darkImages = ccdp.ImageFileCollection(filenames=args.files).filter(frame='dark')
+        darkImages = ccdp.ImageFileCollection(
+            filenames=args.files).filter(frame='dark')
     else:
         print('No files selected. User either --dir for the full current directory or --files for individual images.')
         parser.print_usage()
@@ -44,7 +52,8 @@ if __name__ == "__main__":
 
     if 'darkImages' in locals():
         print('\nFiles to combine:')
-        print(darkImages.summary['date-obs', 'frame', 'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        print(darkImages.summary['date-obs', 'frame', 'instrume',
+                                 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
             if input('\nContinue? (Y/n) ') == 'n':
@@ -53,7 +62,8 @@ if __name__ == "__main__":
         headerCorrection(darkImages)
 
         if args.calibrated:
-            options = argparse.Namespace(noflat=True, biasonly=True, write=True)
+            options = argparse.Namespace(
+                noflat=True, biasonly=True, write=True)
             calibratedDarkImages = calibrateCollection(darkImages, options)
 
             masterDark = ccdp.combine(
@@ -67,11 +77,13 @@ if __name__ == "__main__":
                 mem_limit=350e6
             )
 
-            dateObs = datetime.strptime(masterDark.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
+            dateObs = datetime.strptime(
+                masterDark.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
             dateString = dateObs.strftime('%Y%m%d')
             exptime = str(round(masterDark.header['exptime']))
             ccdTemp = str(masterDark.header['ccd-temp'])
-            filename = dateString + '_masterDarkCalibrated' + exptime + 's' + ccdTemp + 'C.fits'
+            filename = dateString + '_masterDarkCalibrated' + \
+                exptime + 's' + ccdTemp + 'C.fits'
 
         else:
             masterDark = ccdp.combine(
@@ -85,7 +97,8 @@ if __name__ == "__main__":
                 mem_limit=350e6
             )
 
-            dateObs = datetime.strptime(masterDark.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
+            dateObs = datetime.strptime(
+                masterDark.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
             dateString = dateObs.strftime('%Y%m%d')
             exptime = str(round(masterDark.header['exptime']))
             ccdTemp = str(round(masterDark.header['ccd-temp']))
@@ -93,4 +106,4 @@ if __name__ == "__main__":
 
         masterDark.meta['combined'] = True
         masterDark.write(calibrationPath/filename, overwrite=True)
-        run(['ds9', '-asinh', calibrationPath/filename])
+        run(['ds9', '-asinh', calibrationPath/filename], check=True)
