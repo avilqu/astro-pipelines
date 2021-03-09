@@ -1,5 +1,10 @@
 #!/opt/anaconda/bin/python
 
+''' Generate master flat from a set of files and stores it in the calibration_path variable.
+    @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
+'''
+
+
 from pathlib import Path
 import sys
 import os
@@ -11,10 +16,11 @@ from astropy.stats import mad_std
 import numpy as np
 from matplotlib import pyplot as plt
 
-from calibrate import headerCorrection, calibrateCollection
+from calibrate import calibrate_collection
+from helpers import header_correction
 
-calibrationPath = Path('/home/tan/Astro/calibration/ST402')
-calibrationMasters = ccdp.ImageFileCollection(calibrationPath)
+calibration_path = Path('/home/tan/Astro/calibration/ST402')
+calibration_masters = ccdp.ImageFileCollection(calibration_path)
 
 if __name__ == "__main__":
 
@@ -42,24 +48,25 @@ if __name__ == "__main__":
         sys.exit()
 
     if args.dir:
-        flatImages = ccdp.ImageFileCollection(os.getcwd()).filter(frame='flat')
+        flat_images = ccdp.ImageFileCollection(
+            os.getcwd()).filter(frame='flat')
     elif args.files:
-        flatImages = ccdp.ImageFileCollection(
+        flat_images = ccdp.ImageFileCollection(
             filenames=args.files).filter(frame='flat')
     else:
         print('No files selected. User either --dir for the full current directory or --files for individual images.')
         parser.print_usage()
         sys.exit()
 
-    if 'flatImages' in locals():
+    if 'flat_images' in locals():
         print('\nFiles to combine:')
-        print(flatImages.summary['date-obs', 'frame', 'instrume',
-                                 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        print(flat_images.summary['date-obs', 'frame', 'instrume',
+                                  'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
-        medianCount = [np.median(data) for data in flatImages.data()]
-        meanCount = [np.mean(data) for data in flatImages.data()]
-        plt.plot(medianCount, label='median')
-        plt.plot(meanCount, label='mean')
+        median_count = [np.median(data) for data in flat_images.data()]
+        mean_count = [np.mean(data) for data in flat_images.data()]
+        plt.plot(median_count, label='median')
+        plt.plot(mean_count, label='mean')
         plt.xlabel('Image number')
         plt.ylabel('Count (ADU)')
         plt.title('Pixel value in calibrated flat frames')
@@ -71,16 +78,17 @@ if __name__ == "__main__":
             if input('\nContinue? (Y/n) ') == 'n':
                 exit()
 
-        headerCorrection(flatImages)
+        header_correction(flat_images)
 
         options = argparse.Namespace(noflat=True, biasonly=False, write=True)
-        calibratedFlatImages = calibrateCollection(flatImages, options)
+        calibrated_flat_images = calibrate_collection(flat_images, options)
 
         def inv_median(a):
+            ''' Generate scale option for the combine method. '''
             return 1 / np.median(a)
 
-        masterFlat = ccdp.combine(
-            calibratedFlatImages.files_filtered(include_path=True),
+        master_flat = ccdp.combine(
+            calibrated_flat_images.files_filtered(include_path=True),
             method='average',
             scale=inv_median,
             sigma_clip=True,
@@ -91,13 +99,13 @@ if __name__ == "__main__":
             mem_limit=350e6
         )
 
-        dateObs = datetime.strptime(
-            masterFlat.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
-        dateString = dateObs.strftime('%Y%m%d')
-        filterCode = str(masterFlat.header['filter'])
-        ccdTemp = str(masterFlat.header['ccd-temp'])
-        filename = dateString + '_masterFlat' + filterCode + ccdTemp + 'C.fits'
+        date_obs = datetime.strptime(
+            master_flat.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
+        date_string = date_obs.strftime('%Y%m%d')
+        filter_code = str(master_flat.header['filter'])
+        ccd_temp = str(master_flat.header['ccd-temp'])
+        filename = date_string + '_master_flat' + filter_code + ccd_temp + 'C.fits'
 
-        masterFlat.meta['combined'] = True
-        masterFlat.write(calibrationPath/filename, overwrite=True)
-        run(['ds9', '-asinh', calibrationPath/filename], check=True)
+        master_flat.meta['combined'] = True
+        master_flat.write(calibration_path/filename, overwrite=True)
+        run(['ds9', '-asinh', calibration_path/filename], check=True)

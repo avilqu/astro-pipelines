@@ -1,5 +1,10 @@
 #!/opt/anaconda/bin/python
 
+''' Generate master bias from a set of files and stores it in the calibration_path variable.
+    @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
+'''
+
+
 from pathlib import Path
 import sys
 import os
@@ -10,9 +15,9 @@ import ccdproc as ccdp
 from astropy.stats import mad_std
 import numpy as np
 
-from calibrate import headerCorrection
+from helpers import header_correction
 
-calibrationPath = Path('/home/tan/Astro/calibration/ST402')
+calibration_path = Path('/home/tan/Astro/calibration/ST402')
 
 if __name__ == "__main__":
 
@@ -38,28 +43,29 @@ if __name__ == "__main__":
         sys.exit()
 
     if args.dir:
-        biasImages = ccdp.ImageFileCollection(os.getcwd()).filter(frame='bias')
+        bias_images = ccdp.ImageFileCollection(
+            os.getcwd()).filter(frame='bias')
     elif args.files:
-        biasImages = ccdp.ImageFileCollection(
+        bias_images = ccdp.ImageFileCollection(
             filenames=args.files).filter(frame='bias')
     else:
         print('No files selected. User either --dir for the full current directory or --files for individual images.')
         parser.print_usage()
         sys.exit()
 
-    if 'biasImages' in locals():
+    if 'bias_images' in locals():
         print('\nFiles to combine:')
-        print(biasImages.summary['date-obs', 'frame', 'instrume',
-                                 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        print(bias_images.summary['date-obs', 'frame', 'instrume',
+                                  'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
             if input('\nContinue? (Y/n) ') == 'n':
                 exit()
 
-        headerCorrection(biasImages)
+        header_correction(bias_images)
 
-        masterBias = ccdp.combine(
-            biasImages.files_filtered(include_path=True),
+        master_bias = ccdp.combine(
+            bias_images.files_filtered(include_path=True),
             method='average',
             sigma_clip=True,
             sigma_clip_low_thresh=int(args.sigmalow),
@@ -69,12 +75,12 @@ if __name__ == "__main__":
             mem_limit=350e6
         )
 
-        ccdTemp = str(round(masterBias.header['ccd-temp']))
-        dateObs = datetime.strptime(
-            masterBias.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
-        dateString = dateObs.strftime('%Y%m%d')
-        filename = dateString + '_masterBias' + ccdTemp + 'C.fits'
+        ccd_temp = str(round(master_bias.header['ccd-temp']))
+        date_obs = datetime.strptime(
+            master_bias.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
+        date_string = date_obs.strftime('%Y%m%d')
+        filename = date_string + '_master_bias' + ccd_temp + 'C.fits'
 
-        masterBias.meta['combined'] = True
-        masterBias.write(calibrationPath/filename, overwrite=True)
-        run(['ds9', '-asinh', calibrationPath/filename], check=True)
+        master_bias.meta['combined'] = True
+        master_bias.write(calibration_path/filename, overwrite=True)
+        run(['ds9', '-asinh', calibration_path/filename], check=True)

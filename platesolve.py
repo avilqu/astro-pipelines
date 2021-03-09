@@ -1,22 +1,30 @@
 #!/usr/bin/python
 
+''' CLI for online and offline Astrometry.net engine.
+    @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
+'''
+
+
 import sys
 import os
-import requests
 import json
-import urllib.request
 import time
+import urllib.request
 from pathlib import Path
 from subprocess import run
+
+import requests
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 
 
-def openSession(key):
-    requestJson = json.dumps({"apikey": key})
+def open_session(key):
+    ''' Opens HTTP session with Astrometry.net server. '''
+
+    request_json = json.dumps({"apikey": key})
     try:
         r = requests.post('http://nova.astrometry.net/api/login',
-                          data={'request-json': requestJson})
+                          data={'request-json': request_json})
     except requests.exceptions.RequestException as e:
         print(e)
         sys.exit(1)
@@ -30,8 +38,10 @@ def openSession(key):
         print('===================================\n')
 
 
-def submitFile(filename, key, options):
-    requestJson = {
+def submit_file(filename, key, options):
+    ''' Sends image file to Astrometry.net server. '''
+
+    request_json = {
         "session": key,
         "publicly_visible": "n",
         "allow_modifications": "n",
@@ -44,26 +54,26 @@ def submitFile(filename, key, options):
               ' | Input coordinates: ' + c.to_string('hmsdms'))
 
     if options.ra:
-        requestJson['center_ra'] = options.ra
+        request_json['center_ra'] = options.ra
     if options.dec:
-        requestJson['center_dec'] = options.dec
+        request_json['center_dec'] = options.dec
     if options.radius:
-        requestJson['radius'] = options.radius
+        request_json['radius'] = options.radius
     if options.scaleEst:
-        requestJson['scale_est'] = options.scaleEst
+        request_json['scale_est'] = options.scaleEst
     if options.scaleErr:
-        requestJson['scale_err'] = options.scaleErr
+        request_json['scale_err'] = options.scaleErr
 
     try:
         r = requests.post('http://nova.astrometry.net/api/upload', files=[('request-json', (None, json.dumps(
-            requestJson), 'text/plain')), ('file', (filename, open(filename, 'rb'), 'application/octet-stream'))])
+            request_json), 'text/plain')), ('file', (filename, open(filename, 'rb'), 'application/octet-stream'))])
     except requests.exceptions.RequestException as e:
         print(e)
         sys.exit(1)
     if r.json()['status'] == 'success':
         print(time.strftime('%x %X') + ' | File ' +
               filename + ' sent with options:')
-        print(requestJson)
+        print(request_json)
         return r.json()
     else:
         print('\n===================================')
@@ -71,7 +81,9 @@ def submitFile(filename, key, options):
         print('===================================\n')
 
 
-def getSubmissionStatus(subid):
+def get_submission_status(subid):
+    ''' Monitors file submission status from Astrometry.net server. '''
+
     url = 'http://nova.astrometry.net/api/submissions/' + str(subid)
     try:
         r = requests.post(url)
@@ -81,7 +93,9 @@ def getSubmissionStatus(subid):
     return r.json()
 
 
-def getJobStatus(jobid):
+def get_job_status(jobid):
+    ''' Monitors job status from Astrometry.net server. '''
+
     url = 'http://nova.astrometry.net/api/jobs/' + str(jobid)
     try:
         r = requests.post(url)
@@ -91,10 +105,12 @@ def getJobStatus(jobid):
     return r.json()
 
 
-def getJobResults(jobid):
-    solvedDirName = 'solved'
-    solvedPath = Path(os.getcwd() + '/' + solvedDirName)
-    solvedPath.mkdir(exist_ok=True)
+def get_job_results(jobid):
+    ''' Get job results from Astrometry.net server. '''
+
+    solved_dir_name = 'solved'
+    solved_path = Path(os.getcwd() + '/' + solved_dir_name)
+    solved_path.mkdir(exist_ok=True)
     try:
         r = requests.post(
             'http://nova.astrometry.net/api/jobs/' + str(jobid) + '/info').json()
@@ -111,33 +127,35 @@ def getJobResults(jobid):
     print('Pixel scale: ' + str(r['calibration']['pixscale']))
     print('Objects in field: ' + str(r['objects_in_field']))
     print('===================================\n')
-    filename = solvedDirName + '/' + r['original_filename'] + '.solved.fits'
-    fitsUrl = 'http://nova.astrometry.net/new_fits_file/' + str(jobid)
-    urllib.request.urlretrieve(fitsUrl, filename)
+    filename = solved_dir_name + '/' + r['original_filename'] + '.solved.fits'
+    fits_url = 'http://nova.astrometry.net/new_fits_file/' + str(jobid)
+    urllib.request.urlretrieve(fits_url, filename)
 
 
-def solveOnline(options, key):
-    session = openSession(key)['session']
+def solve_online(options, key):
+    ''' Wrapper function for the whole online solving process. '''
+
+    session = open_session(key)['session']
     i = 1
     for filename in options.files:
         count = str(i) + '/' + str(len(options.files))
-        subid = submitFile(filename, session, options)['subid']
-        subStatus = getSubmissionStatus(subid)
-        while subStatus['jobs'] == [] or subStatus['jobs'] == [None]:
+        subid = submit_file(filename, session, options)['subid']
+        sub_status = get_submission_status(subid)
+        while sub_status['jobs'] == [] or sub_status['jobs'] == [None]:
             print(time.strftime('%x %X') +
                   ' | Waiting for job ' + count + ' to start...')
-            subStatus = getSubmissionStatus(subid)
+            sub_status = get_submission_status(subid)
             time.sleep(3)
         print(time.strftime('%x %X') + ' | Job ' + count + ' has started.')
-        jobid = subStatus['jobs'][0]
-        jobStatus = getJobStatus(jobid)
-        while jobStatus['status'] == 'solving':
+        jobid = sub_status['jobs'][0]
+        job_status = get_job_status(jobid)
+        while job_status['status'] == 'solving':
             print(time.strftime('%x %X') + ' | Status: ' +
-                  jobStatus['status'] + ' image ' + count)
-            jobStatus = getJobStatus(jobid)
+                  job_status['status'] + ' image ' + count)
+            job_status = get_job_status(jobid)
             time.sleep(3)
-        if jobStatus['status'] == 'success':
-            getJobResults(jobid)
+        if job_status['status'] == 'success':
+            get_job_results(jobid)
         else:
             print('\n===================================')
             print(time.strftime('%x %X') +
@@ -146,7 +164,9 @@ def solveOnline(options, key):
         i += 1
 
 
-def solveOffline(options):
+def solve_offline(options):
+    ''' Wrapper function for the offline solve-field CLI. '''
+
     downsample = 1
     ra = 180
     dec = 0
@@ -201,6 +221,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.online:
-        solveOnline(args, apiKey)
+        solve_online(args, apiKey)
     else:
-        solveOffline(args)
+        solve_offline(args)
