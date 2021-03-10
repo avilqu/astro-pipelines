@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
         header_correction(flat_images)
 
-        options = argparse.Namespace(noflat=True, biasonly=False, write=True)
+        options = argparse.Namespace(noflat=True)
         calibrated_flat_images = calibrate_collection(flat_images, options)
 
         def inv_median(a):

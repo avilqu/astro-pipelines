@@ -69,8 +69,7 @@ if __name__ == "__main__":
         header_correction(dark_images)
 
         if args.calibrated:
-            options = argparse.Namespace(
-                noflat=True, biasonly=True, write=True)
+            options = argparse.Namespace(noflat=True)
             calibrated_dark_images = calibrate_collection(dark_images, options)
 
             master_dark = ccdp.combine(

@@ -79,9 +79,9 @@ def find_master_flat(image, temp_tolerance=1):
     ''' Finds and returns a master flat with matching temperature and filter for the input image. '''
 
     temp = image.header['ccd-temp']
-    filterCode = image.header['filter']
+    filter_code = image.header['filter']
     match = False
-    for img, fname in calibration_masters.ccds(frame='Flat', filter=filterCode, return_fname=True):
+    for img, fname in calibration_masters.ccds(frame='Flat', filter=filter_code, return_fname=True):
         if abs(img.header['ccd-temp'] - temp) <= temp_tolerance:
             match = img
             master_flat = fname
@@ -91,7 +91,7 @@ def find_master_flat(image, temp_tolerance=1):
         return match
     else:
         print('Could not find a suitable master flat for filter {} and temperature {}C.'.format(
-            filterCode, temp))
+            filter_code, temp))
         return False
 
 
@@ -100,10 +100,16 @@ def image_calibration(img, fname, options):
 
     print('Calibrating {}...'.format(fname))
 
-    if options.biasonly:
+    if 'biasonly' in options and options.biasonly:
         master_bias = find_master_bias(img)
         print('Bias substraction...')
         img = ccdp.subtract_bias(img, master_bias)
+
+    elif 'flatonly' in options and options.flatonly:
+        master_flat = find_master_flat(img)
+        if master_flat:
+            print('Flat correction...')
+            img = ccdp.flat_correct(img, master_flat)
 
     else:
         master_dark = find_master_dark(img)
@@ -136,10 +142,9 @@ def image_calibration(img, fname, options):
         else:
             print('Skipping flat correction.')
 
-    if options.write:
-        write_path = Path(os.getcwd() + '/reduced')
-        write_path.mkdir(exist_ok=True)
-        img.write(write_path / fname, overwrite=True)
+    write_path = Path(os.getcwd() + '/reduced')
+    write_path.mkdir(exist_ok=True)
+    img.write(write_path / fname, overwrite=True)
 
     print('---')
 
@@ -149,15 +154,14 @@ def image_calibration(img, fname, options):
 def calibrate_collection(collection, options):
     ''' Wrapper to use the image_calibration function with a whole collection. Returns calibrated collection. '''
 
-    if options.write:
-        write_path = Path(os.getcwd() + '/reduced')
-        write_path.mkdir(exist_ok=True)
+    write_path = Path(os.getcwd() + '/reduced')
+    write_path.mkdir(exist_ok=True)
 
-        for img, fname in collection.ccds(return_fname=True):
-            image_calibration(img, fname, options).write(
-                write_path / fname, overwrite=True)
+    for img, fname in collection.ccds(return_fname=True):
+        image_calibration(img, fname, options).write(
+            write_path / fname, overwrite=True)
 
-        return ccdp.ImageFileCollection(calibratedPath)
+    return ccdp.ImageFileCollection(write_path)
 
 
 if __name__ == "__main__":
@@ -172,13 +176,13 @@ if __name__ == "__main__":
     parser.add_argument('-f', '--files', nargs="+",
                         help='select fits files to calibrate')
     parser.add_argument('-n', '--noflat', action='store_true',
-                        help='skip flat calibration')
+                        help='skip flat correction')
     parser.add_argument('-b', '--biasonly', action='store_true',
-                        help='only do bias substraction')
+                        help='only apply bias substraction')
+    parser.add_argument('-F', '--flatonly', action='store_true',
+                        help='only apply flat correction')
     parser.add_argument('-p', '--platesolve', action='store_true',
                         help='platesolve images with local astromery index')
-    parser.add_argument('-w', '--write', action='store_true',
-                        help='write file (default=True)', default=True)
     parser.add_argument('-y', '--noconfirm',
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
@@ -200,8 +204,8 @@ if __name__ == "__main__":
         sys.exit()
 
     if 'lightImages' in locals():
-        calibratedPath = Path(os.getcwd() + '/reduced')
-        calibratedPath.mkdir(exist_ok=True)
+        calibrated_path = Path(os.getcwd() + '/reduced')
+        calibrated_path.mkdir(exist_ok=True)
 
         print('Caliration masters:')
         print(calibration_masters.summary['file', 'frame', 'instrume',
@@ -218,6 +222,8 @@ if __name__ == "__main__":
 
         header_correction(lightImages)
 
+        print(args)
+
         for frame, filename in lightImages.ccds(return_fname=True):
             image_calibration(frame, filename, args).write(
-                calibratedPath / filename, overwrite=True)
+                calibrated_path / filename, overwrite=True)
