@@ -127,7 +127,8 @@ def get_job_results(jobid):
     print('Pixel scale: ' + str(r['calibration']['pixscale']))
     print('Objects in field: ' + str(r['objects_in_field']))
     print('===================================\n')
-    filename = solved_dir_name + '/' + r['original_filename'] + '.solved.fits'
+    filename = solved_dir_name + '/' + \
+        r['original_filename'][:-5] + '.solved.fits'
     fits_url = 'http://nova.astrometry.net/new_fits_file/' + str(jobid)
     urllib.request.urlretrieve(fits_url, filename)
 
