@@ -151,7 +151,7 @@ def image_calibration(img, fname, options):
         else:
             print('Skipping flat correction.')
 
-    write_path = Path(os.getcwd() + '/reduced')
+    write_path = Path(os.getcwd() + '/calibrated')
     write_path.mkdir(exist_ok=True)
     img.write(write_path / fname, overwrite=True)
 
@@ -163,7 +163,7 @@ def image_calibration(img, fname, options):
 def calibrate_collection(collection, options):
     ''' Wrapper to use the image_calibration function with a whole collection. Returns calibrated collection. '''
 
-    write_path = Path(os.getcwd() + '/reduced')
+    write_path = Path(os.getcwd() + '/calibrated')
     write_path.mkdir(exist_ok=True)
 
     for img, fname in collection.ccds(return_fname=True):
@@ -211,7 +211,7 @@ if __name__ == "__main__":
         sys.exit()
 
     if 'lightImages' in locals():
-        calibrated_path = Path(os.getcwd() + '/reduced')
+        calibrated_path = Path(os.getcwd() + '/calibrated')
         calibrated_path.mkdir(exist_ok=True)
 
         print('Caliration masters:')
