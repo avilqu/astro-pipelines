@@ -190,8 +190,6 @@ if __name__ == "__main__":
                         help='only apply bias substraction')
     parser.add_argument('-F', '--flatonly', action='store_true',
                         help='only apply flat correction')
-    parser.add_argument('-p', '--platesolve', action='store_true',
-                        help='platesolve images with local astromery index')
     parser.add_argument('-y', '--noconfirm',
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
@@ -219,11 +217,9 @@ if __name__ == "__main__":
         print('Caliration masters:')
         print(calibration_masters.summary['file', 'frame', 'instrume',
                                           'filter', 'exptime', 'ccd-temp'])
-        # print(calibration_masters.summary['file', 'frame', 'filter' ,'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
         print('\nFiles to calibrate:')
         print(lightImages.summary['object', 'date-obs', 'frame',
                                   'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
-        # print(lightImages.summary['file', 'frame', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
             if input('\nContinue? (Y/n) ') == 'n':
