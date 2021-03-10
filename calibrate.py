@@ -60,15 +60,24 @@ def find_calibrated_master_dark(image, temp_tolerance=1):
 
     exposure = image.header['exptime']
     temp = image.header['ccd-temp']
-    match = False
+    results = []
+    exp_diff = []
+    filenames = []
+
     for img, fname in calibration_masters.ccds(frame='Dark', return_fname=True):
         if abs(img.header['ccd-temp'] - temp) <= temp_tolerance and img.header['exptime'] >= exposure and 'subbias' in img.header:
-            match = img
-            master_dark = fname
-            break
-    if match:
-        print('Calibrated master dark: ' + master_dark)
-        return match
+            results.append(img)
+            exp_diff.append(img.header['exptime'] - exposure)
+            filenames.append(fname)
+            # match = img
+            # master_dark = fname
+            # break
+
+    if len(results) > 0:
+        match = exp_diff.index(min(exp_diff))
+        print('Calibrated master dark: ' + filenames[match])
+        return results[match]
+
     else:
         print('Could not find a suitable calibrated master dark for exposure {} and temperature {}C.'.format(
             exposure, temp))
