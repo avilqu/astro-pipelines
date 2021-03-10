@@ -6,8 +6,6 @@
 
 
 from pathlib import Path
-import sys
-import os
 from subprocess import run
 from datetime import datetime
 
@@ -27,10 +25,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description='Master dark generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-substracted and raw masters.')
-    parser.add_argument('-d', '--dir', action='store_true',
-                        help='combine all fits files in current directory')
-    parser.add_argument('-f', '--files', nargs="+",
-                        help='select fits files to combine')
+    parser.add_argument(
+        'files', help='input files (FITS only)', type=str, nargs='+')
     parser.add_argument('-c', '--calibrated', action='store_true',
                         help='generate bias-substracted master dark')
     parser.add_argument(
@@ -41,23 +37,10 @@ if __name__ == "__main__":
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
-    if args.dir and args.files:
-        print('Options --dir and and --file are exclusive.')
-        parser.print_usage()
-        sys.exit()
+    dark_images = ccdp.ImageFileCollection(
+        filenames=args.files).filter(frame='dark')
 
-    if args.dir:
-        dark_images = ccdp.ImageFileCollection(
-            os.getcwd()).filter(frame='dark')
-    elif args.files:
-        dark_images = ccdp.ImageFileCollection(
-            filenames=args.files).filter(frame='dark')
-    else:
-        print('No files selected. User either --dir for the full current directory or --files for individual images.')
-        parser.print_usage()
-        sys.exit()
-
-    if 'dark_images' in locals():
+    if dark_images:
         print('\nFiles to combine:')
         print(dark_images.summary['date-obs', 'frame', 'instrume',
                                   'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])

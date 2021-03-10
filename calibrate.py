@@ -176,14 +176,11 @@ def calibrate_collection(collection, options):
 if __name__ == "__main__":
 
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(
         description='Basic image reduction script. Reads a list of calibration masters from the calibration_path variable and finds the best match for each frame.')
-    parser.add_argument('-d', '--dir', action='store_true',
-                        help='calibrate all fits files in current directory')
-    parser.add_argument('-f', '--files', nargs="+",
-                        help='select fits files to calibrate')
+    parser.add_argument(
+        'files', help='input files (FITS only)', type=str, nargs='+')
     parser.add_argument('-n', '--noflat', action='store_true',
                         help='skip flat correction')
     parser.add_argument('-b', '--biasonly', action='store_true',
@@ -194,23 +191,10 @@ if __name__ == "__main__":
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
-    if args.dir and args.files:
-        print('Options --dir and and --file are exclusive.')
-        parser.print_usage()
-        sys.exit()
+    light_images = ccdp.ImageFileCollection(
+        filenames=args.files).filter(frame='light')
 
-    if args.dir:
-        lightImages = ccdp.ImageFileCollection(
-            os.getcwd()).filter(frame='light')
-    elif args.files:
-        lightImages = ccdp.ImageFileCollection(
-            filenames=args.files).filter(frame='light')
-    else:
-        print('No files selected. User either --dir for the full current directory or --files for individual images.')
-        parser.print_usage()
-        sys.exit()
-
-    if 'lightImages' in locals():
+    if light_images:
         calibrated_path = Path(os.getcwd() + '/calibrated')
         calibrated_path.mkdir(exist_ok=True)
 
@@ -218,15 +202,15 @@ if __name__ == "__main__":
         print(calibration_masters.summary['file', 'frame', 'instrume',
                                           'filter', 'exptime', 'ccd-temp'])
         print('\nFiles to calibrate:')
-        print(lightImages.summary['object', 'date-obs', 'frame',
-                                  'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        print(light_images.summary['object', 'date-obs', 'frame',
+                                   'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
             if input('\nContinue? (Y/n) ') == 'n':
                 exit()
 
-        header_correction(lightImages)
+        header_correction(light_images)
 
-        for frame, filename in lightImages.ccds(return_fname=True):
+        for frame, filename in light_images.ccds(return_fname=True):
             image_calibration(frame, filename, args).write(
                 calibrated_path / filename, overwrite=True)

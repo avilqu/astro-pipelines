@@ -20,10 +20,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description='Image registration script. Methods supported are reprojection (requires a valid WCS header) and star alignment with astroalign')
-    parser.add_argument('-d', '--dir', action='store_true',
-                        help='register all fits files in current directory')
-    parser.add_argument('-f', '--files', nargs="+",
-                        help='select fits files to register')
+    parser.add_argument(
+        'files', help='input files (FITS only)', type=str, nargs='+')
     parser.add_argument('-r', '--reference',
                         help='select reference image')
     parser.add_argument('-p', '--reproject', action='store_true',
@@ -39,23 +37,10 @@ if __name__ == "__main__":
         parser.print_usage()
         sys.exit()
 
-    if args.dir and args.files:
-        print('Options --dir and and --file are exclusive.')
-        parser.print_usage()
-        sys.exit()
+    lightImages = ccdp.ImageFileCollection(
+        filenames=args.files).filter(frame='light')
 
-    if args.dir:
-        lightImages = ccdp.ImageFileCollection(
-            os.getcwd()).filter(frame='light')
-    elif args.files:
-        lightImages = ccdp.ImageFileCollection(
-            filenames=args.files).filter(frame='light')
-    else:
-        print('No files selected. User either --dir for the full current directory or --files for individual images.')
-        parser.print_usage()
-        sys.exit()
-
-    if 'lightImages' in locals():
+    if lightImages:
         registered_path = Path(os.getcwd() + '/registered')
         registered_path.mkdir(exist_ok=True)
 
