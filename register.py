@@ -25,7 +25,7 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--reference',
                         help='select reference image')
     parser.add_argument('-p', '--reproject', action='store_true',
-                        help='use reprojection method (requires a valid WCS header')
+                        help='use reprojection method (requires a valid WCS header)')
     parser.add_argument('-a', '--align', action='store_true',
                         help='use star alignment method')
     parser.add_argument('-y', '--noconfirm',
