@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
         print('Caliration masters:')
         print(calibration_masters.summary['file', 'frame', 'instrume',
-                                          'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+                                          'filter', 'exptime', 'ccd-temp'])
         # print(calibration_masters.summary['file', 'frame', 'filter' ,'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
         print('\nFiles to calibrate:')
         print(lightImages.summary['object', 'date-obs', 'frame',
@@ -230,8 +230,6 @@ if __name__ == "__main__":
                 exit()
 
         header_correction(lightImages)
-
-        print(args)
 
         for frame, filename in lightImages.ccds(return_fname=True):
             image_calibration(frame, filename, args).write(
