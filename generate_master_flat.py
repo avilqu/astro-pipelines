@@ -87,7 +87,7 @@ if __name__ == "__main__":
         date_string = date_obs.strftime('%Y%m%d')
         filter_code = str(master_flat.header['filter'])
         ccd_temp = str(master_flat.header['ccd-temp'])
-        filename = date_string + '_master_flat' + filter_code + ccd_temp + 'C.fits'
+        filename = date_string + '_masterFlat' + filter_code + ccd_temp + 'C.fits'
 
         master_flat.meta['combined'] = True
         master_flat.write(calibration_path/filename, overwrite=True)

@@ -1,6 +1,6 @@
 #!/opt/anaconda/bin/python
 
-''' Image registration script. Reprojection method (requiring valid WCS) only 
+''' Image registration script. Reprojection method (requiring valid WCS) only
     supported for now. Star alignment with astroalign package in the future.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''

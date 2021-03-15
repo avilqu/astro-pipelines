@@ -203,8 +203,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Simple CLI for Astrometry.Net engine, both online and offline. Can solve multiple files.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='+')
-    # parser.add_argument('-d', '--dir', action='store_true', help='plate solve all fits files in current directory')
-    # parser.add_argument('-f', '--files', nargs="+", help='select fits files to plate solve')
     parser.add_argument(
         '-r', '--ra', help='estimated RA center (angle)', type=float, dest='ra')
     parser.add_argument(
