@@ -198,7 +198,7 @@ if __name__ == "__main__":
         calibrated_path = Path(os.getcwd() + '/calibrated')
         calibrated_path.mkdir(exist_ok=True)
 
-        print('Caliration masters:')
+        print('Calibration masters:')
         print(calibration_masters.summary['file', 'frame', 'instrume',
                                           'filter', 'exptime', 'ccd-temp'])
         print('\nFiles to calibrate:')
