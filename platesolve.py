@@ -290,7 +290,7 @@ if __name__ == "__main__":
 
     c = SkyCoord(args.ra * u.degree, args.dec * u.degree)
     print('\nTarget RA / DEC: ' + c.to_string('hmsdms'))
-    print('Search radius (degrees): ' + args.radius)
+    print('Search radius (degrees): ' + str(args.radius))
 
     if not args.noconfirm:
         if input('\nContinue? (Y/n) ') == 'n':
