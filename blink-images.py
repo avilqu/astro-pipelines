@@ -1,14 +1,13 @@
 #!/opt/anaconda/bin/python
 
-''' Queries SkyBot on coordinates and observation date of input file(s)
-    and displays results with ds9.
+''' Blink WCS matched FITS frames.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
-from astropy.coordinates import SkyCoord
-from astropy.time import Time
-import astropy.units as u
-from astroquery.imcce import Skybot
+# from astropy.coordinates import SkyCoord
+# from astropy.time import Time
+# import astropy.units as u
+# from astroquery.imcce import Skybot
 import pyds9
 import ccdproc as ccdp
 
@@ -29,9 +28,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Show solar system objects present in the image with ds9.')
+        description='Blink WCS matched FITS frames.')
     parser.add_argument(
         'files', help='input files (FITS only)', type=str, nargs='+')
+    parser.add_argument('-i', '--interval',
+                        type=float, help='interval (seconds, default=0.5)', default=0.5)
     parser.add_argument('-y', '--noconfirm',
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
@@ -58,4 +59,4 @@ if __name__ == "__main__":
     d.set('frame delete')
     d.set('frame match wcs')
     d.set('blink yes')
-    d.set('blink interval 0.35')
+    d.set('blink interval ' + str(args.interval))
