@@ -49,11 +49,6 @@ def submit_file(filename, key, options):
         "allow_commercial_use": "n"
     }
 
-    if options.ra and options.dec:
-        c = SkyCoord(options.ra * u.degree, options.dec * u.degree)
-        print(time.strftime('%x %X') +
-              ' | Input coordinates: ' + c.to_string('hmsdms'))
-
     if options.ra:
         request_json['center_ra'] = options.ra
     if options.dec:
