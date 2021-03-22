@@ -13,7 +13,7 @@ import ccdproc as ccdp
 from astropy.stats import mad_std
 import numpy as np
 
-from helpers import header_correction
+from lib_helpers import header_correction
 
 calibration_path = Path('/home/tan/Astro/calibration/ST402')
 

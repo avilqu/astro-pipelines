@@ -14,7 +14,7 @@ from astropy.stats import mad_std
 import numpy as np
 
 from calibrate import calibrate_collection
-from helpers import header_correction
+from lib_helpers import header_correction
 
 calibration_path = Path('/home/tan/Astro/calibration/ST402')
 calibration_masters = ccdp.ImageFileCollection(calibration_path)

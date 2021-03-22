@@ -11,7 +11,7 @@ from pathlib import Path
 
 import ccdproc as ccdp
 
-from helpers import header_correction
+from lib_helpers import header_correction
 
 if __name__ == "__main__":
 
@@ -19,7 +19,7 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(
-        description='Image registration script. Methods supported are reprojection (requires a valid WCS header) and star alignment with astroalign')
+        description='Image registration script. Methods supported are reprojection (requires a valid WCS header) and star alignment with astroalign.')
     parser.add_argument(
         'files', help='input files (FITS only)', type=str, nargs='+')
     parser.add_argument('-r', '--reference',
