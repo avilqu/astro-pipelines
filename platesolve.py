@@ -208,9 +208,6 @@ def solve_offline(options):
     ''' Wrapper function for the offline solve-field CLI. '''
 
     downsample = 1
-    ra = 180
-    dec = 0
-    radius = 360
 
     if options.downsample:
         downsample = str(options.downsample)
@@ -221,24 +218,43 @@ def solve_offline(options):
     if options.radius:
         radius = str(options.radius)
 
-    for filename in options.files:
-        new_filename = 'solved/' + filename[filename.find('/') + 1:]
-        proc = run(['solve-field',
-                    '--dir', 'solved',
-                    '--no-plots',
-                    '--guess-scale',
-                    '--overwrite',
-                    '--downsample', str(downsample),
-                    '--ra', str(ra),
-                    '--dec', str(dec),
-                    '--radius', str(radius),
-                    '--new-fits', new_filename,
-                    filename],
-                   check=True)
-        print('\n===================================')
-        print(proc.args)
-        print('===================================\n')
-        solver_cleanup()
+    if options.blind:
+        for filename in options.files:
+            new_filename = 'solved/' + filename[filename.find('/') + 1:]
+            proc = run(['solve-field',
+                        '--dir', 'solved',
+                        '--no-plots',
+                        '--no-verify',
+                        '--overwrite',
+                        '--downsample', str(downsample),
+                        '--new-fits', new_filename,
+                        filename],
+                       check=True)
+            print('\n===================================')
+            print(proc.args)
+            print('===================================\n')
+            solver_cleanup()
+
+    else:
+        for filename in options.files:
+            new_filename = 'solved/' + filename[filename.find('/') + 1:]
+            proc = run(['solve-field',
+                        '--dir', 'solved',
+                        '--no-plots',
+                        '--no-verify',
+                        '--guess-scale',
+                        '--overwrite',
+                        '--downsample', str(downsample),
+                        '--ra', str(ra),
+                        '--dec', str(dec),
+                        '--radius', str(radius),
+                        '--new-fits', new_filename,
+                        filename],
+                       check=True)
+            print('\n===================================')
+            print(proc.args)
+            print('===================================\n')
+            solver_cleanup()
 
 
 if __name__ == "__main__":
@@ -248,7 +264,7 @@ if __name__ == "__main__":
     apiKey = 'zrvbykzuksfbcilr'
 
     parser = argparse.ArgumentParser(
-        description='Simple CLI for Astrometry.Net engine, both online and offline. Guesses scale and coordinates from FITS header by default. Outputs only one file per input file.')
+        description='Alternative CLI for Astrometry.Net engine, both online and offline. Guesses scale and coordinates from FITS header by default. Outputs only one file per input file.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='+')
     parser.add_argument(
         '-r', '--ra', help='estimated RA center (angle)', type=float, dest='ra')
@@ -262,35 +278,37 @@ if __name__ == "__main__":
         '-e', '--error', help='estimated field scale error (percent, online solver only)', type=int, dest='scaleErr')
     parser.add_argument('-D', '--downsample',
                         help='downsampling amount', type=int)
+    parser.add_argument('-b', '--blind',
+                        action='store_true', help='blind solve')
     parser.add_argument('-y', '--noconfirm',
                         action='store_true', help='skip confirmation')
+    parser.add_argument('-l', '--list',
+                        action='store_true', help='list files before solving (ST-402 only)')
     parser.add_argument('-o', '--online', action='store_true',
                         help='use online solver (requires internet connection)')
     args = parser.parse_args()
 
     images = ccdp.ImageFileCollection(filenames=args.files)
-    print('\nFiles to calibrate:')
-    print(images.summary['object', 'date-obs', 'frame',
-                         'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+    if args.list:
+        print('\nFiles to calibrate:')
+        print(images.summary['object', 'date-obs', 'frame',
+                             'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
-    if not args.ra:
+    if (not args.ra and not args.dec) or not args.blind:
         try:
-            args.ra = ccdp.CCDData.read(args.files[0]).header['ra']
+            ra = ccdp.CCDData.read(args.files[0]).header['ra']
+            dec = ccdp.CCDData.read(args.files[0]).header['dec']
+            print('Found WCS in file, using as target...')
         except:
-            print('No RA found, blind solving...')
+            print('No WCS found...')
+            args.blind = True
 
-    if not args.dec:
-        try:
-            args.dec = ccdp.CCDData.read(args.files[0]).header['dec']
-        except:
-            print('No DEC found, blind solving...')
-
-    if not args.ra and not args.dec:
-        args.radius = 360
-
-    c = SkyCoord(args.ra * u.degree, args.dec * u.degree)
-    print('\nTarget RA / DEC: ' + c.to_string('hmsdms'))
-    print('Search radius (degrees): ' + str(args.radius))
+    if not args.blind:
+        c = SkyCoord(args.ra * u.degree, args.dec * u.degree)
+        print(f'\nTarget RA / DEC: {c.to_string("hmsdms")}')
+        print(f'Search radius (degrees): {str(args.radius)}')
+    else:
+        print('Blind solving...')
 
     if not args.noconfirm:
         if input('\nContinue? (Y/n) ') == 'n':
