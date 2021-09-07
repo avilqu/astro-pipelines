@@ -18,6 +18,8 @@ import ccdproc as ccdp
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 
+import helpers as hlp
+
 
 def open_session(key):
     ''' Opens HTTP session with Astrometry.net server. '''
@@ -264,7 +266,7 @@ if __name__ == "__main__":
     apiKey = 'zrvbykzuksfbcilr'
 
     parser = argparse.ArgumentParser(
-        description='Alternative CLI for Astrometry.Net engine, both online and offline. Guesses scale and coordinates from FITS header by default. Outputs only one file per input file.')
+        description='Solves one or a serie of FITS file. Tries by default to guess settings from WCS of first file in serie.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='+')
     parser.add_argument(
         '-r', '--ra', help='estimated RA center (angle)', type=float, dest='ra')
@@ -282,22 +284,19 @@ if __name__ == "__main__":
                         action='store_true', help='blind solve')
     parser.add_argument('-y', '--noconfirm',
                         action='store_true', help='skip confirmation')
-    parser.add_argument('-l', '--list',
-                        action='store_true', help='list files before solving (ST-402 only)')
     parser.add_argument('-o', '--online', action='store_true',
                         help='use online solver (requires internet connection)')
     args = parser.parse_args()
 
     images = ccdp.ImageFileCollection(filenames=args.files)
-    if args.list:
-        print('\nFiles to calibrate:')
-        print(images.summary['object', 'date-obs', 'frame',
-                             'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+    print('\nFiles to platesolve:')
+    hlp.collection_summary(images, ['object', 'date-obs', 'frame',
+                                    'instrume', 'filter', 'exptime', 'ccd-temp', 'gain', 'offset'])
 
-    if (not args.ra and not args.dec) or not args.blind:
+    if (not args.ra and not args.dec) and not args.blind:
         try:
-            ra = ccdp.CCDData.read(args.files[0]).header['ra']
-            dec = ccdp.CCDData.read(args.files[0]).header['dec']
+            args.ra = ccdp.CCDData.read(args.files[0]).header['ra']
+            args.dec = ccdp.CCDData.read(args.files[0]).header['dec']
             print('Found WCS in file, using as target...')
         except:
             print('No WCS found...')
@@ -311,8 +310,7 @@ if __name__ == "__main__":
         print('Blind solving...')
 
     if not args.noconfirm:
-        if input('\nContinue? (Y/n) ') == 'n':
-            exit()
+        hlp.prompt()
 
     if args.online:
         solve_online(args, apiKey)

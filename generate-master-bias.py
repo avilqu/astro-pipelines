@@ -1,6 +1,6 @@
 #!/opt/anaconda/bin/python
 
-''' Generate master bias from a set of files and stores it in the calibration_path variable.
+''' Generate master bias from a set of files and stores it in the CALIBRATION_PATH config constant.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
@@ -13,9 +13,11 @@ import ccdproc as ccdp
 from astropy.stats import mad_std
 import numpy as np
 
-from lib_helpers import header_correction
+import config as cfg
+import helpers as hlp
 
-calibration_path = Path('/home/tan/Astro/calibration/ST402')
+
+calibration_path = Path(cfg.CALIBRATION_PATH)
 
 if __name__ == "__main__":
 
@@ -33,19 +35,22 @@ if __name__ == "__main__":
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
+    hlp.config_display()
+    if not args.noconfirm:
+        hlp.prompt()
+
     bias_images = ccdp.ImageFileCollection(
         filenames=args.files).filter(frame='bias')
 
     if bias_images:
         print('\nFiles to combine:')
-        print(bias_images.summary['date-obs', 'frame', 'instrume',
-                                  'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        hlp.collection_summary(bias_images, ['frame', 'instrume',
+                                             'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
-            if input('\nContinue? (Y/n) ') == 'n':
-                exit()
+            hlp.prompt()
 
-        header_correction(bias_images)
+        hlp.header_correction(bias_images)
 
         master_bias = ccdp.combine(
             bias_images.files_filtered(include_path=True),
@@ -55,14 +60,20 @@ if __name__ == "__main__":
             sigma_clip_high_thresh=int(args.sigmahigh),
             sigma_clip_func=np.ma.median,
             sigma_clip_dev_func=mad_std,
-            mem_limit=350e6
+            mem_limit=600e7
         )
 
         ccd_temp = str(round(master_bias.header['ccd-temp']))
         date_obs = datetime.strptime(
             master_bias.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
         date_string = date_obs.strftime('%Y%m%d')
-        filename = date_string + '_master_bias' + ccd_temp + 'C.fits'
+
+        filename = f'{date_string}_master_bias{ccd_temp}C'
+        if 'gain' in master_bias.header:
+            gain = str(round(master_bias.header['gain']))
+            offset = str(round(master_bias.header['offset']))
+            filename = f'{filename}_{gain}g{offset}o'
+        filename = f'{filename}.fits'
 
         master_bias.meta['combined'] = True
         master_bias.write(calibration_path/filename, overwrite=True)

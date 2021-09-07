@@ -11,7 +11,7 @@ from pathlib import Path
 
 import ccdproc as ccdp
 
-from lib_helpers import header_correction
+import helpers as hlp
 
 if __name__ == "__main__":
 
@@ -45,17 +45,16 @@ if __name__ == "__main__":
         registered_path.mkdir(exist_ok=True)
 
         print('\nFiles to register:')
-        print(lightImages.summary['object', 'date-obs', 'frame',
-                                  'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        hlp.collection_summary(lightImages, ['object', 'date-obs', 'frame',
+                                             'instrume', 'filter', 'exptime', 'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
 
         target_wcs = ccdp.CCDData.read(args.reference).wcs
         print('\nReference image: ' + args.reference)
 
         if not args.noconfirm:
-            if input('\nContinue? (Y/n) ') == 'n':
-                sys.exit()
+            hlp.prompt()
 
-        header_correction(lightImages)
+        hlp.header_correction(lightImages)
 
     for img, filename in lightImages.ccds(return_fname=True):
         ccdp.wcs_project(img, target_wcs).write(

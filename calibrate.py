@@ -11,17 +11,19 @@ from pathlib import Path
 import ccdproc as ccdp
 from astropy import units as u
 
-from lib_helpers import header_correction
+import helpers as hlp
+import config as cfg
 
-calibration_path = Path('/home/tan/Astro/calibration/ST402')
+calibration_path = Path(cfg.CALIBRATION_PATH)
 calibration_masters = ccdp.ImageFileCollection(calibration_path)
 
 
 def find_master_bias(image, temp_tolerance=1):
-    ''' Finds and returns a master bias with matching temperature for the input image. '''
+    ''' Finds and returns a matching master bias for the input image. '''
 
     temp = image.header['ccd-temp']
     match = False
+
     for img, fname in calibration_masters.ccds(frame='Bias', return_fname=True):
         if abs(img.header['ccd-temp'] - temp) <= temp_tolerance:
             match = img
@@ -36,7 +38,7 @@ def find_master_bias(image, temp_tolerance=1):
 
 
 def find_master_dark(image, temp_tolerance=1, exposure_tolerance=0.5):
-    ''' Finds and returns a master dark with matching temperature and exposure for the input image. '''
+    ''' Finds and returns a matching master dark for the input image. '''
 
     exposure = image.header['exptime']
     temp = image.header['ccd-temp']
@@ -56,7 +58,7 @@ def find_master_dark(image, temp_tolerance=1, exposure_tolerance=0.5):
 
 
 def find_calibrated_master_dark(image, temp_tolerance=1):
-    ''' Finds and returns a calibrated master dark with matching temperature for the input image. '''
+    ''' Finds and returns a matching calibrated master dark for the input image. '''
 
     exposure = image.header['exptime']
     temp = image.header['ccd-temp']
@@ -85,7 +87,7 @@ def find_calibrated_master_dark(image, temp_tolerance=1):
 
 
 def find_master_flat(image, temp_tolerance=1):
-    ''' Finds and returns a master flat with matching temperature and filter for the input image. '''
+    ''' Finds and returns a matching master flat for the input image. '''
 
     temp = image.header['ccd-temp']
     filter_code = image.header['filter']
@@ -191,6 +193,10 @@ if __name__ == "__main__":
                         action='store_true', help='skip confirmation')
     args = parser.parse_args()
 
+    hlp.config_display()
+    if not args.noconfirm:
+        hlp.prompt()
+
     light_images = ccdp.ImageFileCollection(
         filenames=args.files).filter(frame='light')
 
@@ -199,17 +205,16 @@ if __name__ == "__main__":
         calibrated_path.mkdir(exist_ok=True)
 
         print('Calibration masters:')
-        print(calibration_masters.summary['file', 'frame', 'instrume',
-                                          'filter', 'exptime', 'ccd-temp'])
+        hlp.collection_summary(calibration_masters, ['file', 'frame', 'instrume',
+                                                     'filter', 'exptime', 'ccd-temp'])
         print('\nFiles to calibrate:')
-        print(light_images.summary['object', 'date-obs', 'frame',
-                                   'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        hlp.collection_summary(light_images, ['object', 'date-obs', 'frame',
+                                              'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
-            if input('\nContinue? (Y/n) ') == 'n':
-                exit()
+            hlp.prompt()
 
-        header_correction(light_images)
+        hlp.header_correction(light_images)
 
         for frame, filename in light_images.ccds(return_fname=True):
             image_calibration(frame, filename, args).write(

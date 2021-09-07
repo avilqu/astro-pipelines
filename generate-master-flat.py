@@ -15,9 +15,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from calibrate import calibrate_collection
-from lib_helpers import header_correction
+import helpers as hlp
+import config as cfg
 
-calibration_path = Path('/home/tan/Astro/calibration/ST402')
+calibration_path = Path(cfg.CALIBRATION_PATH)
 calibration_masters = ccdp.ImageFileCollection(calibration_path)
 
 if __name__ == "__main__":
@@ -43,8 +44,8 @@ if __name__ == "__main__":
 
     if flat_images:
         print('\nFiles to combine:')
-        print(flat_images.summary['date-obs', 'frame', 'instrume',
-                                  'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        hlp.collection_summary(flat_images, ['frame', 'instrume',
+                                             'filter', 'exptime', 'ccd-temp', 'gain', 'offset' 'naxis1', 'naxis2'])
 
         median_count = [np.median(data) for data in flat_images.data()]
         mean_count = [np.mean(data) for data in flat_images.data()]
@@ -61,7 +62,7 @@ if __name__ == "__main__":
             if input('\nContinue? (Y/n) ') == 'n':
                 exit()
 
-        header_correction(flat_images)
+        hlp.header_correction(flat_images)
 
         options = argparse.Namespace(noflat=True)
         calibrated_flat_images = calibrate_collection(flat_images, options)
