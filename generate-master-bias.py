@@ -68,7 +68,7 @@ if __name__ == "__main__":
             master_bias.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
         date_string = date_obs.strftime('%Y%m%d')
 
-        filename = f'{date_string}_master_bias{ccd_temp}C'
+        filename = f'{date_string}_master_bias_{ccd_temp}C'
         if 'gain' in master_bias.header:
             gain = str(round(master_bias.header['gain']))
             offset = str(round(master_bias.header['offset']))

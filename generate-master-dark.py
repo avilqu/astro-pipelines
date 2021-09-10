@@ -93,7 +93,7 @@ if __name__ == "__main__":
             master_dark.header['date-obs'], '%Y-%m-%dT%H:%M:%S.%f')
         date_string = date_obs.strftime('%Y%m%d')
 
-        filename = f'{date_string}_{master_type}{exptime}s{ccd_temp}C'
+        filename = f'{date_string}_{master_type}_{exptime}s{ccd_temp}C'
         if 'gain' in master_dark.header:
             gain = str(round(master_dark.header['gain']))
             offset = str(round(master_dark.header['offset']))
