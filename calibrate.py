@@ -67,13 +67,10 @@ def find_calibrated_master_dark(image, temp_tolerance=1):
     filenames = []
 
     for img, fname in calibration_masters.ccds(frame='Dark', return_fname=True):
-        if abs(img.header['ccd-temp'] - temp) <= temp_tolerance and img.header['exptime'] >= exposure and 'subbias' in img.header:
+        if abs(img.header['ccd-temp'] - temp) <= temp_tolerance and img.header['exptime'] >= exposure:
             results.append(img)
             exp_diff.append(img.header['exptime'] - exposure)
             filenames.append(fname)
-            # match = img
-            # master_dark = fname
-            # break
 
     if len(results) > 0:
         match = exp_diff.index(min(exp_diff))
@@ -133,16 +130,18 @@ def image_calibration(img, fname, options):
         else:
             master_dark = find_calibrated_master_dark(img)
             if master_dark:
-                master_bias = find_master_bias(img)
-                if master_bias:
-                    print('Bias substraction...')
-                    img = ccdp.subtract_bias(img, master_bias)
                 if master_dark:
                     print('Calibrated dark substraction...')
                     img = ccdp.subtract_dark(
                         img, master_dark, exposure_time='exptime', exposure_unit=u.second, scale=True)
             else:
-                print('No dark or bias substraction.')
+                master_bias = find_master_bias(img)
+                if master_bias:
+                    print('No dark substraction.')
+                    print('Bias substraction...')
+                    img = ccdp.subtract_bias(img, master_bias)
+                else:
+                    print('No dark or bias substraction.')
 
         if not options.noflat:
             master_flat = find_master_flat(img)

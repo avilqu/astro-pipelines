@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 import ccdproc as ccdp
+import astroalign as aa
 
 import helpers as hlp
 
@@ -45,10 +46,9 @@ if __name__ == "__main__":
         registered_path.mkdir(exist_ok=True)
 
         print('\nFiles to register:')
-        hlp.collection_summary(lightImages, ['object', 'date-obs', 'frame',
-                                             'instrume', 'filter', 'exptime', 'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
+        hlp.collection_summary(lightImages, ['object', 'date-obs',
+                                             'instrume', 'filter', 'exptime'])
 
-        target_wcs = ccdp.CCDData.read(args.reference).wcs
         print('\nReference image: ' + args.reference)
 
         if not args.noconfirm:
@@ -56,6 +56,18 @@ if __name__ == "__main__":
 
         hlp.header_correction(lightImages)
 
-    for img, filename in lightImages.ccds(return_fname=True):
-        ccdp.wcs_project(img, target_wcs).write(
-            registered_path / filename, overwrite=True)
+        if args.reproject:
+            target_wcs = ccdp.CCDData.read(args.reference).wcs
+            for img, filename in lightImages.ccds(return_fname=True):
+                ccdp.wcs_project(img, target_wcs).write(
+                    registered_path / filename, overwrite=True)
+
+        elif args.align:
+            target_data = ccdp.CCDData.read(args.reference)
+            for img, filename in lightImages.ccds(return_fname=True):
+                registered_image, footprint = aa.register(img, target_data)
+                registered_image.write(
+                    registered_path / filename, overwrite=True)
+
+        else:
+            print('Need an alignment method.')
