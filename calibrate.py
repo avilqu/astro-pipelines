@@ -130,10 +130,15 @@ def image_calibration(img, fname, options):
         else:
             master_dark = find_calibrated_master_dark(img)
             if master_dark:
-                if master_dark:
+                master_bias = find_master_bias(img)
+                if master_bias:
+                    print('Bias substraction...')
+                    img = ccdp.subtract_bias(img, master_bias)
                     print('Calibrated dark substraction...')
-                    img = ccdp.subtract_dark(
-                        img, master_dark, exposure_time='exptime', exposure_unit=u.second, scale=True)
+                else:
+                    print('Substracting calibrated dark without bias...')
+                img = ccdp.subtract_dark(
+                    img, master_dark, exposure_time='exptime', exposure_unit=u.second, scale=True)
             else:
                 master_bias = find_master_bias(img)
                 if master_bias:
