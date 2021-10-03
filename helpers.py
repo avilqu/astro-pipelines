@@ -21,10 +21,9 @@ def config_display():
 def header_correction(collection):
     ''' Applies various corrections to the FITS header '''
 
+    print('Applying header corrections...')
     for hdu in collection.hdus(overwrite=True):
         hdu.header['bunit'] = 'adu'
-        # hdu.header['instrume'] = cfg.CCD_NAME
-        # hdu.header['telescop'] = cfg.TELESCOPE
         hdu.header.pop('radecsys', None)
         hdu.header['radesys'] = 'FK5'
 

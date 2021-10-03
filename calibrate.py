@@ -26,6 +26,8 @@ def find_master_bias(image, temp_tolerance=1):
 
     for img, fname in calibration_masters.ccds(frame='Bias', return_fname=True):
         if abs(img.header['ccd-temp'] - temp) <= temp_tolerance:
+            if 'gain' in img.header and (img.header['gain'] != image.header['gain'] or img.header['offset'] != image.header['offset']):
+                break
             match = img
             master_bias = fname
             break
@@ -33,7 +35,7 @@ def find_master_bias(image, temp_tolerance=1):
         print('Master bias: ' + master_bias)
         return match
     else:
-        print('Could not find a suitable master bias for temperature {}C.'.format(temp))
+        print(f'Could not find a suitable master bias.')
         return False
 
 
@@ -45,6 +47,8 @@ def find_master_dark(image, temp_tolerance=1, exposure_tolerance=0.5):
     match = False
     for img, fname in calibration_masters.ccds(frame='Dark', return_fname=True):
         if abs(img.header['ccd-temp'] - temp) <= temp_tolerance and abs(img.header['exptime'] - exposure) <= exposure_tolerance:
+            if 'gain' in img.header and (img.header['gain'] != image.header['gain'] or img.header['offset'] != image.header['offset']):
+                break
             match = img
             master_dark = fname
             break
@@ -52,8 +56,7 @@ def find_master_dark(image, temp_tolerance=1, exposure_tolerance=0.5):
         print('Master dark: ' + master_dark)
         return match
     else:
-        print('Could not find a suitable master dark for exposure {} and temperature {}C.'.format(
-            exposure, temp))
+        print('Could not find a suitable master dark.')
         return False
 
 
@@ -68,6 +71,8 @@ def find_calibrated_master_dark(image, temp_tolerance=1):
 
     for img, fname in calibration_masters.ccds(frame='Dark', return_fname=True):
         if abs(img.header['ccd-temp'] - temp) <= temp_tolerance and img.header['exptime'] >= exposure:
+            if 'gain' in img.header and (img.header['gain'] != image.header['gain'] or img.header['offset'] != image.header['offset']):
+                break
             results.append(img)
             exp_diff.append(img.header['exptime'] - exposure)
             filenames.append(fname)
@@ -78,8 +83,7 @@ def find_calibrated_master_dark(image, temp_tolerance=1):
         return results[match]
 
     else:
-        print('Could not find a suitable calibrated master dark for exposure {} and temperature {}C.'.format(
-            exposure, temp))
+        print('Could not find a suitable calibrated master dark.')
         return False
 
 
@@ -98,8 +102,7 @@ def find_master_flat(image, temp_tolerance=1):
         print('Master flat: ' + master_flat)
         return match
     else:
-        print('Could not find a suitable master flat for filter {} and temperature {}C.'.format(
-            filter_code, temp))
+        print('Could not find a suitable master flat.')
         return False
 
 
@@ -153,6 +156,8 @@ def image_calibration(img, fname, options):
             if master_flat:
                 print('Flat correction...')
                 img = ccdp.flat_correct(img, master_flat)
+            else:
+                print('No flat correction.')
 
         else:
             print('Skipping flat correction.')
@@ -208,12 +213,12 @@ if __name__ == "__main__":
         calibrated_path = Path(os.getcwd() + '/calibrated')
         calibrated_path.mkdir(exist_ok=True)
 
-        print('Calibration masters:')
-        hlp.collection_summary(calibration_masters, ['file', 'frame', 'instrume',
-                                                     'filter', 'exptime', 'ccd-temp'])
+        # print('Calibration masters:')
+        # hlp.collection_summary(calibration_masters, ['file', 'frame', 'instrume',
+        #                                              'filter', 'exptime', 'ccd-temp', 'gain', 'offset'])
         print('\nFiles to calibrate:')
-        hlp.collection_summary(light_images, ['object', 'date-obs', 'frame',
-                                              'instrume', 'filter', 'exptime', 'ccd-temp', 'naxis1', 'naxis2'])
+        hlp.collection_summary(light_images, ['frame',
+                                              'instrume', 'filter', 'exptime', 'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
 
         if not args.noconfirm:
             hlp.prompt()
