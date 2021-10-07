@@ -289,9 +289,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     images = ccdp.ImageFileCollection(filenames=args.files)
-    print('\nFiles to platesolve:')
-    hlp.collection_summary(images, ['object', 'date-obs',
-                                    'instrume', 'filter', 'exptime'])
+    # print('\nFiles to platesolve:')
+    # hlp.collection_summary(images, ['object', 'date-obs',
+    #                                 'instrume', 'filter', 'exptime'])
 
     if (not args.ra and not args.dec) and not args.blind:
         try:

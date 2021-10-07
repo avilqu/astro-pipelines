@@ -20,9 +20,6 @@ import helpers as hlp
 
 
 calib_path = Path(cfg.CALIBRATION_PATH)
-bias_path = f'{calib_path}/bias/'
-darks_path = f'{calib_path}/darks/'
-flats_path = f'{calib_path}/flats/'
 
 
 class CalibrationMaster:
@@ -36,8 +33,12 @@ class CalibrationMaster:
 
     def print_calibration_masters(self):
         print(f'Calibration masters for camera {cfg.CCD_LABEL}')
-        print(self.masters.summary['frame', 'exptime', 'instrume',
-              'filter', 'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
+        try:
+            print(self.masters.summary['frame', 'exptime', 'instrume',
+                  'filter', 'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
+        except:
+            print(self.masters.summary['frame', 'exptime', 'instrume',
+                  'filter', 'ccd-temp', 'naxis1', 'naxis2'])
 
     def image_integration(self, flat=False):
         scale = None
