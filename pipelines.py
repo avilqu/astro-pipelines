@@ -24,6 +24,8 @@ if __name__ == "__main__":
         '-M', '--masters', type=str, help='list or generate calibration masters from input files ("list", "bias", "dark", "dark_c", "flat")')
     parser.add_argument(
         '-C', '--calibrate', type=str, help='calibrate file(s) with options ("full", "biasonly", "flatonly", "noflat")')
+    parser.add_argument(
+        '-I', '--integrate', action='store_true', help='integrate input files')
     args = parser.parse_args()
 
     cm = CalibrationMaster(args.files)
@@ -43,6 +45,14 @@ if __name__ == "__main__":
         elif args.calibrate == 'noflat':
             options = {'noflat': True}
         cm.calibrate(options)
+
+    if args.integrate:
+        stack = cm.image_integration()
+        filter_code = stack.header['filter']
+        filename = f'master_{filter_code}.fits'
+        stack.meta['combined'] = True
+        stack.write(filename, overwrite=True)
+        # run(['ds9', '-asinh', filename], check=True)
 
     # hlp.collection_summary(
     #     cm.masters, ['frame', 'filter', 'ccd-temp', 'exp-time', 'gain', 'offset'])
