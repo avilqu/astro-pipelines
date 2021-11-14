@@ -4,6 +4,9 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
+import os
+from pathlib import Path
+
 import warnings
 from astropy.utils.exceptions import AstropyWarning
 
@@ -21,6 +24,8 @@ if __name__ == "__main__":
         description='Suite of various tools for astronomical images reduction. See /config.py before use.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='*')
     parser.add_argument(
+        '-i', '--init', type=str, help='create work directories and symlinks (arguments: "art", "science")')
+    parser.add_argument(
         '-M', '--masters', type=str, help='list or generate calibration masters from input files (arguments: "list", "bias", "dark", "dark_c", "flat")')
     parser.add_argument(
         '-C', '--calibrate', type=str, help='calibrate file(s) (arguments: "full", "biasonly", "flatonly", "noflat")')
@@ -31,6 +36,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cm = CalibrationMaster(args.files)
+
+    if args.init:
+        if args.init and not (args.init == 'art' or args.init == 'science'):
+            print('Argument for init option must be "art" or "science".')
+
+        else:
+            raw_path_str = os.getcwd()
+            new_path_str = raw_path_str.replace('data', args.init, 1)
+            new_path = Path(new_path_str)
+            new_path.mkdir(parents=True, exist_ok=True)
+            os.symlink(raw_path_str, new_path_str + '/raw')
+            os.symlink(new_path_str, raw_path_str + f'/{args.init}')
+            os.chdir(new_path_str)
 
     if args.masters:
         if args.masters == 'list':
