@@ -21,9 +21,11 @@ if __name__ == "__main__":
         description='Suite of various tools for astronomical images reduction. See /config.py before use.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='+')
     parser.add_argument(
-        '-M', '--masters', type=str, help='list or generate calibration masters from input files ("list", "bias", "dark", "dark_c", "flat")')
+        '-M', '--masters', type=str, help='list or generate calibration masters from input files (arguments: "list", "bias", "dark", "dark_c", "flat")')
     parser.add_argument(
-        '-C', '--calibrate', type=str, help='calibrate file(s) with options ("full", "biasonly", "flatonly", "noflat")')
+        '-C', '--calibrate', type=str, help='calibrate file(s) (arguments: "full", "biasonly", "flatonly", "noflat")')
+    parser.add_argument(
+        '-R', '--register', type=str, help='register platesolved files using WCS reprojection method (this option takes the reference frame as argument)')
     parser.add_argument(
         '-I', '--integrate', action='store_true', help='integrate input files')
     args = parser.parse_args()
@@ -52,7 +54,9 @@ if __name__ == "__main__":
         filename = f'master_{filter_code}.fits'
         stack.meta['combined'] = True
         stack.write(filename, overwrite=True)
-        # run(['ds9', '-asinh', filename], check=True)
+
+    if args.register:
+        cm.register_collection(args.register)
 
     # hlp.collection_summary(
     #     cm.masters, ['frame', 'filter', 'ccd-temp', 'exp-time', 'gain', 'offset'])

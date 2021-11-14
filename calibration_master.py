@@ -255,3 +255,11 @@ class CalibrationMaster:
     def calibrate(self, options):
         hlp.header_correction(self.collection)
         self.calibrate_collection(options, self.collection)
+
+    def register_collection(self, reference):
+        write_path = Path(f'{os.getcwd()}/registered')
+        write_path.mkdir(exist_ok=True)
+        target_wcs = ccdp.CCDData.read(reference).wcs
+        for img, fname in self.collection.ccds(return_fname=True):
+            ccdp.wcs_project(img, target_wcs).write(
+                write_path / fname, overwrite=True)
