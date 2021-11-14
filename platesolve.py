@@ -12,6 +12,7 @@ import time
 import urllib.request
 from pathlib import Path
 from subprocess import run
+from colorama import Fore, Back, Style
 
 import requests
 import ccdproc as ccdp
@@ -222,6 +223,10 @@ def solve_offline(options):
 
     if options.blind:
         for filename in options.files:
+            print(
+                f'\n{Style.BRIGHT}Solving {filename}.{Style.RESET_ALL}')
+            print(f'Solver arguments: {proc.args}')
+
             new_filename = 'solved/' + filename[filename.find('/') + 1:]
             proc = run(['solve-field',
                         '--dir', 'solved',
@@ -232,13 +237,15 @@ def solve_offline(options):
                         '--new-fits', new_filename,
                         filename],
                        check=True)
-            print('\n===================================')
-            print(proc.args)
-            print('===================================\n')
             solver_cleanup()
 
     else:
         for filename in options.files:
+            print(
+                f'\n{Style.BRIGHT}Solving {filename}.{Style.RESET_ALL}')
+            print(
+                f'Downsample: {downsample}, RA: {ra}, Dec: {dec}, Radius: {radius}\n')
+
             new_filename = 'solved/' + filename[filename.find('/') + 1:]
             proc = run(['solve-field',
                         '--dir', 'solved',
@@ -253,9 +260,6 @@ def solve_offline(options):
                         '--new-fits', new_filename,
                         filename],
                        check=True)
-            print('\n===================================')
-            print(proc.args)
-            print('===================================\n')
             solver_cleanup()
 
 
@@ -289,17 +293,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     images = ccdp.ImageFileCollection(filenames=args.files)
-    # print('\nFiles to platesolve:')
-    # hlp.collection_summary(images, ['object', 'date-obs',
-    #                                 'instrume', 'filter', 'exptime'])
+    print(
+        f'{Style.BRIGHT}Platesolving {len(images.files)} files.{Style.RESET_ALL}')
 
     if (not args.ra and not args.dec) and not args.blind:
         try:
             args.ra = ccdp.CCDData.read(args.files[0]).header['ra']
             args.dec = ccdp.CCDData.read(args.files[0]).header['dec']
-            print('Found WCS in file, using as target...')
+            print(
+                f'{Style.BRIGHT + Fore.GREEN}Found WCS in file, using as target.{Style.RESET_ALL}')
         except:
-            print('No WCS found...')
+            print(
+                f'{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}')
             args.blind = True
 
     if not args.blind:
@@ -307,7 +312,8 @@ if __name__ == "__main__":
         print(f'\nTarget RA / DEC: {c.to_string("hmsdms")}')
         print(f'Search radius (degrees): {str(args.radius)}')
     else:
-        print('Blind solving...')
+        print(
+            f'{Style.BRIGHT + Fore.RED}Blind solving.{Style.RESET_ALL}')
 
     if not args.noconfirm:
         hlp.prompt()

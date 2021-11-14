@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime
 import os
 import shutil
+from colorama import Fore, Back, Style
 
 import ccdproc as ccdp
 from astropy import units as u
@@ -40,14 +41,19 @@ class CalibrationMaster:
             print(self.masters.summary['frame', 'exptime', 'instrume',
                   'filter', 'ccd-temp', 'naxis1', 'naxis2'])
 
-    def image_integration(self, flat=False):
+    def image_integration(self, flat=False, confirm=True):
+        print(
+            f'{Style.BRIGHT}Integrating {len(self.collection.files)} files.{Style.RESET_ALL}')
+        if confirm:
+            hlp.prompt()
+
         scale = None
         if flat:
             def inv_median(a):
                 return 1 / np.median(a)
             scale = inv_median
 
-        print('Integrating files...')
+        print('Integrating...')
         stack = ccdp.combine(
             self.collection.files_filtered(include_path=True),
             method='average',
@@ -64,29 +70,43 @@ class CalibrationMaster:
 
     def generate_calibration_master(self, frame):
         if not hasattr(self, 'collection'):
-            print('[E] No input files. Cannot generate calibration master.')
+            print(
+                f'{Fore.RED + Style.BRIGHT}No input files. Cannot generate calibration master.{Style.RESET_ALL}')
             return
 
-        hlp.header_correction(self.collection)
-
         if frame == 'bias' or frame == 'dark':
-            stack = self.image_integration()
+            print(
+                f'{Style.BRIGHT}Generating master {frame} from {len(self.collection.files)} files.{Style.RESET_ALL}')
+            hlp.prompt()
+            hlp.header_correction(self.collection)
+
+            stack = self.image_integration(confirm=False)
 
         elif frame == 'dark_c':
+            print(
+                f'{Style.BRIGHT}Generating calibrated master dark from {len(self.collection.files)} files.{Style.RESET_ALL}')
+            hlp.prompt()
+            hlp.header_correction(self.collection)
+
             self.collection = self.calibrate_collection(
                 {'biasonly': True}, self.collection)
-            stack = self.image_integration()
+            stack = self.image_integration(confirm=False)
             stack.header['frame'] = 'Dark_c'
             shutil.rmtree(f'{os.getcwd()}/calibrated/')
 
         elif frame == 'flat':
+            print(
+                f'{Style.BRIGHT}Generating master flat from {len(self.collection.files)} files.{Style.RESET_ALL}')
+            hlp.prompt()
+            hlp.header_correction(self.collection)
+
             self.collection = self.calibrate_collection(
                 {'noflat': True}, self.collection)
-            stack = self.image_integration(True)
+            stack = self.image_integration(flat=True, confirm=False)
             shutil.rmtree(f'{os.getcwd()}/calibrated/')
 
         else:
-            print('[E] Wrong operation')
+            print(f'{Fore.RED + Style.BRIGHT}Wrong operation.{Style.RESET_ALL}')
 
         exptime = str(round(stack.header['exptime']))
         ccd_temp = str(round(stack.header['ccd-temp']))
@@ -124,10 +144,11 @@ class CalibrationMaster:
                     master_bias = fname
                     break
         if match:
-            print('Master bias: ' + master_bias)
+            print(f'Master bias: {master_bias}')
             return match
         else:
-            print('[W] Could not find a suitable master bias.')
+            print(
+                f'{Fore.YELLOW}Could not find a suitable master bias.{Style.RESET_ALL}')
             return False
 
     def find_master_dark(self, image):
@@ -142,10 +163,11 @@ class CalibrationMaster:
                     master_dark = fname
                     break
         if match:
-            print('Master dark: ' + master_dark)
+            print(f'Master dark: {master_dark}')
             return match
         else:
-            print('[W] Could not find a suitable master dark.')
+            print(
+                f'{Fore.YELLOW}Could not find a suitable master dark.{Style.RESET_ALL}')
             return False
 
     def find_master_dark_c(self, image):
@@ -164,11 +186,12 @@ class CalibrationMaster:
 
         if len(results) > 0:
             match = exp_diff.index(min(exp_diff))
-            print('Calibrated master dark: ' + filenames[match])
+            print(f'Calibrated master dark: {filenames[match]}')
             return results[match]
 
         else:
-            print('[W] Could not find a suitable calibrated master dark.')
+            print(
+                f'{Fore.YELLOW}Could not find a suitable calibrated master dark.{Style.RESET_ALL}')
             return False
 
     def find_master_flat(self, image):
@@ -181,30 +204,34 @@ class CalibrationMaster:
                 master_flat = fname
                 break
         if match:
-            print('Master flat: ' + master_flat)
+            print(f'Master flat: {master_flat}')
             return match
         else:
-            print('[W] Could not find a suitable master flat.')
+            print(
+                f'{Fore.YELLOW}Could not find a suitable master flat.{Style.RESET_ALL}')
             return False
 
     def calibrate_image(self, options, img):
         if 'biasonly' in options:
             master_bias = self.find_master_bias(img)
             if master_bias:
-                print('Bias substraction...')
+                print(
+                    f'{Fore.GREEN + Style.BRIGHT}Bias substraction...{Style.RESET_ALL}')
                 img = ccdp.subtract_bias(img, master_bias)
 
         elif 'flatonly' in options:
             master_flat = self.find_master_flat(img)
             if master_flat:
-                print('Flat correction...')
+                print(
+                    f'{Fore.GREEN + Style.BRIGHT}Flat correction...{Style.RESET_ALL}')
                 img = ccdp.flat_correct(img, master_flat)
 
         else:
             master_dark = self.find_master_dark(img)
 
             if master_dark:
-                print('Dark substraction...')
+                print(
+                    f'{Fore.GREEN + Style.BRIGHT}Dark substraction...{Style.RESET_ALL}')
                 img = ccdp.subtract_dark(
                     img, master_dark, exposure_time='exptime', exposure_unit=u.second)
 
@@ -213,32 +240,41 @@ class CalibrationMaster:
                 if master_dark:
                     master_bias = self.find_master_bias(img)
                     if master_bias:
-                        print('Bias substraction...')
+                        print(
+                            f'{Fore.GREEN + Style.BRIGHT}Bias substraction...{Style.RESET_ALL}')
                         img = ccdp.subtract_bias(img, master_bias)
-                        print('Calibrated dark substraction...')
+                        print(
+                            f'{Fore.GREEN + Style.BRIGHT}Calibrated dark substraction...{Style.RESET_ALL}')
                     else:
-                        print('Substracting calibrated dark without bias...')
+                        print(
+                            f'{Fore.YELLOW + Style.BRIGHT}Substracted calibrated dark without bias...{Style.RESET_ALL}')
                     img = ccdp.subtract_dark(
                         img, master_dark, exposure_time='exptime', exposure_unit=u.second, scale=True)
                 else:
                     master_bias = self.find_master_bias(img)
                     if master_bias:
-                        print('No dark substraction.')
-                        print('Bias substraction...')
+                        print(
+                            f'{Fore.RED + Style.BRIGHT}No dark substraction.{Style.RESET_ALL}')
+                        print(
+                            f'{Fore.GREEN + Style.BRIGHT}Bias substraction...{Style.RESET_ALL}')
                         img = ccdp.subtract_bias(img, master_bias)
                     else:
-                        print('No dark or bias substraction.')
+                        print(
+                            f'{Fore.RED + Style.BRIGHT}No dark or bias substraction.{Style.RESET_ALL}')
 
             if not 'noflat' in options:
                 master_flat = self.find_master_flat(img)
                 if master_flat:
-                    print('Flat correction...')
+                    print(
+                        f'{Fore.GREEN + Style.BRIGHT}Flat correction...{Style.RESET_ALL}')
                     img = ccdp.flat_correct(img, master_flat)
                 else:
-                    print('No flat correction.')
+                    print(
+                        f'{Fore.RED + Style.BRIGHT}No flat correction.{Style.RESET_ALL}')
 
             else:
-                print('Skipping flat correction.')
+                print(
+                    f'{Fore.YELLOW + Style.BRIGHT}Skipping flat correction.{Style.RESET_ALL}')
 
         return img
 
@@ -247,19 +283,31 @@ class CalibrationMaster:
         write_path.mkdir(exist_ok=True)
 
         for img, fname in collection.ccds(return_fname=True):
+            print(
+                f'\n{Style.BRIGHT}Calibrating: {fname + Style.RESET_ALL}')
             self.calibrate_image(options, img).write(
                 write_path / fname, overwrite=True)
 
         return ccdp.ImageFileCollection(write_path)
 
     def calibrate(self, options):
+        print(
+            f'{Style.BRIGHT}Calibrating {len(self.collection.files)} files.{Style.RESET_ALL}')
+        hlp.prompt()
+
         hlp.header_correction(self.collection)
         self.calibrate_collection(options, self.collection)
 
     def register_collection(self, reference):
+        print(
+            f'{Style.BRIGHT}Registering {len(self.collection.files)} files.{Style.RESET_ALL}')
+        print(f'Reference frame: {reference}')
+        hlp.prompt()
+
         write_path = Path(f'{os.getcwd()}/registered')
         write_path.mkdir(exist_ok=True)
         target_wcs = ccdp.CCDData.read(reference).wcs
         for img, fname in self.collection.ccds(return_fname=True):
+            print(f'Computing for {fname}...')
             ccdp.wcs_project(img, target_wcs).write(
                 write_path / fname, overwrite=True)

@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description='Suite of various tools for astronomical images reduction. See /config.py before use.')
-    parser.add_argument('files', help='input filename(s)', type=str, nargs='+')
+    parser.add_argument('files', help='input filename(s)', type=str, nargs='*')
     parser.add_argument(
         '-M', '--masters', type=str, help='list or generate calibration masters from input files (arguments: "list", "bias", "dark", "dark_c", "flat")')
     parser.add_argument(
