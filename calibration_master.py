@@ -282,11 +282,13 @@ class CalibrationMaster:
         write_path = Path(f'{os.getcwd()}/calibrated')
         write_path.mkdir(exist_ok=True)
 
+        count = 1
         for img, fname in collection.ccds(return_fname=True):
             print(
-                f'\n{Style.BRIGHT}Calibrating: {fname + Style.RESET_ALL}')
+                f'\n{Style.BRIGHT}[{count}/{len(self.collection.files)}] Calibrating: {fname + Style.RESET_ALL}')
             self.calibrate_image(options, img).write(
                 write_path / fname, overwrite=True)
+            count += 1
 
         return ccdp.ImageFileCollection(write_path)
 
@@ -307,7 +309,10 @@ class CalibrationMaster:
         write_path = Path(f'{os.getcwd()}/registered')
         write_path.mkdir(exist_ok=True)
         target_wcs = ccdp.CCDData.read(reference).wcs
+        count = 1
         for img, fname in self.collection.ccds(return_fname=True):
-            print(f'Computing for {fname}...')
+            print(
+                f'{Style.BRIGHT}[{count}/{len(self.collection.files)}]{Style.RESET_ALL} Computing for {fname}...')
             ccdp.wcs_project(img, target_wcs).write(
                 write_path / fname, overwrite=True)
+            count += 1
