@@ -69,20 +69,20 @@ if __name__ == "__main__":
 
     if args.astrometry or args.all:
         objects = []
-        # try:
-        for obj in query_skybot(img):
-            objects.append({
-                'name': obj['Name'],
-                'mag': obj['V'],
-                'type': obj['Type'],
-                'geodist': obj['geodist'],
-                'coord': SkyCoord(obj['RA'], obj['DEC'])
-            })
-        for obj in objects:
-            coord = img.wcs.world_to_pixel(obj['coord'])
-            d.set('regions', f'circle({coord[0]},{coord[1]},15)')
+        try:
+            for obj in query_skybot(img):
+                objects.append({
+                    'name': obj['Name'],
+                    'mag': obj['V'],
+                    'type': obj['Type'],
+                    'geodist': obj['geodist'],
+                    'coord': SkyCoord(obj['RA'], obj['DEC'])
+                })
+            for obj in objects:
+                coord = img.wcs.world_to_pixel(obj['coord'])
+                d.set('regions', f'circle({coord[0]},{coord[1]},15)')
 
-        print(objects)
-        # d.set('regions', f'fk5; circle({obj["coord"]},15)')
-        # except:
-        #     print('No solar system object found.')
+            print(objects)
+            d.set('regions', f'fk5; circle({obj["coord"]},15)')
+        except:
+            print('No solar system object found.')
