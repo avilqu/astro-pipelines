@@ -28,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '-M', '--masters', type=str, help='list or generate calibration masters from input files (arguments: "list", "bias", "dark", "dark_c", "flat")')
     parser.add_argument(
-        '-C', '--calibrate', type=str, help='calibrate file(s) (arguments: "full", "biasonly", "flatonly", "noflat")')
+        '-C', '--calibrate', type=str, help='calibrate file(s) (arguments: "help", "full", "biasonly", "flatonly", "noflat")')
     parser.add_argument(
         '-R', '--register', type=str, help='register platesolved files using WCS reprojection method (this option takes the reference frame as argument)')
     parser.add_argument(
@@ -64,6 +64,9 @@ if __name__ == "__main__":
             options = {'flatonly': True}
         elif args.calibrate == 'noflat':
             options = {'noflat': True}
+        elif args.calibrate != 'full':
+            print('Wrong calibration option. Options are "full", "biasonly", "flatonly" and "noflat"')
+            exit()
         cm.calibrate(options)
 
     if args.integrate:

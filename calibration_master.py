@@ -284,6 +284,16 @@ class CalibrationMaster:
         for img, fname in collection.ccds(return_fname=True):
             print(
                 f'\n{Style.BRIGHT}[{count}/{len(self.collection.files)}] Calibrating: {fname + Style.RESET_ALL}')
+            ccd_temp = img.header['ccd-temp']
+            gain = img.header['gain']
+            offset = img.header['offset']
+            exptime = img.header['exptime']
+            filter = img.header['filter']
+            print(f'CCD_TEMP: {ccd_temp}')
+            print(f'GAIN: {gain}')
+            print(f'OFFSET: {offset}')
+            print(f'EXPTIME: {exptime}')
+            print(f'FILTER: {filter}')
             self.calibrate_image(options, img).write(
                 write_path / fname, overwrite=True)
             count += 1
