@@ -1,5 +1,3 @@
-#!/opt/anaconda/bin/python
-
 ''' Generate master flat from a set of files and stores it in the calibration_path variable.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''

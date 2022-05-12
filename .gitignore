@@ -2,3 +2,4 @@ notebooks/
 repipy/
 __pycache__/
 .vscode/
+env/

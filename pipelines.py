@@ -1,4 +1,4 @@
-#!/opt/anaconda/bin/python
+#!/usr/bin/env python
 
 ''' Main entry for pipelines.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>

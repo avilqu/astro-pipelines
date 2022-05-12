@@ -1,5 +1,3 @@
-#!/opt/anaconda/bin/python
-
 ''' Contains main class for image and collection analysis.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''

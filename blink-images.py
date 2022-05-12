@@ -1,5 +1,3 @@
-#!/opt/anaconda/bin/python
-
 ''' Blink WCS matched FITS frames.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''

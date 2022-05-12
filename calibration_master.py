@@ -1,5 +1,3 @@
-#!/opt/anaconda/bin/python
-
 ''' Contains main class for calibration masters generation and image calibration.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''

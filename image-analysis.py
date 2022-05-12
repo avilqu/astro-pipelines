@@ -1,5 +1,3 @@
-#!/opt/anaconda/bin/python
-
 ''' Image analysis script.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
