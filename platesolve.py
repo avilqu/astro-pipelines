@@ -225,7 +225,6 @@ def solve_offline(options):
         for filename in options.files:
             print(
                 f'\n{Style.BRIGHT}Solving {filename}.{Style.RESET_ALL}')
-            print(f'Solver arguments: {proc.args}')
 
             new_filename = 'solved/' + filename[filename.find('/') + 1:]
             proc = run(['solve-field',
@@ -237,6 +236,7 @@ def solve_offline(options):
                         '--new-fits', new_filename,
                         filename],
                        check=True)
+            print(f'Solver arguments: {proc.args}')
             solver_cleanup()
 
     else:
