@@ -7,13 +7,14 @@
 # ------------
 # pipelines stores all calibration masters in /MAIN_PATH/CCD_LABEL/.
 
-MAIN_PATH = '/home/tan/Astro/calibration/'  # Main calibration folder
-TELESCOPE = 'RC8 200/1620 f/8.1'  # Telescope name (unused)
-CCD_NAME = 'QHYCCD QHY163M'       # Camera name (unused)
-CCD_LABEL = 'QHY163'              # Camera label
-# CCD_NAME = 'SBIG ST-402 ME'       # Camera name (unused)
-# CCD_LABEL = 'ST402'               # Camera label
-CALIBRATION_PATH = MAIN_PATH + CCD_LABEL
+MAIN_PATH = '/home/tan/Astro/calibration/'  # Main calibration folder 
+ROOT_PATH = '/home/tan/Astro/'              # Main folder
+TELESCOPE = 'RC8 200/1620 f/8.1'            # Telescope name (unused)
+CCD_NAME = 'QHYCCD QHY163M'                 # Camera name (unused)
+CCD_LABEL = 'QHY163'                        # Camera label
+# CCD_NAME = 'SBIG ST-402 ME'               # Camera name (unused)
+# CCD_LABEL = 'ST402'                       # Camera label
+CALIBRATION_PATH = f'{ROOT_PATH}calibration/{CCD_LABEL}'
 
 
 # Calibration parameters
