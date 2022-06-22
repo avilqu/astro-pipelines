@@ -113,17 +113,17 @@ class CalibrationMaster:
         date_string = date_obs.strftime('%Y%m%d')
 
         if frame == 'bias':
-            filename = f'{date_string}_master_bias_{ccd_temp}C'
+            filename = f'master_bias_{ccd_temp}C'
         if frame == 'dark':
-            filename = f'{date_string}_master_dark_{exptime}s{ccd_temp}C'
+            filename = f'master_dark_{exptime}s{ccd_temp}C'
         if frame == 'dark_c':
-            filename = f'{date_string}_master_dark_calibrated_{exptime}s{ccd_temp}C'
+            filename = f'master_dark_calibrated_{exptime}s{ccd_temp}C'
         if frame == 'flat':
-            filename = f'{date_string}_master_flat_{str(stack.header["filter"])}{ccd_temp}C'
+            filename = f'master_flat_{str(stack.header["filter"])}{ccd_temp}C'
         if 'gain' in stack.header:
             gain = str(round(stack.header['gain']))
             offset = str(round(stack.header['offset']))
-            filename = f'{filename}_{gain}g{offset}o'
+            filename = f'{filename}_{gain}g{offset}o_{date_string}'
         filename = f'{filename}.fits'
 
         stack.meta['combined'] = True
