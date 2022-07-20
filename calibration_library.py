@@ -297,8 +297,8 @@ class CalibrationLibrary:
             :return: CCDData object if succesful, False if not
         '''
 
-        filename = False
-
+        if write: filename = image['filename']
+        
         if not bias:
             bias = self.find_master_bias(image)
             if not bias:
@@ -311,7 +311,7 @@ class CalibrationLibrary:
         print(f'{Style.BRIGHT + Fore.GREEN}Bias subtraction...{Style.RESET_ALL}')
         calibrated_image = ccdp.subtract_bias(image, bias)
         
-        if write and filename:
+        if write:
             new_filename = f'b_{filename}'
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
@@ -331,7 +331,7 @@ class CalibrationLibrary:
             :return: CCDData object if succesful, False if not
         '''
 
-        filename = False
+        if write: filename = image['filename']
 
         if not dark:
             dark = self.find_master_dark(image)
@@ -345,7 +345,7 @@ class CalibrationLibrary:
         print(f'{Style.BRIGHT + Fore.GREEN}Dark subtraction...{Style.RESET_ALL}')
         calibrated_image = ccdp.subtract_dark(image, dark, exposure_time='EXPTIME', exposure_unit=u.second, scale=True)
 
-        if write and filename:
+        if write:
             new_filename = f'd_{filename}'
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
@@ -365,8 +365,8 @@ class CalibrationLibrary:
             :return: CCDData object if succesful, False if not
         '''
 
-        filename = False
-
+        filename = image['filename']
+        
         if not flat:
             flat = self.find_master_flat(image)
             if not flat:
@@ -379,7 +379,7 @@ class CalibrationLibrary:
         print(f'{Style.BRIGHT + Fore.GREEN}Flat correction...{Style.RESET_ALL}')
         calibrated_image = ccdp.flat_correct(image, flat)
 
-        if write and filename:
+        if write:
             new_filename = f'f_{filename}'
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
