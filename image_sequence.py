@@ -6,12 +6,13 @@ from pathlib import Path
 import sys
 import os
 
+from colorama import Fore, Back, Style
+import numpy as np
 from astropy.io import fits
 from astropy.stats import mad_std
 from astropy.nddata import CCDData
 import ccdproc as ccdp
-import numpy as np
-from colorama import Fore, Back, Style
+import pyds9
 
 import config as cfg
 import helpers as hlp
@@ -104,7 +105,7 @@ class ImageSequence:
 
     
     def integrate_sequence(self, flat=False, confirm=True, write=False):
-        ''' Integrates input sequence with the average method and pixel
+        ''' Integrates self sequence with the average method and pixel
             rejection (sigma clipping), configurable in ./config.py 
         
             :param sequence: ImageSequence object 
@@ -150,7 +151,7 @@ class ImageSequence:
 
 
     def register_sequence(self, reference, confirm=True):
-        ''' Registers input sequence against reference file and write files 
+        ''' Registers self sequence against reference file and write files 
             in new directory. 
         
             :param reference: string (filename)
@@ -174,3 +175,23 @@ class ImageSequence:
             print(f'{Style.BRIGHT}[{count}/{len(self.filenames)}]{Style.RESET_ALL} Computing for {filename}...')
             ccdp.wcs_project(hlp.extract_ccd(image), target_wcs).write(write_path / filename, overwrite=True)
             count += 1
+
+    def blink_sequence(self, interval):
+        ''' Blinks images in sequence with ds9. 
+        
+            :param interval: float (blink interval in seconds)
+        '''
+
+        work_pwd = './' + self.filenames[0][0:self.filenames[0].find('/')] + '/'
+        d = pyds9.DS9()
+
+        for filename in self.filenames:
+            d.set(f'file new {filename}')
+            d.set('zoom to fit')
+            d.set('scale zscale')
+        
+        d.set('frame move first')
+        d.set('frame delete')
+        d.set('frame match wcs')
+        d.set('blink yes')
+        d.set('blink interval ' + str(interval))

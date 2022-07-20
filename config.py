@@ -48,6 +48,11 @@ TESTED_FITS_CARDS = [
                 'values': []
             },
             {
+                'name': 'FILTER',
+                'tolerance': 0,
+                'values': []
+            },
+            {
                 'name': 'CCD-TEMP',
                 'tolerance': TEMP_TOLERANCE,
                 'values': []
