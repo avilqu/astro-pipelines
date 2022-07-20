@@ -39,24 +39,3 @@ def print_config():
     print(f'{Style.BRIGHT + Fore.BLUE}Pixel rejection sigma low:{Style.RESET_ALL} {cfg.SIGMA_LOW}')
     print(f'{Style.BRIGHT + Fore.BLUE}Pixel rejection sigma high:{Style.RESET_ALL} {cfg.SIGMA_HIGH}')
     print(f'{Style.BRIGHT + Fore.BLUE}Tested FITS header cards:{Style.RESET_ALL} {cfg.TESTED_FITS_CARDS}')
-
-
-# def header_correction(collection):
-#     ''' Applies various corrections to the FITS header '''
-
-#     print('Applying header corrections...')
-#     for hdu in collection.hdus(overwrite=True):
-#         hdu.header['bunit'] = 'adu'
-#         hdu.header.pop('radecsys', None)
-#         hdu.header['radesys'] = 'FK5'
-
-
-# def collection_summary(collection, rows):
-#     ''' Displays a summary table of FITS collection '''
-
-#     for hdu in collection.hdus(overwrite=True):
-#         for row in rows:
-#             if not row in hdu.header:
-#                 rows.remove(row)
-
-#     print(collection.summary[(rows)])
