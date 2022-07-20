@@ -4,19 +4,18 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
-import warnings
-from astropy import wcs
-warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
-
-import helpers as hlp
 
 if __name__ == "__main__":
 
     import argparse
-
     from colorama import Fore, Back, Style
+    import warnings
+    from astropy import wcs
+    warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
 
     from image_sequence import ImageSequence
+    import helpers as hlp
+
     
     parser = argparse.ArgumentParser(description='Suite of various tools for astronomical images reduction. See /config.py before use.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='*')
@@ -29,6 +28,7 @@ if __name__ == "__main__":
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
     parser.add_argument('-c', '--config', action='store_true', help='print current config')
     args = parser.parse_args()
+
 
     print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
     from calibration_library import CalibrationLibrary
@@ -108,14 +108,13 @@ if __name__ == "__main__":
         seq.check_sequence_consistency()
         
         seq.register_sequence(args.register)
+
+    elif args.integrate:
+        seq = ImageSequence(args.files)
+        seq.check_sequence_consistency()
+        
+        seq.integrate_sequence(write=True)
                   
     else:
         print(f'{Style.BRIGHT + Fore.RED}Wrong operation!{Style.RESET_ALL}')
         parser.print_help()
-
-    # seq = ImageSequence(args.files)
-    # cal.find_master_bias(seq.files[0])
-
-    # seq.check_sequence_consistency()
-    # mb = cal.generate_master_bias(seq)
-    # seq.calibrate_sequence()

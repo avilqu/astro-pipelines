@@ -2,6 +2,8 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
+import inspect
+
 from astropy.nddata import CCDData
 from colorama import Fore, Back, Style
 
@@ -26,7 +28,7 @@ def extract_ccd(image):
 
 def print_config():
     ''' Prints all config constants '''
-   
+
     print(f'{Style.BRIGHT + Fore.BLUE}Root path:{Style.RESET_ALL} {cfg.ROOT_PATH}')
     print(f'{Style.BRIGHT + Fore.BLUE}Calibration path:{Style.RESET_ALL} {cfg.CALIBRATION_PATH}')
     print(f'{Style.BRIGHT + Fore.BLUE}Observer:{Style.RESET_ALL} {cfg.OBSERVER}')

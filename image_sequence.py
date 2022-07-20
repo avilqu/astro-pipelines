@@ -16,9 +16,10 @@ from colorama import Fore, Back, Style
 import config as cfg
 import helpers as hlp
 
+
 class ImageSequence:
 
-
+  
     def __init__(self, data):
         if len(data) == 0:
             print(f'{Style.BRIGHT + Fore.RED}No input files!{Style.RESET_ALL}')
@@ -102,7 +103,7 @@ class ImageSequence:
         return res
 
     
-    def integrate_sequence(self, flat=False, confirm=True):
+    def integrate_sequence(self, flat=False, confirm=True, write=False):
         ''' Integrates input sequence with the average method and pixel
             rejection (sigma clipping), configurable in ./config.py 
         
@@ -131,13 +132,19 @@ class ImageSequence:
             sigma_clip_high_thresh=cfg.SIGMA_HIGH,
             sigma_clip_func=np.ma.median,
             sigma_clip_dev_func=mad_std,
-            mem_limit=300e7
+            mem_limit=600e7
         )
 
         stack.meta['COMBINED'] = True
         stack.uncertainty = None
         stack.mask = None
         stack.flags = None
+
+        if write:
+            filter_code = stack.header['FILTER']
+            filename = f'master_{filter_code}.fits'
+            print(f'-- Writing {filename}...')
+            stack.write(filename, overwrite=True)
        
         return stack
 

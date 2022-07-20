@@ -20,8 +20,10 @@ from image_sequence import ImageSequence
 import config as cfg
 import helpers as hlp
 
+
 write_path = Path(f'{os.getcwd()}/calibrated')
 write_path.mkdir(exist_ok=True)
+
 
 class CalibrationLibrary:
 
