@@ -2,16 +2,19 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
+from pathlib import Path
 import sys
 import os
 
 from astropy.io import fits
+from astropy.stats import mad_std
 from astropy.nddata import CCDData
+import ccdproc as ccdp
+import numpy as np
 from colorama import Fore, Back, Style
 
 import config as cfg
 import helpers as hlp
-# from calibration_library import CalibrationLibrary
 
 class ImageSequence:
 
@@ -30,8 +33,6 @@ class ImageSequence:
                 'filename': os.path.basename(filename),
                 'header': fits.getheader(filename, ext=0),
                 'path': filename
-                # 'data': fits.getdata(filename, ext=0),
-                # 'ccd': CCDData.read(filename, unit='adu')
             })
             self.data.append(fits.getdata(filename, ext=0))
             self.filenames.append(filename)
@@ -42,7 +43,7 @@ class ImageSequence:
         
             :param array: the array to check
             :param name: the header card name (eg: 'CCD-TEMP')
-            :return: true if array is consistent
+            :return: True if array is consistent
         '''
             
         values = []
@@ -79,7 +80,7 @@ class ImageSequence:
         ''' Procedes to various checks over several header cards to
             test for the sanity of the FITS collection before integration 
         
-            :return: true if no warnings
+            :return: True if no warning
         '''
 
         tested_cards = cfg.TESTED_FITS_CARDS
@@ -99,3 +100,70 @@ class ImageSequence:
             hlp.prompt()
 
         return res
+
+    
+    def integrate_sequence(self, flat=False, confirm=True):
+        ''' Integrates input sequence with the average method and pixel
+            rejection (sigma clipping), configurable in ./config.py 
+        
+            :param sequence: ImageSequence object 
+            :param flat: if True, uses inverse median as scale - use for master flats
+            :confirm: set to False to skip confirmation prompt
+            :return: CCDData object
+        '''
+
+        print(f'\n{Style.BRIGHT}Integrating {len(self.filenames)} files...{Style.RESET_ALL}')
+        if confirm:
+            hlp.prompt()
+
+        scale = None
+        if flat:
+            def inv_median(a):
+                return 1 / np.median(a)
+            scale = inv_median
+
+        stack = ccdp.combine(
+            self.filenames,
+            method='average',
+            scale=scale,
+            sigma_clip=True,
+            sigma_clip_low_thresh=cfg.SIGMA_LOW,
+            sigma_clip_high_thresh=cfg.SIGMA_HIGH,
+            sigma_clip_func=np.ma.median,
+            sigma_clip_dev_func=mad_std,
+            mem_limit=300e7
+        )
+
+        stack.meta['COMBINED'] = True
+        stack.uncertainty = None
+        stack.mask = None
+        stack.flags = None
+       
+        return stack
+
+
+    def register_sequence(self, reference, confirm=True):
+        ''' Registers input sequence against reference file and write files 
+            in new directory. 
+        
+            :param reference: string (filename)
+            :confirm: set to False to skip confirmation prompt
+            :return: True if successful
+        '''
+
+        print(f'\n{Style.BRIGHT}Registering {len(self.filenames)} files.{Style.RESET_ALL}')
+        print(f'-- Reference frame: {reference}')
+        if confirm:
+            hlp.prompt()
+
+        write_path = Path(f'{os.getcwd()}/registered')
+        write_path.mkdir(exist_ok=True)
+
+        target_wcs = ccdp.CCDData.read(reference).wcs
+        
+        count = 1
+        for image in self.files:
+            filename = image['filename']
+            print(f'{Style.BRIGHT}[{count}/{len(self.filenames)}]{Style.RESET_ALL} Computing for {filename}...')
+            ccdp.wcs_project(hlp.extract_ccd(image), target_wcs).write(write_path / filename, overwrite=True)
+            count += 1

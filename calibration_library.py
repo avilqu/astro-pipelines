@@ -46,57 +46,17 @@ class CalibrationLibrary:
                 self.flats.append(file)
 
 
-    def image_integration(self, sequence, flat=False, confirm=True):
-        ''' Integrates input files with the average method and pixel
-            rejection (sigma clipping), configuratble in ./config.py 
-        
-            :param sequence: ImageSequence object 
-            :param flat: if True, uses inverse median as scale - use for master flats
-            :confirm: set to False to skip confirmation prompt
-            :return: CCDData object
-        '''
-
-        print(f'\n{Style.BRIGHT}Integrating {len(sequence.filenames)} files...{Style.RESET_ALL}')
-        if confirm:
-            hlp.prompt()
-
-        scale = None
-        if flat:
-            def inv_median(a):
-                return 1 / np.median(a)
-            scale = inv_median
-
-        stack = ccdp.combine(
-            sequence.filenames,
-            method='average',
-            scale=scale,
-            sigma_clip=True,
-            sigma_clip_low_thresh=cfg.SIGMA_LOW,
-            sigma_clip_high_thresh=cfg.SIGMA_HIGH,
-            sigma_clip_func=np.ma.median,
-            sigma_clip_dev_func=mad_std,
-            mem_limit=300e7
-        )
-
-        stack.meta['COMBINED'] = True
-        stack.uncertainty = None
-        stack.mask = None
-        stack.flags = None
-       
-        return stack
-
-
-    def generate_master_bias(self, sequence):
+    def generate_master_bias(self, seq):
         ''' Generates a master bias from the input FITS sequence 
         
-            :param sequence: ImageSequence object
+            :param seq: ImageSequence object
             :return: True if successful
         '''
 
-        print(f'\n{Style.BRIGHT}Generating master bias from {len(sequence.filenames)} files.{Style.RESET_ALL}')
+        print(f'\n{Style.BRIGHT}Generating master bias from {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
 
-        stack = self.image_integration(sequence, confirm=False)
+        stack = seq.integrate_sequence(confirm=False)
 
         ccd_temp = str(round(stack.header['CCD-TEMP']))
         date_obs = datetime.strptime(stack.header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f')
@@ -114,19 +74,19 @@ class CalibrationLibrary:
         return True
 
 
-    def generate_master_dark(self, sequence):
+    def generate_master_dark(self, seq):
         ''' Generates a calibrated master dark (bias subtracted)
             from the input FITS sequence 
         
-            :param sequence: ImageSequence object
+            :param seq: ImageSequence object
             :return: True if success, False if failure
         '''
 
-        print(f'\n{Style.BRIGHT}Generating master dark from {len(sequence.filenames)} files.{Style.RESET_ALL}')
+        print(f'\n{Style.BRIGHT}Generating master dark from {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
 
-        print(f'\n{Style.BRIGHT}Calibrating {len(sequence.filenames)} files.{Style.RESET_ALL}...')
-        for image in sequence.files:
+        print(f'\n{Style.BRIGHT}Calibrating {len(seq.filenames)} files.{Style.RESET_ALL}...')
+        for image in seq.files:
             filename = image['filename']
             ccd_temp = image['header']['CCD-TEMP']
             gain = image['header']['GAIN']
@@ -154,7 +114,7 @@ class CalibrationLibrary:
             calibrated_files.append(file)
         calibrated_sequence = ImageSequence(calibrated_files)
 
-        stack = self.image_integration(calibrated_sequence, confirm=False)
+        stack = calibrated_sequence.integrate_sequence(confirm=False)
 
         exptime = str(round(stack.header['EXPTIME']))
         ccd_temp = str(round(stack.header['CCD-TEMP']))
@@ -173,18 +133,18 @@ class CalibrationLibrary:
         return True
 
 
-    def generate_master_flat(self, sequence):
+    def generate_master_flat(self, seq):
         ''' Generates a master flat from the input FITS sequence 
         
-            :param sequence: ImageSequence object
+            :param seq: ImageSequence object
             :return: True if success, False if failure
         '''
 
-        print(f'\n{Style.BRIGHT}Generating master flat from {len(sequence.filenames)} files.{Style.RESET_ALL}')
+        print(f'\n{Style.BRIGHT}Generating master flat from {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
 
-        print(f'\n{Style.BRIGHT}Calibrating {len(sequence.filenames)} files.{Style.RESET_ALL}...')
-        for image in sequence.files:
+        print(f'\n{Style.BRIGHT}Calibrating {len(seq.filenames)} files.{Style.RESET_ALL}...')
+        for image in seq.files:
             filename = image['filename']
             ccd_temp = image['header']['CCD-TEMP']
             gain = image['header']['GAIN']
@@ -221,7 +181,7 @@ class CalibrationLibrary:
             calibrated_files.append(file)
         calibrated_sequence = ImageSequence(calibrated_files)
 
-        stack = self.image_integration(calibrated_sequence, flat=True, confirm=False)
+        stack = calibrated_sequence.integrate_sequence(flat=True, confirm=False)
 
         filter_code = stack.header['FILTER']
         ccd_temp = str(round(stack.header['CCD-TEMP']))
@@ -343,12 +303,8 @@ class CalibrationLibrary:
                 print(f'{Style.BRIGHT + Fore.RED}No bias substraction.{Style.RESET_ALL}')
                 return False
 
-        if not isinstance(image, CCDData):
-            filename = image['filename']
-            image = CCDData.read(image['path'], unit='adu')
-
-        if not isinstance(bias, CCDData):
-            bias = CCDData.read(bias['path'], unit='adu')
+        image = hlp.extract_ccd(image)
+        bias = hlp.extract_ccd(bias)
 
         print(f'{Style.BRIGHT + Fore.GREEN}Bias subtraction...{Style.RESET_ALL}')
         calibrated_image = ccdp.subtract_bias(image, bias)
@@ -381,12 +337,8 @@ class CalibrationLibrary:
                 print(f'{Style.BRIGHT + Fore.RED}No dark substraction.{Style.RESET_ALL}')
                 return False
 
-        if not isinstance(image, CCDData):
-            filename = image['filename']
-            image = CCDData.read(image['path'], unit='adu')
-
-        if not isinstance(dark, CCDData):
-            dark = CCDData.read(dark['path'], unit='adu')
+        image = hlp.extract_ccd(image)
+        dark = hlp.extract_ccd(dark)
 
         print(f'{Style.BRIGHT + Fore.GREEN}Dark subtraction...{Style.RESET_ALL}')
         calibrated_image = ccdp.subtract_dark(image, dark, exposure_time='EXPTIME', exposure_unit=u.second, scale=True)
@@ -419,12 +371,8 @@ class CalibrationLibrary:
                 print(f'{Style.BRIGHT + Fore.RED}No flat correction.{Style.RESET_ALL}')
                 return False
 
-        if not isinstance(image, CCDData):
-            filename = image['filename']
-            image = CCDData.read(image['path'], unit='adu')
-
-        if not isinstance(flat, CCDData):
-            flat = CCDData.read(flat['path'], unit='adu')
+        image = hlp.extract_ccd(image)
+        flat = hlp.extract_ccd(flat)
 
         print(f'{Style.BRIGHT + Fore.GREEN}Flat correction...{Style.RESET_ALL}')
         calibrated_image = ccdp.flat_correct(image, flat)

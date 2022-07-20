@@ -25,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--bias', action='store_true', help='subtract bias from input files')
     parser.add_argument('-d', '--dark', action='store_true', help='subtract dark from input files')
     parser.add_argument('-f', '--flat', action='store_true', help='flat correction on input files')
+    parser.add_argument('-R', '--register', type=str, help='register platesolved files using WCS reprojection method (reference filename as argument)')
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
     parser.add_argument('-c', '--config', action='store_true', help='print current config')
     args = parser.parse_args()
@@ -101,6 +102,12 @@ if __name__ == "__main__":
 
     elif args.config:
         hlp.print_config()
+
+    elif args.register:
+        seq = ImageSequence(args.files)
+        seq.check_sequence_consistency()
+        
+        seq.register_sequence(args.register)
                   
     else:
         print(f'{Style.BRIGHT + Fore.RED}Wrong operation!{Style.RESET_ALL}')
