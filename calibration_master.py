@@ -31,7 +31,7 @@ class CalibrationMaster:
             self.collection = ccdp.ImageFileCollection(filenames=data)
 
     def print_calibration_masters(self):
-        print(f'Calibration masters for camera {cfg.CCD_LABEL}')
+        # print(f'Calibration masters for camera {cfg.CCD_LABEL}')
         try:
             print(self.masters.summary['frame', 'exptime', 'instrume',
                   'filter', 'ccd-temp', 'gain', 'offset', 'naxis1', 'naxis2'])
@@ -214,7 +214,7 @@ class CalibrationMaster:
             master_bias = self.find_master_bias(img)
             if master_bias:
                 print(
-                    f'{Fore.GREEN + Style.BRIGHT}Bias substraction...{Style.RESET_ALL}')
+                    f'{Fore.GREEN + Style.BRIGHT}Bias subtraction...{Style.RESET_ALL}')
                 img = ccdp.subtract_bias(img, master_bias)
 
         elif 'flatonly' in options:
@@ -229,7 +229,7 @@ class CalibrationMaster:
 
             if master_dark:
                 print(
-                    f'{Fore.GREEN + Style.BRIGHT}Dark substraction...{Style.RESET_ALL}')
+                    f'{Fore.GREEN + Style.BRIGHT}Dark subtraction...{Style.RESET_ALL}')
                 img = ccdp.subtract_dark(
                     img, master_dark, exposure_time='exptime', exposure_unit=u.second)
 
@@ -239,26 +239,26 @@ class CalibrationMaster:
                     master_bias = self.find_master_bias(img)
                     if master_bias:
                         print(
-                            f'{Fore.GREEN + Style.BRIGHT}Bias substraction...{Style.RESET_ALL}')
+                            f'{Fore.GREEN + Style.BRIGHT}Bias subtraction...{Style.RESET_ALL}')
                         img = ccdp.subtract_bias(img, master_bias)
                         print(
-                            f'{Fore.GREEN + Style.BRIGHT}Calibrated dark substraction...{Style.RESET_ALL}')
+                            f'{Fore.GREEN + Style.BRIGHT}Calibrated dark subtraction...{Style.RESET_ALL}')
                     else:
                         print(
-                            f'{Fore.YELLOW + Style.BRIGHT}Substracted calibrated dark without bias...{Style.RESET_ALL}')
+                            f'{Fore.YELLOW + Style.BRIGHT}Subtracted calibrated dark without bias...{Style.RESET_ALL}')
                     img = ccdp.subtract_dark(
                         img, master_dark, exposure_time='exptime', exposure_unit=u.second, scale=True)
                 else:
                     master_bias = self.find_master_bias(img)
                     if master_bias:
                         print(
-                            f'{Fore.RED + Style.BRIGHT}No dark substraction.{Style.RESET_ALL}')
+                            f'{Fore.RED + Style.BRIGHT}No dark subtraction.{Style.RESET_ALL}')
                         print(
-                            f'{Fore.GREEN + Style.BRIGHT}Bias substraction...{Style.RESET_ALL}')
+                            f'{Fore.GREEN + Style.BRIGHT}Bias subtraction...{Style.RESET_ALL}')
                         img = ccdp.subtract_bias(img, master_bias)
                     else:
                         print(
-                            f'{Fore.RED + Style.BRIGHT}No dark or bias substraction.{Style.RESET_ALL}')
+                            f'{Fore.RED + Style.BRIGHT}No dark or bias subtraction.{Style.RESET_ALL}')
 
             if not 'noflat' in options:
                 master_flat = self.find_master_flat(img)
@@ -288,12 +288,12 @@ class CalibrationMaster:
             gain = img.header['gain']
             offset = img.header['offset']
             exptime = img.header['exptime']
-            filter = img.header['filter']
+            # filter = img.header['filter']
             print(f'CCD_TEMP: {ccd_temp}')
             print(f'GAIN: {gain}')
             print(f'OFFSET: {offset}')
             print(f'EXPTIME: {exptime}')
-            print(f'FILTER: {filter}')
+            # print(f'FILTER: {filter}')
             self.calibrate_image(options, img).write(
                 write_path / fname, overwrite=True)
             count += 1

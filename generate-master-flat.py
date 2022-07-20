@@ -24,11 +24,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Master flat generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-substracted and raw masters.')
+        description='Master flat generation script. Uses average combination and sigma clipping pixel rejection. Generates bias-subtracted and raw masters.')
     parser.add_argument(
         'files', help='input files (FITS only)', type=str, nargs='+')
     parser.add_argument('-c', '--calibrated', action='store_true',
-                        help='generate bias-substracted master dark')
+                        help='generate bias-subtracted master dark')
     parser.add_argument(
         '-s', '--sigmalow', help='sigma low threshold for pixel rejection', default=5)
     parser.add_argument(
