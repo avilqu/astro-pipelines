@@ -11,8 +11,13 @@ if __name__ == "__main__":
     from colorama import Fore, Back, Style
     import warnings
 
+    # Silencing warning and info messages
     from astropy import wcs
+    from astropy.utils.exceptions import AstropyUserWarning
     warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
+    warnings.filterwarnings('ignore', category=AstropyUserWarning)
+    import logging, sys
+    logging.disable(sys.maxsize)
 
     from image_sequence import ImageSequence
     import helpers as hlp
@@ -27,7 +32,7 @@ if __name__ == "__main__":
     parser.add_argument('--flat', action='store_true', help='flat correction on input files')
     parser.add_argument('-R', '--register', type=str, help='register platesolved files using WCS reprojection method (reference filename as argument)')
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
-    parser.add_argument('-B', '--blink',type=float, help='blink input files (interval in seconds as argument)')
+    parser.add_argument('-B', '--blink',action='store_true', help='blink input files (interval in seconds as argument)')
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
 

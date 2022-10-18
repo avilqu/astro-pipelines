@@ -365,7 +365,7 @@ class CalibrationLibrary:
             :return: CCDData object if succesful, False if not
         '''
 
-        filename = image['filename']
+        if write: filename = image['filename']
         
         if not flat:
             flat = self.find_master_flat(image)
