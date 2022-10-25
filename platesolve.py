@@ -266,8 +266,9 @@ def solve_offline(options):
 if __name__ == "__main__":
 
     import argparse
+    import config as cfg
 
-    apiKey = 'zrvbykzuksfbcilr'
+    apiKey = cfg.ASTROMETRY_KEY
 
     parser = argparse.ArgumentParser(
         description='Solves one or a serie of FITS file using a local Astrometry.net engine. Tries by default to guess settings from WCS of first file in serie.')
