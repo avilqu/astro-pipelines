@@ -270,7 +270,7 @@ if __name__ == "__main__":
     apiKey = 'zrvbykzuksfbcilr'
 
     parser = argparse.ArgumentParser(
-        description='Solves one or a serie of FITS file. Tries by default to guess settings from WCS of first file in serie.')
+        description='Solves one or a serie of FITS file using a local Astrometry.net engine. Tries by default to guess settings from WCS of first file in serie.')
     parser.add_argument('files', help='input filename(s)', type=str, nargs='+')
     parser.add_argument(
         '-r', '--ra', help='estimated RA center (angle)', type=float, dest='ra')
