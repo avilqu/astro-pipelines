@@ -21,6 +21,7 @@ if __name__ == "__main__":
 
     from lib.image_sequence import ImageSequence
     import lib.helpers as hlp
+    import lib.astrometry
 
     
     parser = argparse.ArgumentParser(description='Suite of various tools for astronomical images reduction. See /config.py before use.')
@@ -33,6 +34,7 @@ if __name__ == "__main__":
     parser.add_argument('-R', '--register', type=str, help='register platesolved files using WCS reprojection method (reference filename as argument)')
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
     parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
+    parser.add_argument('--sso',action='store_true', help='overlay solar system object')
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
 
@@ -131,6 +133,11 @@ if __name__ == "__main__":
         seq = ImageSequence(args.files)
         
         seq.blink_sequence(args.blink)
+
+    elif args.sso:
+        seq = ImageSequence(args.files)
+
+        lib.astrometry.overlay_sso(seq.files[0])
 
     elif len(args.files) > 1:
         seq = ImageSequence(args.files)
