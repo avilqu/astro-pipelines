@@ -29,7 +29,6 @@ def extract_ccd(image):
 def print_config():
     ''' Prints all config constants '''
 
-    print(f'{Style.BRIGHT + Fore.BLUE}Root path:{Style.RESET_ALL} {cfg.ROOT_PATH}')
     print(f'{Style.BRIGHT + Fore.BLUE}Calibration path:{Style.RESET_ALL} {cfg.CALIBRATION_PATH}')
     print(f'{Style.BRIGHT + Fore.BLUE}Temperature tolerance:{Style.RESET_ALL} {cfg.TEMP_TOLERANCE}')
     print(f'{Style.BRIGHT + Fore.BLUE}Exposure tolerance:{Style.RESET_ALL} {cfg.EXP_TOLERANCE}')
