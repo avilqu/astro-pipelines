@@ -176,6 +176,7 @@ class ImageSequence:
             ccdp.wcs_project(hlp.extract_ccd(image), target_wcs).write(write_path / filename, overwrite=True)
             count += 1
 
+
     def blink_sequence(self, interval):
         ''' Blinks images in sequence with ds9. 
         
