@@ -15,7 +15,7 @@ import ccdproc as ccdp
 import pyds9
 
 import config as cfg
-import helpers as hlp
+import lib.helpers as hlp
 
 
 class ImageSequence:

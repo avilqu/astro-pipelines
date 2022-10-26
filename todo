@@ -1,20 +1,20 @@
 full pipeline (sequence)
   -F / --full
-  -- calibration + platesolving + seeing
+  -- calibration + platesolving + sources
 
 sso overlay (single)
   --sso
   -- mag limit
   -- shows image on ds9 with solar system objects overlayed
 
-find photometry reference stars
-  -r / --reference
-  -- outputs list of reference stars visible in the frame
-
 compute sources (single)
   -S / --sources
   -- generate seeing graph yes/no
   -- writes SEEING and SOURCES values in header
+
+find photometry reference stars
+  --phot-ref
+  -- outputs list of reference stars visible in the frame
 
 aperture photometry (single/sequence)
   -P / --photometry

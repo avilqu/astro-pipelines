@@ -19,7 +19,7 @@ import ccdproc as ccdp
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 
-import helpers as hlp
+import lib.helpers as hlp
 
 
 def open_session(key):

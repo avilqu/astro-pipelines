@@ -19,8 +19,8 @@ if __name__ == "__main__":
     import logging, sys
     logging.disable(sys.maxsize)
 
-    from image_sequence import ImageSequence
-    import helpers as hlp
+    from lib.image_sequence import ImageSequence
+    import lib.helpers as hlp
 
     
     parser = argparse.ArgumentParser(description='Suite of various tools for astronomical images reduction. See /config.py before use.')
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
 
     print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
-    from calibration_library import CalibrationLibrary
+    from lib.calibration_library import CalibrationLibrary
     cal = CalibrationLibrary()
 
     if args.masters:

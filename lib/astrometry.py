@@ -1,4 +1,4 @@
-''' Image analysis script.
+''' Methods for astrometry analysis and solar system object (SSO) data.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 

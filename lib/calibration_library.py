@@ -16,9 +16,9 @@ import ccdproc as ccdp
 import numpy as np
 from colorama import Fore, Back, Style
 
-from image_sequence import ImageSequence
+from lib.image_sequence import ImageSequence
 import config as cfg
-import helpers as hlp
+import lib.helpers as hlp
 
 
 write_path = Path(f'{os.getcwd()}/calibrated')
