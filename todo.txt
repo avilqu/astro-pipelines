@@ -1,0 +1,47 @@
+==============================
+astro-pipelines.py
+------------------------------
+full pipeline (sequence)
+  -F / --full
+  -- calibration + platesolving + sources
+==============================
+
+
+==============================
+astrometry.py
+-------------
+sso overlay (single)
+  --sso
+  -- mag limit
+  -- shows image on ds9 with solar system objects overlayed
+
+movement detection (sequence)
+  -A / --astrometric-detection
+==============================
+
+
+==============================
+photometry.py
+-------------
+find photometry reference stars
+  --phot-ref
+  -- outputs list of reference stars visible in the frame
+
+aperture photometry (single/sequence)
+  -P / --photometry
+  -- target name/coordinates
+  -- ref1 name/coordinates
+  -- ref2 name/coordinates
+
+brightness change detection (sequence)
+  -V / --photometric-detection
+==============================
+
+
+==============================
+sources.py
+-------------
+compute sources (single)
+  -S / --sources
+  -- generate seeing graph yes/no
+  -- writes SEEING and SOURCES values in header
