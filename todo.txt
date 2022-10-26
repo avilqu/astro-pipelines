@@ -10,10 +10,10 @@ full pipeline (sequence)
 ==============================
 astrometry.py
 -------------
-sso overlay (single)
-  --sso
-  -- mag limit
-  -- shows image on ds9 with solar system objects overlayed
+find object (single)
+  --find
+  -- object name
+  -- search object on CDS and overlays on image
 
 movement detection (sequence)
   -A / --astrometric-detection
