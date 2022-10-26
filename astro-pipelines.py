@@ -36,15 +36,17 @@ if __name__ == "__main__":
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
 
-
-    print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
-    from lib.calibration_library import CalibrationLibrary
-    cal = CalibrationLibrary()
+    def load_calibration_masters():
+        print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
+        from lib.calibration_library import CalibrationLibrary
+        return CalibrationLibrary()
 
     if args.masters:
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
         seq = ImageSequence(args.files)
         seq.check_sequence_consistency()
+
+        cal = load_calibration_masters()
 
         if args.masters == 'bias':
             cal.generate_master_bias(seq)
@@ -61,6 +63,8 @@ if __name__ == "__main__":
         seq = ImageSequence(args.files)
         seq.check_sequence_consistency()
 
+        cal = load_calibration_masters()
+
         print(f'\n{Style.BRIGHT}Subtracting bias from {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
 
@@ -73,6 +77,8 @@ if __name__ == "__main__":
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
         seq = ImageSequence(args.files)
         seq.check_sequence_consistency()
+
+        cal = load_calibration_masters()
 
         print(f'\n{Style.BRIGHT}Subtracting dark from {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
@@ -87,6 +93,8 @@ if __name__ == "__main__":
         seq = ImageSequence(args.files)
         seq.check_sequence_consistency()
 
+        cal = load_calibration_masters()
+
         print(f'\n{Style.BRIGHT}Flat correction for {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
 
@@ -99,6 +107,8 @@ if __name__ == "__main__":
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
         seq = ImageSequence(args.files)
         seq.check_sequence_consistency()
+
+        cal = load_calibration_masters()
 
         print(f'\n{Style.BRIGHT}Full image calibration for {len(seq.filenames)} files.{Style.RESET_ALL}')
         hlp.prompt()
