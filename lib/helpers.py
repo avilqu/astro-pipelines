@@ -31,9 +31,6 @@ def print_config():
 
     print(f'{Style.BRIGHT + Fore.BLUE}Root path:{Style.RESET_ALL} {cfg.ROOT_PATH}')
     print(f'{Style.BRIGHT + Fore.BLUE}Calibration path:{Style.RESET_ALL} {cfg.CALIBRATION_PATH}')
-    print(f'{Style.BRIGHT + Fore.BLUE}Observer:{Style.RESET_ALL} {cfg.OBSERVER}')
-    print(f'{Style.BRIGHT + Fore.BLUE}CCD name:{Style.RESET_ALL} {cfg.CCD_NAME}')
-    print(f'{Style.BRIGHT + Fore.BLUE}Telescope:{Style.RESET_ALL} {cfg.TELESCOPE}')
     print(f'{Style.BRIGHT + Fore.BLUE}Temperature tolerance:{Style.RESET_ALL} {cfg.TEMP_TOLERANCE}')
     print(f'{Style.BRIGHT + Fore.BLUE}Exposure tolerance:{Style.RESET_ALL} {cfg.EXP_TOLERANCE}')
     print(f'{Style.BRIGHT + Fore.BLUE}Pixel rejection sigma low:{Style.RESET_ALL} {cfg.SIGMA_LOW}')

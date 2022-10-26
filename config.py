@@ -8,19 +8,8 @@
 ROOT_PATH = '/home/tan/Astro'
 CALIBRATION_PATH = f'{ROOT_PATH}/calibration/QHY163'
 
-# The real-time pipeline will add/correct FITS header cards with
-# the data below.
-OBSERVER = 'Adrien Vilquin Barrajon'
-TELESCOPE = 'RC8 200/1620 f/8'
-CCD_NAME = 'QHYCCD QHY163M'
-
 # Astrometry.net API key
 ASTROMETRY_KEY = 'zrvbykzuksfbcilr'
-
-# Maximum time a calibration master can be used after its creation (in days)
-# FLAT_LIFESPAN = 1000
-# DARK_LIFESPAN = 1000
-# BIAS_LIFESPAN = 1000
 
 # Tolerance values used when checking for sequence consistency and
 # looking for suitable calibration masters
