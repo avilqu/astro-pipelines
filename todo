@@ -1,0 +1,29 @@
+full pipeline (sequence)
+  -F / --full
+  -- calibration + platesolving + seeing
+
+sso overlay (single)
+  --sso
+  -- mag limit
+  -- shows image on ds9 with solar system objects overlayed
+
+find photometry reference stars
+  -r / --reference
+  -- outputs list of reference stars visible in the frame
+
+compute sources (single)
+  -S / --sources
+  -- generate seeing graph yes/no
+  -- writes SEEING and SOURCES values in header
+
+aperture photometry (single/sequence)
+  -P / --photometry
+  -- target name/coordinates
+  -- ref1 name/coordinates
+  -- ref2 name/coordinates
+
+movement detection (sequence)
+  -A / --astrometric-detection
+
+brightness change detection (sequence)
+  -V / --photometric-detection

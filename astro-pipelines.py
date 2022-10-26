@@ -32,7 +32,7 @@ if __name__ == "__main__":
     parser.add_argument('--flat', action='store_true', help='flat correction on input files')
     parser.add_argument('-R', '--register', type=str, help='register platesolved files using WCS reprojection method (reference filename as argument)')
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
-    parser.add_argument('-B', '--blink',action='store_true', help='blink input files (interval in seconds as argument)')
+    parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
 
