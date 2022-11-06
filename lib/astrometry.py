@@ -11,22 +11,17 @@ from astroquery.simbad import Simbad
 from lib.data_display import DataDisplay
 
 
-def query_skybot(img):
-    field = SkyCoord(img['header']['ra']*u.deg, img['header']['dec']*u.deg)
-    epoch = Time(img['header']['date-obs'])
-    search_scale = ((img['header']['scale'] * img['header']['naxis2']) / 60)*u.arcmin
-    objects = Skybot.cone_search(field, search_scale, epoch)
-    return objects
-
-def query_simbad(input):
-    return Simbad.query_object(input)
-
 def overlay_sso(img, maglimit):
     d = DataDisplay(img)
     d.show()
 
+    field = SkyCoord(img['header']['ra']*u.deg, img['header']['dec']*u.deg)
+    epoch = Time(img['header']['date-obs'])
+    search_scale = ((img['header']['scale'] * img['header']['naxis2']) / 60)*u.arcmin
+    search_results = Skybot.cone_search(field, search_scale, epoch)
+
     objects = []
-    for obj in query_skybot(img):
+    for obj in search_results:
         if obj['V'].value < maglimit:
             objects.append({
                 'name': obj['Name'],
