@@ -5,10 +5,7 @@
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 import astropy.units as u
-from astropy.nddata import CCDData
 from astroquery.imcce import Skybot
-import pyds9
-import ccdproc as ccdp
 
 from lib.data_display import DataDisplay
 
