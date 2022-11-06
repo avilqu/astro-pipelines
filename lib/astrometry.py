@@ -13,7 +13,8 @@ from lib.data_display import DataDisplay
 def query_skybot(img):
     field = SkyCoord(img['header']['ra']*u.deg, img['header']['dec']*u.deg)
     epoch = Time(img['header']['date-obs'])
-    objects = Skybot.cone_search(field, 15*u.arcmin, epoch)
+    search_scale = ((img['header']['scale'] * img['header']['naxis2']) / 60)*u.arcmin
+    objects = Skybot.cone_search(field, search_scale, epoch)
     return objects
 
 def overlay_sso(img, maglimit):
