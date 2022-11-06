@@ -20,6 +20,7 @@ if __name__ == "__main__":
     logging.disable(sys.maxsize)
 
     from lib.image_sequence import ImageSequence
+    from lib.data_display import DataDisplay
     import lib.helpers as hlp
     import lib.astrometry
 
@@ -35,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
     parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
     parser.add_argument('--sso',action='store_true', help='overlay solar system object')
+    parser.add_argument('--show',action='store_true', help='display FITS image')
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
 
@@ -138,6 +140,12 @@ if __name__ == "__main__":
         seq = ImageSequence(args.files)
 
         lib.astrometry.overlay_sso(seq.files[0])
+
+    elif args.show:
+        seq = ImageSequence(args.files)
+
+        dd = DataDisplay(seq.files[0])
+        dd.show()
 
     elif len(args.files) > 1:
         seq = ImageSequence(args.files)

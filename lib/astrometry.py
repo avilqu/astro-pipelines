@@ -10,6 +10,8 @@ from astroquery.imcce import Skybot
 import pyds9
 import ccdproc as ccdp
 
+from lib.data_display import DataDisplay
+
 
 def query_skybot(img):
     field = SkyCoord(img['header']['ra']*u.deg, img['header']['dec']*u.deg)
@@ -18,12 +20,8 @@ def query_skybot(img):
     return objects
 
 def overlay_sso(img):
-    d = pyds9.DS9()
-    filename = img['filename']
-    data = CCDData.read(filename)
-    d.set(f'file new {filename}')
-    d.set('zoom to fit')
-    d.set('scale zscale')
+    d = DataDisplay(img)
+    d.show()
 
     objects = []
     for obj in query_skybot(img):
@@ -34,9 +32,9 @@ def overlay_sso(img):
             'geodist': obj['geodist'],
             'coord': SkyCoord(obj['RA'], obj['DEC'])
         })
+
     for obj in objects:
-        coord = data.wcs.world_to_pixel(obj['coord'])
-        d.set('regions', f'circle({coord[0]},{coord[1]},15)')
+        coord = d.data.wcs.world_to_pixel(obj['coord'])
+        d.overlay_object(coord)
 
     print(objects)
-    d.set('regions', f'fk5; circle({obj["coord"]},15)')
