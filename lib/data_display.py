@@ -13,7 +13,6 @@ class DataDisplay:
     def __init__(self, img):
         self.d = pyds9.DS9()
         self.filename = f'{img["path"]}'
-        print(self.filename)
         self.data = CCDData.read(self.filename)
     
     def show(self):

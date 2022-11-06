@@ -37,6 +37,7 @@ if __name__ == "__main__":
     parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
     parser.add_argument('--sso',type=int, help='overlay solar system object (mag limit as argument')
     parser.add_argument('--show',action='store_true', help='display FITS image')
+    parser.add_argument('--find', type=str, help='query SIMBAD and overlays result on input image')
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
 
@@ -146,6 +147,11 @@ if __name__ == "__main__":
 
         dd = DataDisplay(seq.files[0])
         dd.show()
+
+    elif args.find:
+        seq = ImageSequence(args.files)
+
+        lib.astrometry.find_object(seq.files[0], args.find)
 
     elif len(args.files) > 1:
         seq = ImageSequence(args.files)
