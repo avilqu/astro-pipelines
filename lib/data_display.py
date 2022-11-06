@@ -19,6 +19,7 @@ class DataDisplay:
         self.d.set('zoom to fit')
         self.d.set('scale zscale')
 
-    def overlay_object(self, coord, mag=15):
+    def overlay_object(self, coord, name, size=40):
         c = self.data.wcs.world_to_pixel(coord)
-        self.d.set('regions', f'circle({c[0]},{c[1]},{mag})')
+        self.d.set('regions', f'circle({c[0]},{c[1]},{size})')
+        self.d.set('regions', f'text({c[0]},{c[1]-100},"{name}")')
