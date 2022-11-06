@@ -8,6 +8,7 @@
 if __name__ == "__main__":
 
     import argparse
+    import sys
     from colorama import Fore, Back, Style
     import warnings
 
@@ -45,6 +46,11 @@ if __name__ == "__main__":
         print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
         from lib.calibration_library import CalibrationLibrary
         return CalibrationLibrary()
+    
+    def single_file_filter():
+        if len(args.files) > 1:
+            print(f'{Style.BRIGHT + Fore.RED}This option requires a single input file.{Style.RESET_ALL}')
+            sys.exit()
 
     if args.masters:
         cal = load_calibration_masters()
@@ -138,17 +144,23 @@ if __name__ == "__main__":
         seq.blink_sequence(args.blink)
 
     elif args.sso:
+        single_file_filter()
+
         seq = ImageSequence(args.files)
 
         lib.astrometry.overlay_sso(seq.files[0], args.sso)
 
     elif args.show:
+        single_file_filter()
+        
         seq = ImageSequence(args.files)
 
         dd = DataDisplay(seq.files[0])
         dd.show()
 
     elif args.find:
+        single_file_filter()
+        
         seq = ImageSequence(args.files)
 
         lib.astrometry.find_object(seq.files[0], args.find)
