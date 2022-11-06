@@ -20,4 +20,5 @@ class DataDisplay:
         self.d.set('scale zscale')
 
     def overlay_object(self, coord, mag=15):
-        self.d.set('regions', f'circle({coord[0]},{coord[1]},{mag})')
+        c = self.data.wcs.world_to_pixel(coord)
+        self.d.set('regions', f'circle({c[0]},{c[1]},{mag})')

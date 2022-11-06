@@ -34,7 +34,6 @@ def overlay_sso(img):
         })
 
     for obj in objects:
-        coord = d.data.wcs.world_to_pixel(obj['coord'])
-        d.overlay_object(coord)
+        d.overlay_object(obj['coord'])
 
     print(objects)
