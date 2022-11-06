@@ -2,6 +2,7 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
+import os
 import pyds9
 from astropy.nddata import CCDData
 
@@ -11,7 +12,8 @@ class DataDisplay:
 
     def __init__(self, img):
         self.d = pyds9.DS9()
-        self.filename = img['filename']
+        self.filename = f'{img["path"]}'
+        print(self.filename)
         self.data = CCDData.read(self.filename)
     
     def show(self):
