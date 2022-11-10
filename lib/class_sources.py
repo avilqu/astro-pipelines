@@ -13,7 +13,7 @@ class Sources:
         self.data = data
         self.nddata = fits.getdata(data['path'], ext=0)
 
-        daofind = DAOStarFinder(fwhm=5.0, threshold=900)
+        daofind = DAOStarFinder(fwhm=3.0, threshold=1000)
         self.sources = daofind(self.nddata)
 
     def show_sources(self):

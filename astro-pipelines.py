@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument('-R', '--register', type=str, help='register platesolved files using WCS reprojection method (reference filename as argument)')
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
     parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
-    parser.add_argument('--sso',type=int, help='overlay solar system object (mag limit as argument')
+    parser.add_argument('--sso',type=int, help='overlay solar system object (mag limit as argument)')
     parser.add_argument('--show',action='store_true', help='display FITS image')
     parser.add_argument('--sources',action='store_true', help='extract and show sources')
     parser.add_argument('--find', type=str, help='query SIMBAD and overlays result on input image')
