@@ -18,7 +18,7 @@ def prompt():
 
 
 def extract_ccd(image):
-    ''' Returns CCDData of image in case it's an ImageSequence element '''
+    ''' Returns CCDData of image in case it's an FITSSequence element '''
     
     if not isinstance(image, CCDData):
         return CCDData.read(image['path'], unit='adu')

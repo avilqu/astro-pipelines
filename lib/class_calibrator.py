@@ -1,4 +1,4 @@
-''' CalibrationLibrary class definition (creation, storage and use of bias, dark and flat calibration masters)
+''' Calibrator class definition (creation, storage and use of bias, dark and flat calibration masters)
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
@@ -16,7 +16,7 @@ import ccdproc as ccdp
 import numpy as np
 from colorama import Fore, Back, Style
 
-from lib.class_image_sequence import ImageSequence
+from lib.class_fits_sequence import FITSSequence
 import config as cfg
 import lib.helpers as hlp
 
@@ -25,7 +25,7 @@ write_path = Path(f'{os.getcwd()}/calibrated')
 write_path.mkdir(exist_ok=True)
 
 
-class CalibrationLibrary:
+class Calibrator:
 
 
     def __init__(self, data=None):
@@ -33,7 +33,7 @@ class CalibrationLibrary:
         
         for file in glob.glob(f'{cfg.CALIBRATION_PATH}/*.fits'):
             self.master_files.append(file)
-        self.masters = ImageSequence(self.master_files)
+        self.masters = FITSSequence(self.master_files)
         
         self.biases = []
         self.darks = []
@@ -51,7 +51,7 @@ class CalibrationLibrary:
     def generate_master_bias(self, seq):
         ''' Generates a master bias from the input FITS sequence 
         
-            :param seq: ImageSequence object
+            :param seq: FITSSequence object
             :return: True if successful
         '''
 
@@ -80,7 +80,7 @@ class CalibrationLibrary:
         ''' Generates a calibrated master dark (bias subtracted)
             from the input FITS sequence 
         
-            :param seq: ImageSequence object
+            :param seq: FITSSequence object
             :return: True if success, False if failure
         '''
 
@@ -114,7 +114,7 @@ class CalibrationLibrary:
         calibrated_files = []
         for file in glob.glob(f'{write_path}/*.fits'):
             calibrated_files.append(file)
-        calibrated_sequence = ImageSequence(calibrated_files)
+        calibrated_sequence = FITSSequence(calibrated_files)
 
         stack = calibrated_sequence.integrate_sequence(confirm=False)
 
@@ -138,7 +138,7 @@ class CalibrationLibrary:
     def generate_master_flat(self, seq):
         ''' Generates a master flat from the input FITS sequence 
         
-            :param seq: ImageSequence object
+            :param seq: FITSSequence object
             :return: True if success, False if failure
         '''
 
@@ -181,7 +181,7 @@ class CalibrationLibrary:
         calibrated_files = []
         for file in glob.glob(f'{write_path}/*.fits'):
             calibrated_files.append(file)
-        calibrated_sequence = ImageSequence(calibrated_files)
+        calibrated_sequence = FITSSequence(calibrated_files)
 
         stack = calibrated_sequence.integrate_sequence(flat=True, confirm=False)
 
@@ -206,8 +206,8 @@ class CalibrationLibrary:
         ''' Selects a suitable master bias with matching bias,
             offset and CCD temperature
 
-            :param image: single element from ImageSequence
-            :return: single element from ImageSequence if found, False if not
+            :param image: single element from FITSSequence
+            :return: single element from FITSSequence if found, False if not
         '''
 
         temp = image['header']['CCD-TEMP']
@@ -233,8 +233,8 @@ class CalibrationLibrary:
         ''' Selects a suitable calibrated master dark 
             with matching bias, offset and CCD temperature
 
-            :param image: single element from ImageSequence
-            :return: single element from ImageSequence if found, False if not
+            :param image: single element from FITSSequence
+            :return: single element from FITSSequence if found, False if not
         '''
 
         exposure = image['header']['EXPTIME']
@@ -261,8 +261,8 @@ class CalibrationLibrary:
         ''' Selects a suitable calibrated master flat with matching 
             filter, bias, offset and CCD temperature
 
-            :param image: single element from ImageSequence
-            :return: single element from ImageSequence if found, False if not
+            :param image: single element from FITSSequence
+            :return: single element from FITSSequence if found, False if not
         '''
 
         filter_code = image['header']['FILTER']
@@ -291,8 +291,8 @@ class CalibrationLibrary:
             Autodetects if 'image' and 'bias' are CCDData objects 
             and creates them if not.
 
-            :param image: single element from ImageSequence or CCDData
-            :param bias: single element from ImageSequence or CCDData
+            :param image: single element from FITSSequence or CCDData
+            :param bias: single element from FITSSequence or CCDData
             :param write: boolean, set to True to write file
             :return: CCDData object if succesful, False if not
         '''
@@ -325,8 +325,8 @@ class CalibrationLibrary:
             Autodetects if 'image' and 'bias' are CCDData objects 
             and creates them if not.
 
-            :param image: single element from ImageSequence or CCDData
-            :param dark: single element from ImageSequence or CCDData
+            :param image: single element from FITSSequence or CCDData
+            :param dark: single element from FITSSequence or CCDData
             :param write: boolean, set to True to write file
             :return: CCDData object if succesful, False if not
         '''
@@ -359,8 +359,8 @@ class CalibrationLibrary:
             Autodetects if 'image' and 'bias' are CCDData objects 
             and creates them if not.
 
-            :param image: single element from ImageSequence or CCDData
-            :param flat: single element from ImageSequence or CCDData
+            :param image: single element from FITSSequence or CCDData
+            :param flat: single element from FITSSequence or CCDData
             :param write: boolean, set to True to write file
             :return: CCDData object if succesful, False if not
         '''
@@ -394,11 +394,11 @@ class CalibrationLibrary:
             Autodetects if 'image' and 'bias' are CCDData objects 
             and creates them if not.
 
-            :param image: single element from ImageSequence or CCDData
+            :param image: single element from FITSSequence or CCDData
             :param steps: python dict {bias, dark, flat: True/False}
-            :param bias: single element from ImageSequence or CCDData
-            :param dark: single element from ImageSequence or CCDData
-            :param flat: single element from ImageSequence or CCDData
+            :param bias: single element from FITSSequence or CCDData
+            :param dark: single element from FITSSequence or CCDData
+            :param flat: single element from FITSSequence or CCDData
             :return: CCDData object if succesful, False if not
         '''
 

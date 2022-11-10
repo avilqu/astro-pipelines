@@ -20,7 +20,7 @@ if __name__ == "__main__":
     import logging, sys
     logging.disable(sys.maxsize)
 
-    from lib.class_image_sequence import ImageSequence
+    from lib.class_fits_sequence import FITSSequence
     from lib.data_display import DataDisplay
     import lib.helpers as hlp
     import lib.astrometry
@@ -44,8 +44,8 @@ if __name__ == "__main__":
 
     def load_calibration_masters():
         print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
-        from lib.class_calibration_library import CalibrationLibrary
-        return CalibrationLibrary()
+        from lib.class_calibrator import Calibrator
+        return Calibrator()
     
     def single_file_filter():
         if len(args.files) > 1:
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     if args.masters:
         cal = load_calibration_masters()
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
 
         if args.masters == 'bias':
@@ -71,7 +71,7 @@ if __name__ == "__main__":
     elif args.bias:
         cal = load_calibration_masters()
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
 
         print(f'\n{Style.BRIGHT}Subtracting bias from {len(seq.filenames)} files.{Style.RESET_ALL}')
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     elif args.dark:
         cal = load_calibration_masters()
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
 
         print(f'\n{Style.BRIGHT}Subtracting dark from {len(seq.filenames)} files.{Style.RESET_ALL}')
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     elif args.flat:
         cal = load_calibration_masters()
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
 
         print(f'\n{Style.BRIGHT}Flat correction for {len(seq.filenames)} files.{Style.RESET_ALL}')
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     elif args.calibrate:
         cal = load_calibration_masters()
         print(f'{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}')
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
 
         print(f'\n{Style.BRIGHT}Full image calibration for {len(seq.filenames)} files.{Style.RESET_ALL}')
@@ -127,33 +127,33 @@ if __name__ == "__main__":
         hlp.print_config()
 
     elif args.register:
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
         
         seq.register_sequence(args.register)
 
     elif args.integrate:
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
         
         seq.integrate_sequence(write=True)
 
     elif args.blink:
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         
         seq.blink_sequence(args.blink)
 
     elif args.sso:
         single_file_filter()
 
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
 
         lib.astrometry.overlay_sso(seq.files[0], args.sso)
 
     elif args.show:
         single_file_filter()
         
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
 
         dd = DataDisplay(seq.files[0])
         dd.show()
@@ -161,12 +161,12 @@ if __name__ == "__main__":
     elif args.find:
         single_file_filter()
         
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
 
         lib.astrometry.find_object(seq.files[0], args.find)
 
     elif len(args.files) > 1:
-        seq = ImageSequence(args.files)
+        seq = FITSSequence(args.files)
         seq.check_sequence_consistency()
 
     elif len(args.files) == 1:

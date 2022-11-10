@@ -1,4 +1,4 @@
-''' ImageSequence class definition (data check, registration, integration).
+''' FITSSequence class definition (data check, registration, integration).
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
@@ -18,7 +18,7 @@ import config as cfg
 import lib.helpers as hlp
 
 
-class ImageSequence:
+class FITSSequence:
 
   
     def __init__(self, data):
@@ -108,7 +108,7 @@ class ImageSequence:
         ''' Integrates self sequence with the average method and pixel
             rejection (sigma clipping), configurable in ./config.py 
         
-            :param sequence: ImageSequence object 
+            :param sequence: FITSSequence object 
             :param flat: if True, uses inverse median as scale - use for master flats
             :confirm: set to False to skip confirmation prompt
             :return: CCDData object
