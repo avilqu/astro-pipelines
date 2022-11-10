@@ -21,7 +21,8 @@ if __name__ == "__main__":
     logging.disable(sys.maxsize)
 
     from lib.class_fits_sequence import FITSSequence
-    from lib.data_display import DataDisplay
+    from lib.class_data_display import DataDisplay
+    from lib.class_sources import Sources
     import lib.helpers as hlp
     import lib.astrometry
 
@@ -38,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
     parser.add_argument('--sso',type=int, help='overlay solar system object (mag limit as argument')
     parser.add_argument('--show',action='store_true', help='display FITS image')
+    parser.add_argument('--sources',action='store_true', help='extract and show sources')
     parser.add_argument('--find', type=str, help='query SIMBAD and overlays result on input image')
     parser.add_argument('--config', action='store_true', help='print current config')
     args = parser.parse_args()
@@ -164,6 +166,14 @@ if __name__ == "__main__":
         seq = FITSSequence(args.files)
 
         lib.astrometry.find_object(seq.files[0], args.find)
+
+    elif args.sources:
+        single_file_filter()
+        
+        seq = FITSSequence(args.files)
+
+        sources = Sources(seq.files[0])
+        sources.show_sources()
 
     elif len(args.files) > 1:
         seq = FITSSequence(args.files)

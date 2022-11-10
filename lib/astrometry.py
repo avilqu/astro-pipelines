@@ -8,7 +8,7 @@ import astropy.units as u
 from astroquery.imcce import Skybot
 from astroquery.simbad import Simbad
 
-from lib.data_display import DataDisplay
+from lib.class_data_display import DataDisplay
 
 
 def overlay_sso(img, maglimit):
