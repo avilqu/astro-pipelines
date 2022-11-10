@@ -1,4 +1,4 @@
-''' Contains all the routines related to the creation, storage and use of calibration masters (bias, darks, flats).
+''' CalibrationLibrary class definition (creation, storage and use of bias, dark and flat calibration masters)
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
@@ -16,7 +16,7 @@ import ccdproc as ccdp
 import numpy as np
 from colorama import Fore, Back, Style
 
-from lib.image_sequence import ImageSequence
+from lib.class_image_sequence import ImageSequence
 import config as cfg
 import lib.helpers as hlp
 

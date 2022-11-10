@@ -1,4 +1,4 @@
-''' Tools for managing a sequence of FITS files.
+''' ImageSequence class definition (data check, registration, integration).
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 

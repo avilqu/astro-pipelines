@@ -20,7 +20,7 @@ if __name__ == "__main__":
     import logging, sys
     logging.disable(sys.maxsize)
 
-    from lib.image_sequence import ImageSequence
+    from lib.class_image_sequence import ImageSequence
     from lib.data_display import DataDisplay
     import lib.helpers as hlp
     import lib.astrometry
@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     def load_calibration_masters():
         print(f'{Style.BRIGHT}Loading calibration masters...{Style.RESET_ALL}')
-        from lib.calibration_library import CalibrationLibrary
+        from lib.class_calibration_library import CalibrationLibrary
         return CalibrationLibrary()
     
     def single_file_filter():
