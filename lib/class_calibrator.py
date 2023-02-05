@@ -90,17 +90,9 @@ class Calibrator:
         print(f'\n{Style.BRIGHT}Calibrating {len(seq.filenames)} files.{Style.RESET_ALL}...')
         for image in seq.files:
             filename = image['filename']
-            ccd_temp = image['header']['CCD-TEMP']
-            gain = image['header']['GAIN']
-            offset = image['header']['OFFSET']
-            exptime = image['header']['EXPTIME']
             print(f'\n{Style.BRIGHT}Calibrating {filename}...{Style.RESET_ALL}')
-            print(f'-- CCD_TEMP: {ccd_temp}')
-            print(f'-- GAIN: {gain}')
-            print(f'-- OFFSET: {offset}')
-            print(f'-- EXPTIME: {exptime}')
+            hlp.header_summary(image)
             
-            # master_bias = self.find_master_bias(image)
             master_bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
             if not master_bias:
                 print(f'{Style.BRIGHT + Fore.RED}Cannot generate master dark{Style.RESET_ALL}')
@@ -149,19 +141,9 @@ class Calibrator:
         print(f'\n{Style.BRIGHT}Calibrating {len(seq.filenames)} files.{Style.RESET_ALL}...')
         for image in seq.files:
             filename = image['filename']
-            ccd_temp = image['header']['CCD-TEMP']
-            gain = image['header']['GAIN']
-            offset = image['header']['OFFSET']
-            exptime = image['header']['EXPTIME']
-            filter_code = image['header']['FILTER']
             print(f'\n{Style.BRIGHT}Calibrating {filename}...{Style.RESET_ALL}')
-            print(f'-- CCD_TEMP: {ccd_temp}')
-            print(f'-- GAIN: {gain}')
-            print(f'-- OFFSET: {offset}')
-            print(f'-- EXPTIME: {exptime}')
-            print(f'-- FILTER: {filter_code}')
+            hlp.header_summary(image)
             
-            # master_bias = self.find_master_bias(image)
             master_bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
             if not master_bias:
                 print(f'{Style.BRIGHT + Fore.RED}Could not generate master flat!{Style.RESET_ALL}')
@@ -169,7 +151,6 @@ class Calibrator:
             
             calibrated_image = self.subtract_bias(image, master_bias)
             
-            # master_dark = self.find_master_dark(image)
             master_dark = self.filter_masters(image, 'Dark', cfg.DARK_CONSTRAINTS)
             if not master_dark:
                 print(f'{Style.BRIGHT + Fore.RED}Could not generate master flat!{Style.RESET_ALL}')
@@ -206,6 +187,15 @@ class Calibrator:
 
     
     def filter_masters(self, image, frame, match_conditions):
+        ''' Finds the right calibration master for 'image' (specified)
+            by 'frame' 
+        
+            :param image: single element from FITSSequence or CCDData
+            :param frame: text value of frame type (Bias/Dark/Flat)
+            :match_conditions: header conditions to test (extracted from config.py)
+            :return: CCDData object if succesful, False if not
+        '''
+
         masters = []
         matches = []
         for master in self.masters.files:
@@ -226,7 +216,6 @@ class Calibrator:
                     if not master_header == image_header:
                         match = False
                 else: 
-                    # print(abs(master_header - image_header) <= tolerance)
                     if not abs(master_header - image_header) <= tolerance:
                         match = False
             
@@ -245,9 +234,6 @@ class Calibrator:
 
     def subtract_bias(self, image, bias=None, write=False):
         ''' Subtract provided master bias from FITS image. 
-            If no master is provided, calls self.find_master_bias().
-            Autodetects if 'image' and 'bias' are CCDData objects 
-            and creates them if not.
 
             :param image: single element from FITSSequence or CCDData
             :param bias: single element from FITSSequence or CCDData
@@ -258,7 +244,6 @@ class Calibrator:
         if write: filename = image['filename']
         
         if not bias:
-            # bias = self.find_master_bias(image)
             bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
             if not bias:
                 print(f'{Style.BRIGHT + Fore.RED}No bias substraction.{Style.RESET_ALL}')
@@ -280,9 +265,6 @@ class Calibrator:
     
     def subtract_dark(self, image, dark=None, write=False):
         ''' Subtract provided calibrated master dark from FITS image. 
-            If no master is provided, calls self.find_master_dark().
-            Autodetects if 'image' and 'bias' are CCDData objects 
-            and creates them if not.
 
             :param image: single element from FITSSequence or CCDData
             :param dark: single element from FITSSequence or CCDData
@@ -293,7 +275,6 @@ class Calibrator:
         if write: filename = image['filename']
 
         if not dark:
-            # dark = self.find_master_dark(image)
             dark = self.filter_masters(image, 'Dark', cfg.DARK_CONSTRAINTS)
             if not dark:
                 print(f'{Style.BRIGHT + Fore.RED}No dark substraction.{Style.RESET_ALL}')
@@ -315,9 +296,6 @@ class Calibrator:
 
     def correct_flat(self, image, flat=None, write=False):
         ''' Correct FITS image with provided master flat. 
-            If no master is provided, calls self.find_master_flat().
-            Autodetects if 'image' and 'bias' are CCDData objects 
-            and creates them if not.
 
             :param image: single element from FITSSequence or CCDData
             :param flat: single element from FITSSequence or CCDData
@@ -328,7 +306,6 @@ class Calibrator:
         if write: filename = image['filename']
         
         if not flat:
-            # flat = self.find_master_flat(image)
             flat = self.filter_masters(image, 'Flat', cfg.FLAT_CONSTRAINTS)
             if not flat:
                 print(f'{Style.BRIGHT + Fore.RED}No flat correction.{Style.RESET_ALL}')
@@ -349,11 +326,8 @@ class Calibrator:
 
 
     def calibrate_image(self, image, steps=None, bias=None, dark=None, flat=None, write=False):
-        ''' Full calibration of FITS file. Options argument allows to chose
+        ''' Full calibration of FITS file. 'steps' argument allows to choose
             what calibration steps to apply.
-            If no master is provided, calls self.find_master_flat().
-            Autodetects if 'image' and 'bias' are CCDData objects 
-            and creates them if not.
 
             :param image: single element from FITSSequence or CCDData
             :param steps: python dict {bias, dark, flat: True/False}
@@ -376,14 +350,10 @@ class Calibrator:
         tested_cards = cfg.TESTED_FITS_CARDS
         
         print(f'\n{Style.BRIGHT}Calibrating {filename}...{Style.RESET_ALL}')
-        for card in tested_cards:
-            card_name = card['name']
-            value = image['header'][card_name]
-            print(f'-- {card_name}: {value}')
+        hlp.header_summary(image)
 
         if steps['bias']:
             if not bias:           
-                # bias = self.find_master_bias(image) 
                 bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)       
             if bias:
                 calibrated_image = self.subtract_bias(calibrated_image, bias)
@@ -391,7 +361,6 @@ class Calibrator:
         
         if steps['dark']:
             if not dark:
-                # dark = self.find_master_dark(image)
                 dark = self.filter_masters(image, 'Dark', cfg.DARK_CONSTRAINTS)
             if dark:
                 calibrated_image = self.subtract_dark(calibrated_image, dark)
@@ -399,7 +368,6 @@ class Calibrator:
         
         if steps['flat']:
             if not flat:
-                # flat = self.find_master_flat(image)
                 flat = self.filter_masters(image, 'Flat', cfg.FLAT_CONSTRAINTS)
             if flat:
                 calibrated_image = self.correct_flat(calibrated_image, flat)

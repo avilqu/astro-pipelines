@@ -17,6 +17,15 @@ def prompt():
         exit()
 
 
+def header_summary(image):
+    ''' Prints a summary of the values of the tested FITS header cards '''
+   
+    for card in cfg.TESTED_FITS_CARDS:
+        card_name = card['name']
+        value = image['header'][card_name]
+        print(f'-- {card_name}: {value}')
+
+
 def extract_ccd(image):
     ''' Returns CCDData of image in case it's an FITSSequence element '''
     
