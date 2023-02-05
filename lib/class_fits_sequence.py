@@ -134,7 +134,8 @@ class FITSSequence:
             sigma_clip_high_thresh=cfg.SIGMA_HIGH,
             sigma_clip_func=np.ma.median,
             sigma_clip_dev_func=mad_std,
-            mem_limit=600e7
+            mem_limit=600e7,
+            unit='adu'
         )
 
         stack.meta['COMBINED'] = True
