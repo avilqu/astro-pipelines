@@ -90,6 +90,7 @@ class FITSSequence:
         
         print(f'\n{Style.BRIGHT}Checking FITS sequence consistency...{Style.RESET_ALL}')
         for card in tested_cards:
+            card['values'] = []
             for file in self.files:
                 card['values'].append(file['header'][card['name']])
             if not self.check_array_consistency(card['values'], card['name'], card['tolerance']):

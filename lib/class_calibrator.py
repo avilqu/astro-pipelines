@@ -409,21 +409,16 @@ class Calibrator:
                 'flat': True,
             }
         
-        new_filename = image['filename']
         calibrated_image = image
-
         filename = image['filename']
-        ccd_temp = image['header']['ccd-temp']
-        gain = image['header']['gain']
-        offset = image['header']['offset']
-        exptime = image['header']['exptime']
-        filter_code = image['header']['filter']
+        new_filename = image['filename']
+        tested_cards = cfg.TESTED_FITS_CARDS
+        
         print(f'\n{Style.BRIGHT}Calibrating {filename}...{Style.RESET_ALL}')
-        print(f'-- CCD_TEMP: {ccd_temp}')
-        print(f'-- GAIN: {gain}')
-        print(f'-- OFFSET: {offset}')
-        print(f'-- EXPTIME: {exptime}')
-        print(f'-- FILTER: {filter_code}')
+        for card in tested_cards:
+            card_name = card['name']
+            value = image['header'][card_name]
+            print(f'-- {card_name}: {value}')
 
         if steps['bias']:
             if not bias:           
@@ -446,7 +441,9 @@ class Calibrator:
                 calibrated_image = self.correct_flat(calibrated_image, flat)
                 new_filename = f'f_{new_filename}'
 
-        if write:    
+        if write and not hasattr(calibrated_image, 'write'):
+            print('-- Nothing to write')
+        elif write and hasattr(calibrated_image, 'write'):
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
         
