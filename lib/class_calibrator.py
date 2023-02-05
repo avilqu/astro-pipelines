@@ -65,7 +65,8 @@ class Calibrator:
         date_string = date_obs.strftime('%Y%m%d')
         gain = str(round(stack.header['GAIN']))
         offset = str(round(stack.header['OFFSET']))
-        filename = f'master_bias_{ccd_temp}C_{gain}g{offset}o_{date_string}.fits'
+        binning = str(stack.header['XBINNING']) + 'x' + str(stack.header['XBINNING'])
+        filename = f'master_bias_{ccd_temp}C_{gain}g{offset}o_{binning}_{date_string}.fits'
 
         stack.meta['IMAGETYP'] = 'Master Bias'
 
@@ -117,7 +118,8 @@ class Calibrator:
         date_string = date_obs.strftime('%Y%m%d')
         gain = str(round(stack.header['GAIN']))
         offset = str(round(stack.header['OFFSET']))
-        filename = f'master_dark_{exptime}_{ccd_temp}C_{gain}g{offset}o_{date_string}.fits'
+        binning = str(stack.header['XBINNING']) + 'x' + str(stack.header['XBINNING'])
+        filename = f'master_dark_{exptime}_{ccd_temp}C_{gain}g{offset}o_{binning}_{date_string}.fits'
 
         stack.meta['IMAGETYP'] = 'Master Dark'
 
@@ -175,7 +177,8 @@ class Calibrator:
         date_string = date_obs.strftime('%Y%m%d')
         gain = str(round(stack.header['GAIN']))
         offset = str(round(stack.header['OFFSET']))
-        filename = f'master_flat_{filter_code}_{ccd_temp}C_{gain}g{offset}o_{date_string}.fits'
+        binning = str(stack.header['XBINNING']) + 'x' + str(stack.header['XBINNING'])
+        filename = f'master_flat_{filter_code}_{ccd_temp}C_{gain}g{offset}o_{binning}_{date_string}.fits'
 
         stack.meta['IMAGETYP'] = 'Master Flat'
 
