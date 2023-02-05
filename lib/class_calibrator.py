@@ -100,7 +100,8 @@ class Calibrator:
             print(f'-- OFFSET: {offset}')
             print(f'-- EXPTIME: {exptime}')
             
-            master_bias = self.find_master_bias(image)
+            # master_bias = self.find_master_bias(image)
+            master_bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
             if not master_bias:
                 print(f'{Style.BRIGHT + Fore.RED}Cannot generate master dark{Style.RESET_ALL}')
                 return False
@@ -160,14 +161,16 @@ class Calibrator:
             print(f'-- EXPTIME: {exptime}')
             print(f'-- FILTER: {filter_code}')
             
-            master_bias = self.find_master_bias(image)
+            # master_bias = self.find_master_bias(image)
+            master_bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
             if not master_bias:
                 print(f'{Style.BRIGHT + Fore.RED}Could not generate master flat!{Style.RESET_ALL}')
                 return False
             
             calibrated_image = self.subtract_bias(image, master_bias)
             
-            master_dark = self.find_master_dark(image)
+            # master_dark = self.find_master_dark(image)
+            master_dark = self.filter_masters(image, 'Dark', cfg.DARK_CONSTRAINTS)
             if not master_dark:
                 print(f'{Style.BRIGHT + Fore.RED}Could not generate master flat!{Style.RESET_ALL}')
                 return False
@@ -200,90 +203,45 @@ class Calibrator:
         shutil.rmtree(f'{os.getcwd()}/calibrated/')
         
         return True
+
+    
+    def filter_masters(self, image, frame, match_conditions):
+        masters = []
+        matches = []
+        for master in self.masters.files:
+            if master['header']['FRAME'] == frame: masters.append(master)
+       
+        for master in masters:
+
+            match = True
+            for condition in match_conditions:
+                tolerance = 0
+                for card in cfg.TESTED_FITS_CARDS:
+                    if card['name'] == condition:
+                        tolerance = card['tolerance']
+                master_header = master['header'][condition]
+                image_header = image['header'][condition]
+
+                if isinstance(image_header, str):
+                    if not master_header == image_header:
+                        match = False
+                else: 
+                    # print(abs(master_header - image_header) <= tolerance)
+                    if not abs(master_header - image_header) <= tolerance:
+                        match = False
+            
+            if match:
+                matches.append(master)
+
+        if len(matches) > 0:
+            matched_master = matches[0]['filename']
+            print(f'-- Master {frame}: {matched_master}')
+            return matches[0]
+
+        else:
+            print(f'{Fore.YELLOW}-- Could not find a suitable master {frame}.{Style.RESET_ALL}')
+            return False
         
-
-    def find_master_bias(self, image):
-        ''' Selects a suitable master bias with matching bias,
-            offset and CCD temperature
-
-            :param image: single element from FITSSequence
-            :return: single element from FITSSequence if found, False if not
-        '''
-
-        temp = image['header']['CCD-TEMP']
-        match = False
-
-        for master in self.masters.files:
-            if master['header']['FRAME'] == 'Bias':
-                if abs(master['header']['CCD-TEMP'] - temp) <= cfg.TEMP_TOLERANCE:
-                    if not ('GAIN' in master['header'] and (master['header']['GAIN'] != image['header']['GAIN'] or master['header']['OFFSET'] != image['header']['OFFSET'])):
-                        match = master
-                        master_bias = master['filename']
-                        break
-
-        if match:
-            print(f'-- Master bias: {master_bias}')
-            return match
-        else:
-            print(f'{Fore.YELLOW}-- Could not find a suitable master bias.{Style.RESET_ALL}')
-            return False
-
-
-    def find_master_dark(self, image):
-        ''' Selects a suitable calibrated master dark 
-            with matching bias, offset and CCD temperature
-
-            :param image: single element from FITSSequence
-            :return: single element from FITSSequence if found, False if not
-        '''
-
-        exposure = image['header']['EXPTIME']
-        temp = image['header']['CCD-TEMP']
-        match = False
-
-        for master in self.masters.files:
-            if master['header']['FRAME'] == 'Dark':
-                if abs(master['header']['CCD-TEMP'] - temp) <= cfg.TEMP_TOLERANCE and master['header']['exptime'] >= exposure:
-                    if not ('gain' in master['header'] and (master['header']['GAIN'] != image['header']['GAIN'] or master['header']['OFFSET'] != image['header']['OFFSET'])):
-                        match = master
-                        master_dark = master['filename']
-                        break
-
-        if match:
-            print(f'-- Master dark: {master_dark}')
-            return match
-        else:
-            print(f'{Fore.YELLOW}-- Could not find a suitable master dark.{Style.RESET_ALL}')
-            return False
-
-
-    def find_master_flat(self, image):
-        ''' Selects a suitable calibrated master flat with matching 
-            filter, bias, offset and CCD temperature
-
-            :param image: single element from FITSSequence
-            :return: single element from FITSSequence if found, False if not
-        '''
-
-        filter_code = image['header']['FILTER']
-        temp = image['header']['CCD-TEMP']
-        match = False
-
-        for master in self.masters.files:
-            if master['header']['FRAME'] == 'Flat':
-                if abs(master['header']['CCD-TEMP'] - temp) <= cfg.TEMP_TOLERANCE:
-                    if master['header']['FILTER'] == filter_code:
-                        match = master
-                        master_flat = master['filename']
-                        break
-
-        if match:
-            print(f'-- Master flat: {master_flat}')
-            return match
-        else:
-            print(f'{Fore.YELLOW}-- Could not find a suitable master flat.{Style.RESET_ALL}')
-            return False
-
 
     def subtract_bias(self, image, bias=None, write=False):
         ''' Subtract provided master bias from FITS image. 
@@ -300,7 +258,8 @@ class Calibrator:
         if write: filename = image['filename']
         
         if not bias:
-            bias = self.find_master_bias(image)
+            # bias = self.find_master_bias(image)
+            bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
             if not bias:
                 print(f'{Style.BRIGHT + Fore.RED}No bias substraction.{Style.RESET_ALL}')
                 return False
@@ -334,7 +293,8 @@ class Calibrator:
         if write: filename = image['filename']
 
         if not dark:
-            dark = self.find_master_dark(image)
+            # dark = self.find_master_dark(image)
+            dark = self.filter_masters(image, 'Dark', cfg.DARK_CONSTRAINTS)
             if not dark:
                 print(f'{Style.BRIGHT + Fore.RED}No dark substraction.{Style.RESET_ALL}')
                 return False
@@ -368,7 +328,8 @@ class Calibrator:
         if write: filename = image['filename']
         
         if not flat:
-            flat = self.find_master_flat(image)
+            # flat = self.find_master_flat(image)
+            flat = self.filter_masters(image, 'Flat', cfg.FLAT_CONSTRAINTS)
             if not flat:
                 print(f'{Style.BRIGHT + Fore.RED}No flat correction.{Style.RESET_ALL}')
                 return False
@@ -422,21 +383,24 @@ class Calibrator:
 
         if steps['bias']:
             if not bias:           
-                bias = self.find_master_bias(image)        
+                # bias = self.find_master_bias(image) 
+                bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)       
             if bias:
                 calibrated_image = self.subtract_bias(calibrated_image, bias)
                 new_filename = f'b_{new_filename}'
         
         if steps['dark']:
             if not dark:
-                dark = self.find_master_dark(image)
+                # dark = self.find_master_dark(image)
+                dark = self.filter_masters(image, 'Dark', cfg.DARK_CONSTRAINTS)
             if dark:
                 calibrated_image = self.subtract_dark(calibrated_image, dark)
                 new_filename = f'd_{new_filename}'
         
         if steps['flat']:
             if not flat:
-                flat = self.find_master_flat(image)
+                # flat = self.find_master_flat(image)
+                flat = self.filter_masters(image, 'Flat', cfg.FLAT_CONSTRAINTS)
             if flat:
                 calibrated_image = self.correct_flat(calibrated_image, flat)
                 new_filename = f'f_{new_filename}'

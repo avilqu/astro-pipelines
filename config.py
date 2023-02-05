@@ -9,22 +9,23 @@ CALIBRATION_PATH = '/home/tan/Astro/calibration/QHY163'
 # Astrometry.net API key
 ASTROMETRY_KEY = 'zrvbykzuksfbcilr'
 
-# Tolerance values used when checking for sequence consistency and
-# looking for suitable calibration masters
-TEMP_TOLERANCE = 1      # CCD temperature
-EXP_TOLERANCE = 0       # CCD exposure
-
 # Sigma values for pixel rejection are found below. These values are
 # used to reject outstanding pixels during image integration. It is used
 # for both integrating light frames and creating calibration masters.
 SIGMA_LOW = 5
 SIGMA_HIGH = 5
 
+# Constraints for selecting calibratin masters. Note that
+# astro-pipelines generates and uses calibrated master darks
+# and scales them to match the exposure of the light frame
+BIAS_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
+DARK_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
+FLAT_CONSTRAINTS = ['FILTER', 'XBINNING']
 
-
-# Header cards used for the sequence consistency tests. Script will
-# issue an error if testing a card that isn't present. Comment them out
-# from this list if you get one of these errors.
+# Header cards used for the sequence consistency tests and header
+# summary display. Script will issue an error if testing a card 
+# that isn't present. Comment them out from this list if you 
+# get one of these errors.
 TESTED_FITS_CARDS = [
             {
                 'name': 'GAIN',
@@ -36,7 +37,7 @@ TESTED_FITS_CARDS = [
             },
             {
                 'name': 'EXPTIME',
-                'tolerance': 0,
+                'tolerance': 1,
             },
             {
                 'name': 'FILTER',
@@ -44,7 +45,7 @@ TESTED_FITS_CARDS = [
             },
             {
                 'name': 'CCD-TEMP',
-                'tolerance': TEMP_TOLERANCE,
+                'tolerance': 2,
             },
             {
                 'name': 'NAXIS1',
@@ -54,8 +55,8 @@ TESTED_FITS_CARDS = [
                 'name': 'NAXIS2',
                 'tolerance': 0,
             },
-            {
-                'name': 'IMAGETYP',
-                'tolerance': 0,
-            },
+            # {
+            #     'name': 'FRAME',
+            #     'tolerance': 0,
+            # },
         ]
