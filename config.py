@@ -36,6 +36,10 @@ TESTED_FITS_CARDS = [
                 'tolerance': 0,
             },
             {
+                'name': 'XBINNING',
+                'tolerance': 0,
+            },
+            {
                 'name': 'EXPTIME',
                 'tolerance': 1,
             },
