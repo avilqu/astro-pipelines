@@ -263,6 +263,7 @@ class Calibrator:
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
 
+        calibrated_image.data = calibrated_image.data.astype('float32')
         return calibrated_image
 
     
@@ -294,6 +295,7 @@ class Calibrator:
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
 
+        calibrated_image.data = calibrated_image.data.astype('float32')
         return calibrated_image
 
 
@@ -325,6 +327,7 @@ class Calibrator:
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
 
+        calibrated_image.data = calibrated_image.data.astype('float32')
         return calibrated_image
 
 
