@@ -176,7 +176,9 @@ class FITSSequence:
         for image in self.files:
             filename = image['filename']
             print(f'{Style.BRIGHT}[{count}/{len(self.filenames)}]{Style.RESET_ALL} Computing for {filename}...')
-            ccdp.wcs_project(hlp.extract_ccd(image), target_wcs).write(write_path / filename, overwrite=True)
+            registered_image = ccdp.wcs_project(hlp.extract_ccd(image), target_wcs)
+            registered_image.data = registered_image.data.astype('float32')
+            registered_image.write(write_path / f'r_{filename}', overwrite=True)
             count += 1
 
 
