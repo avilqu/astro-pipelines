@@ -88,8 +88,6 @@ class GUI():
         self.show_image()
     
     def create_image_object(self, image_data: np.ndarray):
-        height, width = image_data.shape
-        data = f'P5 {width} {height} 255 '.encode() + image_data.astype(np.uint8).tobytes()
         return Image.fromarray((image_data * 255).astype('uint8'))
 
     def open_file(self):
@@ -134,7 +132,7 @@ class GUI():
         y1 = max(bbox2[1] - bbox1[1], 0)
         x2 = min(bbox2[2], bbox1[2]) - bbox1[0]
         y2 = min(bbox2[3], bbox1[3]) - bbox1[1]
-        
+
         if int(x2 - x1) > 0 and int(y2 - y1) > 0:
             x = min(int(x2 / self.imscale), self.width)
             y = min(int(y2 / self.imscale), self.height)
