@@ -6,6 +6,7 @@ from tkinter.filedialog import askopenfilename
 from PIL import Image, ImageTk
 import numpy as np
 from astropy.io import fits
+from astropy.visualization import SqrtStretch
 
 
 class GUI():
@@ -14,8 +15,8 @@ class GUI():
         self.root = tk.Tk()
         self.root.title('Astro-Pipelines')
         self.root.tk.call('tk', 'scaling', 1.0)
-        self.root.rowconfigure(0, minsize=800, weight=1)
-        self.root.columnconfigure(1, minsize=800, weight=1)
+        self.root.rowconfigure(0, minsize=1000, weight=1)
+        self.root.columnconfigure(1, minsize=1000, weight=1)
 
         vbar = AutoScrollbar(self.root, orient='vertical')
         hbar = AutoScrollbar(self.root, orient='horizontal')
@@ -88,7 +89,9 @@ class GUI():
         self.show_image()
     
     def create_image_object(self, image_data: np.ndarray):
-        return Image.fromarray((image_data * 255).astype('uint8'))
+        # stretch = SqrtStretch()
+        # return Image.fromarray((stretch(image_data) * 255).astype('uint8'), mode='L')
+        return Image.fromarray((image_data * 255).astype('uint8'), mode='L')
 
     def open_file(self):
         filepath = askopenfilename(
@@ -98,7 +101,6 @@ class GUI():
         hdu_list = fits.open(filepath)
         hdu_list.info()
         image_data = hdu_list[0].data
-        print(image_data)
 
         self.load_image(image_data, filepath)
 
