@@ -89,9 +89,19 @@ class GUI():
         self.show_image()
     
     def create_image_object(self, image_data: np.ndarray):
-        # stretch = SqrtStretch()
-        # return Image.fromarray((stretch(image_data) * 255).astype('uint8'), mode='L')
-        return Image.fromarray((image_data * 255).astype('uint8'), mode='L')
+        min_val = np.min(image_data)
+        max_val = np.max(image_data)
+        print(f'min_val {min_val}')
+        print(f'max_val {max_val}')
+        stretched_data = np.interp(image_data, (min_val, max_val), (0, 65504))
+        stretched_data = (stretched_data * 65535 / np.max(stretched_data)).astype(np.uint16)
+        # stretched_data = np.interp(image_data, (min_val, max_val), (0, 65535))
+
+        # return Image.fromarray((stretched_data * 255).astype('uint8'), mode='L')
+        # return Image.fromarray((stretched_data * 255).astype('uint16'), mode='I;16')
+        print(image_data)
+        print(stretched_data)
+        return Image.fromarray(stretched_data.astype('uint16'), mode='I;16')
 
     def open_file(self):
         filepath = askopenfilename(
