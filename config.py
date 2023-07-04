@@ -9,6 +9,10 @@ CALIBRATION_PATH = '/home/tan/Astro/calibration/QHY163'
 # Astrometry.net API key
 ASTROMETRY_KEY = 'zrvbykzuksfbcilr'
 
+# Solver methods default options. Search radius in degrees.
+SOLVER_DOWNSAMPLE = 2
+SOLVER_SEARCH_RADIUS = 15
+
 # Sigma values for pixel rejection are found below. These values are
 # used to reject outstanding pixels during image integration. It is used
 # for both integrating light frames and creating calibration masters.
@@ -21,10 +25,6 @@ SIGMA_HIGH = 5
 BIAS_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 DARK_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 FLAT_CONSTRAINTS = ['FILTER', 'XBINNING']
-
-# Solver methods default options. Search radius in degrees.
-SOLVER_DOWNSAMPLE = 2
-SOLVER_SEARCH_RADIUS = 15
 
 # Header cards used for the sequence consistency tests and header
 # summary display. Script will issue an error if testing a card 

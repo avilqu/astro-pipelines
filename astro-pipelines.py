@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-''' Main entry for astro-pipelines.
+''' CLI for online and offline Astrometry.net engine.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
