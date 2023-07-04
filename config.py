@@ -22,6 +22,10 @@ BIAS_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 DARK_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 FLAT_CONSTRAINTS = ['FILTER', 'XBINNING']
 
+# Solver methods default options. Search radius in degrees.
+SOLVER_DOWNSAMPLE = 2
+SOLVER_SEARCH_RADIUS = 15
+
 # Header cards used for the sequence consistency tests and header
 # summary display. Script will issue an error if testing a card 
 # that isn't present. Comment them out from this list if you 

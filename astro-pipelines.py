@@ -11,6 +11,10 @@ if __name__ == "__main__":
     import sys
     from colorama import Fore, Back, Style
     import warnings
+    import types
+
+    from astropy import units as u
+    from astropy.coordinates import SkyCoord
 
     # Silencing warning and info messages
     from astropy import wcs
@@ -25,6 +29,8 @@ if __name__ == "__main__":
     from lib.class_sources import Sources
     import lib.helpers as hlp
     import lib.astrometry
+    import lib.solver
+    import config
 
     
     parser = argparse.ArgumentParser(description='Suite of various tools for astronomical images reduction. See /config.py before use.')
@@ -34,6 +40,7 @@ if __name__ == "__main__":
     parser.add_argument('--bias', action='store_true', help='subtract bias from input files')
     parser.add_argument('--dark', action='store_true', help='subtract dark from input files')
     parser.add_argument('--flat', action='store_true', help='flat correction on input files')
+    parser.add_argument('-S', '--solve', action='store_true', help='platesolve input files')
     parser.add_argument('-R', '--register', type=str, help='register platesolved files using WCS reprojection method (reference filename as argument)')
     parser.add_argument('-I', '--integrate', action='store_true', help='integrate input files')
     parser.add_argument('--blink',action='store_true', help='blink input files (interval in seconds as argument)')
@@ -125,8 +132,39 @@ if __name__ == "__main__":
             filename = image['filename']
             cal.calibrate_image(image, write=True)
 
-    elif args.config:
-        hlp.print_config()
+    elif args.solve:
+        seq = FITSSequence(args.files)
+        solver_options = types.SimpleNamespace()
+        solver_options.blind = False
+        solver_options.radius = config.SOLVER_SEARCH_RADIUS
+        solver_options.downsample = config.SOLVER_DOWNSAMPLE
+        solver_options.files = seq.filenames
+
+        print(f'{Style.BRIGHT}Platesolving {len(seq.files)} files.{Style.RESET_ALL}')
+        try:
+            solver_options.ra = seq.files[0]['header']['ra']
+            solver_options.dec = seq.files[0]['header']['dec']
+            print(f'{Style.BRIGHT + Fore.GREEN}Found WCS in file, using as target.{Style.RESET_ALL}')
+        except:
+            print(f'{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}')
+            solver_blind = True
+
+        if not solver_options.blind:
+            c = SkyCoord(solver_options.ra * u.degree, solver_options.dec * u.degree)
+            print(f'\nTarget RA / DEC: {c.to_string("hmsdms")}')
+            print(f'Search radius (degrees): {str(solver_options.radius)}')
+            hlp.prompt()
+            lib.solver.solve_offline(solver_options)
+        
+        else:
+            print(f'{Style.BRIGHT + Fore.RED}Blind solving.{Style.RESET_ALL}')
+            hlp.prompt()
+            lib.solver.solve_offline({
+                'downsample': config.SOLVER_DOWNSAMPLE,
+                'ra': 0,
+                'dec': 0,
+                'radius': 360
+            })
 
     elif args.register:
         seq = FITSSequence(args.files)
