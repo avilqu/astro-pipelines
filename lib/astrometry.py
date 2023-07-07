@@ -17,7 +17,8 @@ def overlay_sso(img, maglimit):
 
     field = SkyCoord(img['header']['ra']*u.deg, img['header']['dec']*u.deg)
     epoch = Time(img['header']['date-obs'])
-    search_scale = ((img['header']['scale'] * img['header']['naxis2']) / 60)*u.arcmin
+    search_scale = (
+        (img['header']['scale'] * img['header']['naxis2']) / 60)*u.arcmin
     search_results = Skybot.cone_search(field, search_scale, epoch)
 
     objects = []
@@ -34,6 +35,7 @@ def overlay_sso(img, maglimit):
     for obj in objects:
         d.overlay_object(obj['coord'], obj['name'])
         print(f'{obj["name"]}, V mag: {obj["mag"].value}')
+
 
 def find_object(img, text):
     d = DataDisplay(img)

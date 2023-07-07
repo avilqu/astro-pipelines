@@ -7,14 +7,13 @@ import pyds9
 from astropy.nddata import CCDData
 
 
-
 class DataDisplay:
 
     def __init__(self, img):
         self.d = pyds9.DS9()
         self.filename = f'{img["path"]}'
         self.data = CCDData.read(self.filename, unit='adu')
-    
+
     def show(self):
         self.d.set(f'file new {self.filename}')
         self.d.set('zoom to fit')

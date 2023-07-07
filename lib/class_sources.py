@@ -7,6 +7,7 @@ from photutils.detection import DAOStarFinder
 
 from lib.class_data_display import DataDisplay
 
+
 class Sources:
 
     def __init__(self, data):

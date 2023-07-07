@@ -2,7 +2,7 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
-# astro-pipelines will write calibration masters 
+# astro-pipelines will write calibration masters
 # (and expect them to stay) in CALIBRATION_PATH.
 CALIBRATION_PATH = '/home/tan/Astro/calibration/QHY163'
 
@@ -27,44 +27,44 @@ DARK_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 FLAT_CONSTRAINTS = ['FILTER', 'XBINNING']
 
 # Header cards used for the sequence consistency tests and header
-# summary display. Script will issue an error if testing a card 
-# that isn't present. Comment them out from this list if you 
+# summary display. Script will issue an error if testing a card
+# that isn't present. Comment them out from this list if you
 # get one of these errors.
 TESTED_FITS_CARDS = [
-            {
-                'name': 'GAIN',
-                'tolerance': 0,
-            },
-            {
-                'name': 'OFFSET',
-                'tolerance': 0,
-            },
-            {
-                'name': 'XBINNING',
-                'tolerance': 0,
-            },
-            {
-                'name': 'EXPTIME',
-                'tolerance': 1,
-            },
-            {
-                'name': 'FILTER',
-                'tolerance': 0,
-            },
-            {
-                'name': 'CCD-TEMP',
-                'tolerance': 2,
-            },
-            {
-                'name': 'NAXIS1',
-                'tolerance': 0,
-            },
-            {
-                'name': 'NAXIS2',
-                'tolerance': 0,
-            },
-            # {
-            #     'name': 'FRAME',
-            #     'tolerance': 0,
-            # },
-        ]
+    {
+        'name': 'GAIN',
+        'tolerance': 0,
+    },
+    {
+        'name': 'OFFSET',
+        'tolerance': 0,
+    },
+    {
+        'name': 'XBINNING',
+        'tolerance': 0,
+    },
+    {
+        'name': 'EXPTIME',
+        'tolerance': 1,
+    },
+    {
+        'name': 'FILTER',
+        'tolerance': 0,
+    },
+    {
+        'name': 'CCD-TEMP',
+        'tolerance': 2,
+    },
+    {
+        'name': 'NAXIS1',
+        'tolerance': 0,
+    },
+    {
+        'name': 'NAXIS2',
+        'tolerance': 0,
+    },
+    # {
+    #     'name': 'FRAME',
+    #     'tolerance': 0,
+    # },
+]
