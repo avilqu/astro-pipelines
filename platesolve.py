@@ -4,16 +4,8 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
-import sys
-import os
-import json
-import time
-import urllib.request
-from pathlib import Path
-from subprocess import run
-from colorama import Fore, Back, Style
+from colorama import Fore, Style
 
-import requests
 import ccdproc as ccdp
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -61,7 +53,7 @@ if __name__ == "__main__":
             args.dec = ccdp.CCDData.read(args.files[0]).header['dec']
             print(
                 f'{Style.BRIGHT + Fore.GREEN}Found WCS in file, using as target.{Style.RESET_ALL}')
-        except:
+        except Exception:
             print(
                 f'{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}')
             args.blind = True

@@ -12,12 +12,9 @@ import time
 import urllib.request
 from pathlib import Path
 from subprocess import run
-from colorama import Fore, Back, Style
+from colorama import Style
 
 import requests
-import ccdproc as ccdp
-from astropy import units as u
-from astropy.coordinates import SkyCoord
 
 
 def open_session(key):

@@ -8,13 +8,9 @@ import shutil
 import glob
 import os
 
-from astropy.io import fits
-from astropy.stats import mad_std
-from astropy.nddata import CCDData
 from astropy import units as u
 import ccdproc as ccdp
-import numpy as np
-from colorama import Fore, Back, Style
+from colorama import Fore, Style
 
 from lib.class_fits_sequence import FITSSequence
 import config as cfg
@@ -372,7 +368,6 @@ class Calibrator:
         calibrated_image = image
         filename = image['filename']
         new_filename = image['filename']
-        tested_cards = cfg.TESTED_FITS_CARDS
 
         print(f'\n{Style.BRIGHT}Calibrating {filename}...{Style.RESET_ALL}')
         hlp.header_summary(image)

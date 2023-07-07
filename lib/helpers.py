@@ -2,10 +2,7 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
-import inspect
-
 from astropy.nddata import CCDData
-from colorama import Fore, Back, Style
 
 import config as cfg
 

@@ -6,11 +6,10 @@ from pathlib import Path
 import sys
 import os
 
-from colorama import Fore, Back, Style
+from colorama import Fore, Style
 import numpy as np
 from astropy.io import fits
 from astropy.stats import mad_std
-from astropy.nddata import CCDData
 import ccdproc as ccdp
 import pyds9
 
@@ -39,7 +38,7 @@ class FITSSequence:
             self.filenames.append(filename)
 
     def check_array_consistency(self, array, name, tolerance=0):
-        ''' Checks how many distinct values in an array and issues a warning if more than 1 
+        ''' Checks how many distinct values in an array and issues a warning if more than 1
 
             :param array: the array to check
             :param name: the header card name (eg: 'CCD-TEMP')
@@ -50,10 +49,9 @@ class FITSSequence:
         res = True
 
         for value in array:
-            i = 0
             if len(values) == 0:
                 values.append(value)
-            if not value in values:
+            if value not in values:
                 values.append(value)
 
         if not tolerance:
@@ -82,7 +80,7 @@ class FITSSequence:
 
     def check_sequence_consistency(self):
         ''' Procedes to various checks over several header cards to
-            test for the sanity of the FITS collection before integration 
+            test for the sanity of the FITS collection before integration
 
             :return: True if no warning
         '''
@@ -111,9 +109,9 @@ class FITSSequence:
 
     def integrate_sequence(self, flat=False, confirm=True, write=False):
         ''' Integrates self sequence with the average method and pixel
-            rejection (sigma clipping), configurable in ./config.py 
+            rejection (sigma clipping), configurable in ./config.py
 
-            :param sequence: FITSSequence object 
+            :param sequence: FITSSequence object
             :param flat: if True, uses inverse median as scale - use for master flats
             :confirm: set to False to skip confirmation prompt
             :return: CCDData object
@@ -158,8 +156,8 @@ class FITSSequence:
         return stack
 
     def register_sequence(self, reference, confirm=True):
-        ''' Registers self sequence against reference file and write files 
-            in new directory. 
+        ''' Registers self sequence against reference file and write files
+            in new directory.
 
             :param reference: string (filename)
             :confirm: set to False to skip confirmation prompt
@@ -190,13 +188,12 @@ class FITSSequence:
             count += 1
 
     def blink_sequence(self, interval):
-        ''' Blinks images in sequence with ds9. 
+        ''' Blinks images in sequence with ds9.
 
             :param interval: float (blink interval in seconds)
         '''
 
-        work_pwd = './' + \
-            self.filenames[0][0:self.filenames[0].find('/')] + '/'
+        self.filenames[0][0:self.filenames[0].find('/')] + '/'
         d = pyds9.DS9()
 
         for filename in self.filenames:

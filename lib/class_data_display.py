@@ -2,7 +2,6 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
-import os
 import pyds9
 from astropy.nddata import CCDData
 

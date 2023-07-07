@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     import argparse
     import sys
-    from colorama import Fore, Back, Style
+    from colorama import Fore, Style
     import warnings
     import types
 
@@ -22,7 +22,6 @@ if __name__ == "__main__":
     warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
     warnings.filterwarnings('ignore', category=AstropyUserWarning)
     import logging
-    import sys
     logging.disable(sys.maxsize)
 
     from lib.class_fits_sequence import FITSSequence
@@ -166,7 +165,7 @@ if __name__ == "__main__":
             solver_options.dec = seq.files[0]['header']['dec']
             print(
                 f'{Style.BRIGHT + Fore.GREEN}Found WCS in file, using as target.{Style.RESET_ALL}')
-        except:
+        except Exception:
             print(f'{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}')
             solver_blind = True
 
