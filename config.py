@@ -16,8 +16,8 @@ SOLVER_SEARCH_RADIUS = 15
 # Sigma values for pixel rejection are found below. These values are
 # used to reject outstanding pixels during image integration. It is used
 # for both integrating light frames and creating calibration masters.
-SIGMA_LOW = 5
-SIGMA_HIGH = 5
+SIGMA_LOW = 4
+SIGMA_HIGH = 3
 
 # Constraints for selecting calibratin masters. Note that
 # astro-pipelines generates and uses calibrated master darks
