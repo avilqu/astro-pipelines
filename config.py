@@ -4,7 +4,7 @@
 
 # astro-pipelines will write calibration masters
 # (and expect them to stay) in CALIBRATION_PATH.
-CALIBRATION_PATH = '/home/tan/Astro/calibration/QHY163'
+CALIBRATION_PATH = '/home/tan/Astro/calibration'
 
 # Astrometry.net API key
 ASTROMETRY_KEY = 'zrvbykzuksfbcilr'
