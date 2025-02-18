@@ -1,4 +1,4 @@
-#!/home/tan/Astro/pipelines/venv/bin/python
+#!/home/tan/Astro/pipelines/.venv/bin/python
 
 """Main entry for astro-pipelines.
 @author: Adrien Vilquin Barrajon <avilqu@gmail.com>

@@ -1,4 +1,5 @@
-venv/
+PSFImage/
+.venv/
 notebooks/
 sample/
 .ipynb_checkpoints/
