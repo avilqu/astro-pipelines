@@ -1,4 +1,4 @@
-#!/home/tan/Astro/pipelines/.venv/bin/python
+#!/home/tan/dev/astro-pipelines/.venv/bin/python#!/home/tan/dev/astro-pipelines/.venv/bin/python
 
 import sys
 from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout
