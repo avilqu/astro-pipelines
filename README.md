@@ -8,6 +8,15 @@ Miscellaneous other tools added as the project develops.
 
 ### Python packages dependencies
 
+Astro-Pipelines requires Python 3.11 to run as some of its dependencies aren't compatible with the latest versions (namely `astroscrappy`).
+
+The recommended approach is to create a virtual environment:
+- `python3.11 -m venv .venv`
+- `source .venv/bin/activate`
+- `pip install -r requirements.txt`
+
+For manual installation, Astro-Pipelines depends on the following pakages:
+- `colorama`
 - `astropy`
 - `ccdproc`
 - `astroquery`
@@ -20,7 +29,7 @@ Miscellaneous other tools added as the project develops.
 
 The platesolving methods rely on local access to the [Astrometry.Net engine](https://astrometry.net/) (`solve-field` CLI) and required index files. This is a pretty heavy requirement (the whole index files package weighs over 50GB!).
 
-Astrometry.Net must be built from source code and is available for MacOS, Linux and Unix. Reported to work on windows via Cygwin.
+Astrometry.Net must be built from source code and is available for MacOS, Linux and Unix. Reported to work on Windows via Cygwin.
 
 Without Astrometry.Net engine installed, the `-S` option (`--solve`) won't work (the rest should work without issues). Note that this package includes a CLI wrapper for Astrometry.Net that can call the online solver (much slower and requires Internet connection) - `platesolve.py`.
 

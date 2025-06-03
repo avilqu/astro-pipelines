@@ -1,4 +1,4 @@
-#!/home/tan/dev/astro-pipelines/.venv/bin/python
+#!.venv/bin/python
 
 import tkinter as tk
 from tkinter import ttk

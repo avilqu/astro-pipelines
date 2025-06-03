@@ -1,4 +1,4 @@
-#!/home/tan/dev/astro-pipelines/.venv/bin/python
+#!.venv/bin/python
 
 ''' CLI for online and offline Astrometry.net engine.
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
