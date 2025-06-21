@@ -212,11 +212,22 @@ if __name__ == "__main__":
             solver_options.ra = seq.files[0]["header"]["ra"]
             solver_options.dec = seq.files[0]["header"]["dec"]
             print(
-                f"{Style.BRIGHT + Fore.GREEN}Found WCS in file, using as target.{Style.RESET_ALL}"
+                f"{Style.BRIGHT + Fore.GREEN}Found RA/DEC in file, using as target.{Style.RESET_ALL}"
             )
         except Exception:
-            print(f"{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}")
-            solver_blind = True
+            # Try WCS fallback
+            header = seq.files[0]["header"]
+            if "CRVAL1" in header and "CRVAL2" in header:
+                solver_options.ra = header["CRVAL1"]
+                solver_options.dec = header["CRVAL2"]
+                print(
+                    f"{Style.BRIGHT + Fore.GREEN}Found WCS coordinates in file, using as target.{Style.RESET_ALL}"
+                )
+                print(f'  CRVAL1 (RA): {solver_options.ra} degrees')
+                print(f'  CRVAL2 (DEC): {solver_options.dec} degrees')
+            else:
+                print(f"{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}")
+                solver_options.blind = True
 
         if not solver_options.blind:
             c = SkyCoord(

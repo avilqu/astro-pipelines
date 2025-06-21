@@ -11,6 +11,7 @@ import os
 from astropy import units as u
 import ccdproc as ccdp
 from colorama import Fore, Style
+from astropy.io import fits
 
 from lib.class_fits_sequence import FITSSequence
 import config as cfg
@@ -372,6 +373,12 @@ class Calibrator:
         print(f'\n{Style.BRIGHT}Calibrating {filename}...{Style.RESET_ALL}')
         hlp.header_summary(image)
 
+        # Store original WCS header for preservation
+        original_wcs_header = None
+        original_path = image['path'] if isinstance(image, dict) and 'path' in image else None
+        if hasattr(image, 'wcs') and image.wcs is not None:
+            original_wcs_header = image.wcs.to_header()
+
         if steps['bias']:
             if not bias:
                 bias = self.filter_masters(image, 'Bias', cfg.BIAS_CONSTRAINTS)
@@ -398,5 +405,27 @@ class Calibrator:
         elif write and hasattr(calibrated_image, 'write'):
             print(f'-- Writing {write_path/new_filename}...')
             calibrated_image.write(write_path / new_filename, overwrite=True)
+            if original_path is not None:
+                print(f'-- Restoring WCS header from {original_path}...')
+                import time
+                time.sleep(0.1)
+                self.restore_wcs_header(original_path, write_path / new_filename)
+                print(f'-- WCS header restoration completed.')
 
         return (calibrated_image, new_filename)
+
+    @staticmethod
+    def restore_wcs_header(original_path, calibrated_path):
+        with fits.open(original_path) as orig, fits.open(calibrated_path, mode='update') as cal:
+            wcs_keys = ['CTYPE1', 'CTYPE2', 'CRPIX1', 'CRPIX2', 'CRVAL1', 'CRVAL2', 'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2']
+            copied_keys = []
+            for key in wcs_keys:
+                if key in orig[0].header:
+                    cal[0].header[key] = orig[0].header[key]
+                    copied_keys.append(key)
+            removed_keys = []
+            for key in ['CDELT1', 'CDELT2', 'CROTA1', 'CROTA2']:
+                if key in cal[0].header:
+                    del cal[0].header[key]
+                    removed_keys.append(key)
+            cal.flush()

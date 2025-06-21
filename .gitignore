@@ -2,6 +2,8 @@ PSFImage/
 .venv/
 notebooks/
 sample/
+calibrated/
+solved/
 .ipynb_checkpoints/
 __pycache__/
 testing.ipynb

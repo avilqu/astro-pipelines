@@ -9,6 +9,8 @@ from colorama import Fore, Style
 import ccdproc as ccdp
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from astropy.wcs import WCS
+from astropy.io import fits
 
 import lib.helpers as hlp
 import lib.solver as slv
@@ -49,13 +51,28 @@ if __name__ == "__main__":
 
     if (not args.ra and not args.dec) and not args.blind:
         try:
-            args.ra = ccdp.CCDData.read(args.files[0]).header['ra']
-            args.dec = ccdp.CCDData.read(args.files[0]).header['dec']
-            print(
-                f'{Style.BRIGHT + Fore.GREEN}Found WCS in file, using as target.{Style.RESET_ALL}')
-        except Exception:
-            print(
-                f'{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}')
+            # Try to read the first file and extract WCS information
+            hdu = fits.open(args.files[0])
+            header = hdu[0].header
+            hdu.close()
+            
+            # First try to get coordinates from simple ra/dec keywords
+            if 'ra' in header and 'dec' in header:
+                args.ra = header['ra']
+                args.dec = header['dec']
+                print(f'{Style.BRIGHT + Fore.GREEN}Found RA/DEC keywords in file, using as target.{Style.RESET_ALL}')
+            # If not found, try to extract from WCS
+            elif 'CRVAL1' in header and 'CRVAL2' in header:
+                args.ra = header['CRVAL1']
+                args.dec = header['CRVAL2']
+                print(f'{Style.BRIGHT + Fore.GREEN}Found WCS coordinates in file, using as target.{Style.RESET_ALL}')
+                print(f'  CRVAL1 (RA): {args.ra} degrees')
+                print(f'  CRVAL2 (DEC): {args.dec} degrees')
+            else:
+                raise Exception("No coordinate information found")
+                
+        except Exception as e:
+            print(f'{Style.BRIGHT + Fore.RED}No WCS found: {e}{Style.RESET_ALL}')
             args.blind = True
 
     if not args.blind:
