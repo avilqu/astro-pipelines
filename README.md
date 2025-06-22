@@ -35,6 +35,17 @@ Astrometry.Net must be built from source code and is available for MacOS, Linux 
 
 Without Astrometry.Net engine installed, the `-S` option (`--solve`) won't work (the rest should work without issues). Note that this package includes a CLI wrapper for Astrometry.Net that can call the online solver (much slower and requires Internet connection) - `platesolve.py`.
 
+### Timeout and Error Handling
+
+Astro-Pipelines includes robust timeout and error handling mechanisms to prevent the astrometry engine from hanging on unsolvable images:
+
+- **Configurable timeouts**: Set maximum solving time for both online and offline solving
+- **Image validation**: Pre-screening of images to skip obviously unsolvable ones
+- **Network error handling**: Graceful handling of connection issues with online solving
+- **Progress reporting**: Clear status messages during long operations
+
+See `TIMEOUT_FEATURES.md` for detailed documentation of these features.
+
 ## Use
 
 ### Initial config

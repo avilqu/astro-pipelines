@@ -71,6 +71,9 @@ class AutoPipeProcessor:
         self.processing_queue = Queue()
         self.running = True
         
+        # Reset solver interruption flag
+        lib.solver.set_solver_interrupted(False)
+        
         # Create autopipe directory if calibration is enabled
         if self.enable_calibration and self.autopipe_path:
             self.autopipe_path.mkdir(parents=True, exist_ok=True)
@@ -83,6 +86,8 @@ class AutoPipeProcessor:
         """Handle shutdown signals gracefully."""
         print(f"\n{Style.BRIGHT + Fore.YELLOW}Shutdown signal received. Stopping AutoPipe...{Style.RESET_ALL}")
         self.running = False
+        # Also signal the solver to stop
+        lib.solver.set_solver_interrupted(True)
         
     def get_relative_path(self, file_path):
         """Get the relative path from obs_path."""
@@ -172,17 +177,25 @@ class AutoPipeProcessor:
             
     def process_file(self, file_path):
         """Process a single file through the pipeline."""
+        # Check if we should stop processing
+        if not self.running:
+            return False
+            
         try:
             print(f"\n{Style.BRIGHT + Fore.CYAN}Processing {file_path}...{Style.RESET_ALL}")
             
             if self.enable_calibration:
                 # Step 1: Calibrate the file
+                if not self.running:
+                    return False
                 calibrated_path = self.calibrate_file(file_path)
                 if calibrated_path is None:
                     print(f"{Style.BRIGHT + Fore.RED}Calibration failed, skipping platesolving.{Style.RESET_ALL}")
                     return False
                     
                 # Step 2: Platesolve the calibrated file
+                if not self.running:
+                    return False
                 solve_success = self.platesolve_file(calibrated_path)
                 
                 if solve_success:
@@ -193,6 +206,8 @@ class AutoPipeProcessor:
                     return True  # Still consider it a success since calibration worked
             else:
                 # Platesolve the original file in place
+                if not self.running:
+                    return False
                 solve_success = self.platesolve_file(file_path)
                 
                 if solve_success:
@@ -202,6 +217,10 @@ class AutoPipeProcessor:
                     print(f"{Style.BRIGHT + Fore.RED}Platesolving failed for {file_path}{Style.RESET_ALL}")
                     return False
                 
+        except KeyboardInterrupt:
+            print(f"{Style.BRIGHT + Fore.YELLOW}Processing interrupted by user.{Style.RESET_ALL}")
+            self.running = False
+            return False
         except Exception as e:
             print(f"{Style.BRIGHT + Fore.RED}Error processing {file_path}: {e}{Style.RESET_ALL}")
             return False
@@ -315,13 +334,27 @@ def main():
     # Process existing files if requested
     if args.process_existing:
         print(f"{Style.BRIGHT + Fore.CYAN}Processing existing FITS files...{Style.RESET_ALL}")
+        print(f"Press Ctrl+C to stop processing at any time.{Style.RESET_ALL}")
         fits_files = list(obs_path.rglob("*.fits"))
         fits_files.extend(list(obs_path.rglob("*.FITS")))
         
         if fits_files:
             print(f"Found {len(fits_files)} existing FITS files to process.")
-            for file_path in fits_files:
-                processor.process_file(str(file_path))
+            try:
+                for i, file_path in enumerate(fits_files, 1):
+                    if not processor.running:
+                        print(f"\n{Style.BRIGHT + Fore.YELLOW}Processing stopped by user.{Style.RESET_ALL}")
+                        break
+                        
+                    print(f"\n{Style.BRIGHT + Fore.CYAN}Processing file {i}/{len(fits_files)}: {file_path}{Style.RESET_ALL}")
+                    processor.process_file(str(file_path))
+                    
+                    # Small sleep to make the loop more responsive to interrupts
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                print(f"\n{Style.BRIGHT + Fore.YELLOW}Processing interrupted by user.{Style.RESET_ALL}")
+                processor.running = False
         else:
             print("No existing FITS files found.")
     

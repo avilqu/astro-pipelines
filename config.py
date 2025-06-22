@@ -14,6 +14,13 @@ ASTROMETRY_KEY = 'zrvbykzuksfbcilr'
 SOLVER_DOWNSAMPLE = 2
 SOLVER_SEARCH_RADIUS = 15
 
+# Solver timeout settings (in seconds)
+SOLVER_OFFLINE_TIMEOUT = 15  # timeout for offline solve-field
+SOLVER_ONLINE_TIMEOUT = 300   # timeout for online solving
+SOLVER_ONLINE_POLL_INTERVAL = 5  # How often to check online solver status
+SOLVER_MAX_RETRIES = 3  # Maximum number of retries for failed solves
+SOLVER_VALIDATE_IMAGES = True  # Whether to validate images before attempting to solve
+
 # Sigma values for pixel rejection are found below. These values are
 # used to reject outstanding pixels during image integration. It is used
 # for both integrating light frames and creating calibration masters.

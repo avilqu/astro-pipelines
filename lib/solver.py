@@ -11,12 +11,108 @@ import json
 import time
 import urllib.request
 from pathlib import Path
-from subprocess import run
-from colorama import Style
+from subprocess import run, TimeoutExpired
+from colorama import Style, Fore
+import signal
 
 import requests
 from astropy.io import fits
 from astropy.wcs import WCS
+
+import config
+
+
+class SolverTimeoutError(Exception):
+    """Custom exception for solver timeouts."""
+    pass
+
+
+# Global flag to track if solving should be interrupted
+_solver_interrupted = False
+
+
+def set_solver_interrupted(interrupted=True):
+    """Set the solver interruption flag."""
+    global _solver_interrupted
+    _solver_interrupted = interrupted
+
+
+def is_solver_interrupted():
+    """Check if solver should be interrupted."""
+    return _solver_interrupted
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout."""
+    raise SolverTimeoutError("Solver operation timed out")
+
+
+def validate_image_for_solving(filename):
+    """
+    Validate if an image is likely to be solvable.
+    
+    Parameters:
+    -----------
+    filename : str
+        Path to the FITS file to validate
+        
+    Returns:
+    --------
+    tuple : (is_valid, reason)
+        is_valid: bool indicating if image should be attempted
+        reason: str explaining why image was rejected (if applicable)
+    """
+    print(f"{Style.BRIGHT}Validating image: {filename}{Style.RESET_ALL}")
+    
+    try:
+        with fits.open(filename) as hdu:
+            # Check if file has valid data
+            if len(hdu) == 0:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: No HDUs found in file{Style.RESET_ALL}")
+                return False, "No HDUs found in file"
+                
+            data = hdu[0].data
+            if data is None:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: No data found in primary HDU{Style.RESET_ALL}")
+                return False, "No data found in primary HDU"
+                
+            # Check image dimensions
+            if len(data.shape) != 2:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: Expected 2D image, got {len(data.shape)}D{Style.RESET_ALL}")
+                return False, f"Expected 2D image, got {len(data.shape)}D"
+                
+            height, width = data.shape
+            if height < 100 or width < 100:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: Image too small: {width}x{height} pixels{Style.RESET_ALL}")
+                return False, f"Image too small: {width}x{height} pixels"
+                
+            # Check for reasonable data range (not all zeros or all same value)
+            data_min = data.min()
+            data_max = data.max()
+            data_mean = data.mean()
+            data_std = data.std()
+            
+            print(f"  Image stats: {width}x{height}, min={data_min:.1f}, max={data_max:.1f}, mean={data_mean:.1f}, std={data_std:.2f}")
+            
+            if data_min == data_max:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: Image has no contrast (all pixels same value){Style.RESET_ALL}")
+                return False, "Image has no contrast (all pixels same value)"
+                
+            if data_std < 1.0:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: Image has very low contrast (std={data_std:.2f}){Style.RESET_ALL}")
+                return False, f"Image has very low contrast (std={data_std:.2f})"
+                
+            # Check for reasonable signal-to-noise (rough estimate)
+            if data_mean < 10 or data_max < 50:
+                print(f"{Style.BRIGHT + Fore.RED}Validation failed: Image appears too dark (mean={data_mean:.1f}, max={data_max:.1f}){Style.RESET_ALL}")
+                return False, f"Image appears too dark (mean={data_mean:.1f}, max={data_max:.1f})"
+                
+            print(f"{Style.BRIGHT + Fore.GREEN}Validation passed: Image appears valid for solving{Style.RESET_ALL}")
+            return True, "Image appears valid for solving"
+            
+    except Exception as e:
+        print(f"{Style.BRIGHT + Fore.RED}Validation failed: Error reading file: {e}{Style.RESET_ALL}")
+        return False, f"Error reading file: {e}"
 
 
 def apply_wcs_to_file(original_file, wcs_file):
@@ -112,10 +208,11 @@ def open_session(key):
         r = requests.post(
             "http://nova.astrometry.net/api/login",
             data={"request-json": request_json},
+            timeout=30,
         )
     except requests.exceptions.RequestException as e:
-        print(e)
-        sys.exit(1)
+        print(f"Error opening session: {e}")
+        return None
     if r.json()["status"] == "success":
         print(
             time.strftime("%x %X")
@@ -127,6 +224,7 @@ def open_session(key):
         print("\n===================================")
         print(time.strftime("%x %X") + " | E: " + r.json()["errormessage"])
         print("===================================\n")
+        return None
 
 
 def submit_file(filename, key, options):
@@ -167,10 +265,11 @@ def submit_file(filename, key, options):
                     ),
                 ),
             ],
+            timeout=60,  # Longer timeout for file upload
         )
     except requests.exceptions.RequestException as e:
-        print(e)
-        sys.exit(1)
+        print(f"Error submitting file: {e}")
+        raise
     if r.json()["status"] == "success":
         print(
             time.strftime("%x %X")
@@ -184,6 +283,7 @@ def submit_file(filename, key, options):
         print("\n===================================")
         print(time.strftime("%x %X") + " | E: " + r.json()["errormessage"])
         print("===================================\n")
+        raise Exception(f"Failed to submit file: {r.json()['errormessage']}")
 
 
 def get_submission_status(subid):
@@ -191,10 +291,10 @@ def get_submission_status(subid):
 
     url = "http://nova.astrometry.net/api/submissions/" + str(subid)
     try:
-        r = requests.post(url)
+        r = requests.post(url, timeout=30)  # Add timeout to prevent hanging
     except requests.exceptions.RequestException as e:
-        print(e)
-        sys.exit(1)
+        print(f"Error checking submission status: {e}")
+        return None
     return r.json()
 
 
@@ -203,10 +303,10 @@ def get_job_status(jobid):
 
     url = "http://nova.astrometry.net/api/jobs/" + str(jobid)
     try:
-        r = requests.post(url)
+        r = requests.post(url, timeout=30)  # Add timeout to prevent hanging
     except requests.exceptions.RequestException as e:
-        print(e)
-        sys.exit(1)
+        print(f"Error checking job status: {e}")
+        return None
     return r.json()
 
 
@@ -215,11 +315,12 @@ def get_job_results(jobid, original_filename):
 
     try:
         r = requests.post(
-            "http://nova.astrometry.net/api/jobs/" + str(jobid) + "/info"
+            "http://nova.astrometry.net/api/jobs/" + str(jobid) + "/info",
+            timeout=30,
         ).json()
     except requests.exceptions.RequestException as e:
-        print(e)
-        sys.exit(1)
+        print(f"Error getting job results: {e}")
+        raise
     print("\n===================================")
     print("Image solved ! (" + time.strftime("%x %X") + ")")
     print("Filename: " + r["original_filename"])
@@ -238,42 +339,94 @@ def get_job_results(jobid, original_filename):
 def solve_online(options, key):
     """Wrapper function for the whole online solving process."""
 
-    session = open_session(key)["session"]
+    session_data = open_session(key)
+    if session_data is None:
+        print(f"{Style.BRIGHT}Failed to open session with Astrometry.net{Style.RESET_ALL}")
+        return
+        
+    session = session_data["session"]
     i = 1
     for filename in options.files:
         count = str(i) + "/" + str(len(options.files))
-        subid = submit_file(filename, session, options)["subid"]
+        print(f"\n{Style.BRIGHT}Processing {count}: {filename}{Style.RESET_ALL}")
+        
+        # Validate image before attempting to solve
+        if config.SOLVER_VALIDATE_IMAGES:
+            is_valid, reason = validate_image_for_solving(filename)
+            if not is_valid:
+                print(f"{Style.BRIGHT}Skipping {filename}: {reason}{Style.RESET_ALL}")
+                i += 1
+                continue
+        
+        # Submit file
+        try:
+            subid = submit_file(filename, session, options)["subid"]
+        except Exception as e:
+            print(f"{Style.BRIGHT}Error submitting {filename}: {e}{Style.RESET_ALL}")
+            i += 1
+            continue
+        
+        # Wait for job to start with timeout
+        start_time = time.time()
         sub_status = get_submission_status(subid)
-        while sub_status["jobs"] == [] or sub_status["jobs"] == [None]:
+        while (sub_status is None or 
+               sub_status.get("jobs") == [] or 
+               sub_status.get("jobs") == [None]):
+            
+            if time.time() - start_time > config.SOLVER_ONLINE_TIMEOUT:
+                print(f"{Style.BRIGHT}Timeout waiting for job {count} to start{Style.RESET_ALL}")
+                break
+                
             print(
                 time.strftime("%x %X")
                 + " | Waiting for job "
                 + count
                 + " to start..."
             )
+            time.sleep(config.SOLVER_ONLINE_POLL_INTERVAL)
             sub_status = get_submission_status(subid)
-            time.sleep(3)
+            
+        if sub_status is None or sub_status.get("jobs") == [] or sub_status.get("jobs") == [None]:
+            print(f"{Style.BRIGHT}Failed to start job for {filename}{Style.RESET_ALL}")
+            i += 1
+            continue
+            
         print(time.strftime("%x %X") + " | Job " + count + " has started.")
         jobid = sub_status["jobs"][0]
+        
+        # Monitor job status with timeout
+        start_time = time.time()
         job_status = get_job_status(jobid)
-        while job_status["status"] == "solving":
+        while job_status is not None and job_status.get("status") == "solving":
+            
+            if time.time() - start_time > config.SOLVER_ONLINE_TIMEOUT:
+                print(f"{Style.BRIGHT}Timeout solving {filename}{Style.RESET_ALL}")
+                break
+                
             print(
                 time.strftime("%x %X")
                 + " | Status: "
-                + job_status["status"]
+                + job_status.get("status", "unknown")
                 + " image "
                 + count
             )
+            time.sleep(config.SOLVER_ONLINE_POLL_INTERVAL)
             job_status = get_job_status(jobid)
-            time.sleep(3)
-        if job_status["status"] == "success":
-            get_job_results(jobid, filename)
+            
+        if job_status is None:
+            print(f"{Style.BRIGHT}Error checking job status for {filename}{Style.RESET_ALL}")
+            i += 1
+            continue
+            
+        if job_status.get("status") == "success":
+            try:
+                get_job_results(jobid, filename)
+                print(f"{Style.BRIGHT}Successfully solved {filename}{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Style.BRIGHT}Error applying solution to {filename}: {e}{Style.RESET_ALL}")
         else:
-            print("\n===================================")
-            print(
-                time.strftime("%x %X") + " | E: Couldn't solve image " + count
-            )
-            print("===================================\n")
+            print(f"\n{Style.BRIGHT}Failed to solve {filename} - Status: {job_status.get('status', 'unknown')}{Style.RESET_ALL}")
+            
         i += 1
 
 
@@ -338,77 +491,127 @@ def solve_offline(options):
 
     if options.blind:
         for filename in options.files:
+            # Check if solving should be interrupted
+            if is_solver_interrupted():
+                print(f"{Style.BRIGHT}Solver interrupted by user.{Style.RESET_ALL}")
+                raise KeyboardInterrupt("Solver interrupted by user")
+                
             print(f"\n{Style.BRIGHT}Solving {filename}.{Style.RESET_ALL}")
+
+            # Validate image before attempting to solve
+            if config.SOLVER_VALIDATE_IMAGES:
+                print(f"{Style.BRIGHT}Image validation is enabled.{Style.RESET_ALL}")
+                is_valid, reason = validate_image_for_solving(filename)
+                if not is_valid:
+                    print(f"{Style.BRIGHT}Skipping {filename}: {reason}{Style.RESET_ALL}")
+                    continue
+            else:
+                print(f"{Style.BRIGHT}Image validation is disabled.{Style.RESET_ALL}")
 
             # Generate WCS filename
             base_name = Path(filename).stem
             wcs_filename = f"solved/{base_name}.wcs"
             
-            proc = run(
-                [
-                    "solve-field",
-                    "--dir",
-                    "solved",
-                    "--no-plots",
-                    "--no-verify",
-                    "--overwrite",
-                    "--downsample",
-                    str(downsample),
-                    "--wcs",
-                    wcs_filename,
-                    filename,
-                ],
-                check=True,
-            )
-            print(f"Solver arguments: {proc.args}")
-            
-            # Apply WCS to original file
-            if os.path.exists(wcs_filename):
-                apply_wcs_to_file(filename, wcs_filename)
-                # Clean up WCS file
-                os.remove(wcs_filename)
-            
-            solver_cleanup()
+            try:
+                proc = run(
+                    [
+                        "solve-field",
+                        "--dir",
+                        "solved",
+                        "--no-plots",
+                        "--no-verify",
+                        "--overwrite",
+                        "--downsample",
+                        str(downsample),
+                        "--wcs",
+                        wcs_filename,
+                        filename,
+                    ],
+                    check=True,
+                    timeout=config.SOLVER_OFFLINE_TIMEOUT,
+                )
+                print(f"Solver arguments: {proc.args}")
+                
+                # Apply WCS to original file
+                if os.path.exists(wcs_filename):
+                    apply_wcs_to_file(filename, wcs_filename)
+                    # Clean up WCS file
+                    os.remove(wcs_filename)
+                    print(f"{Style.BRIGHT}Successfully solved {filename}{Style.RESET_ALL}")
+                else:
+                    print(f"{Style.BRIGHT}No WCS file generated for {filename}{Style.RESET_ALL}")
+                    
+            except TimeoutExpired:
+                print(f"{Style.BRIGHT}Timeout solving {filename} (exceeded {config.SOLVER_OFFLINE_TIMEOUT}s){Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Style.BRIGHT}Error solving {filename}: {e}{Style.RESET_ALL}")
+            finally:
+                solver_cleanup()
 
     else:
         for filename in options.files:
+            # Check if solving should be interrupted
+            if is_solver_interrupted():
+                print(f"{Style.BRIGHT}Solver interrupted by user.{Style.RESET_ALL}")
+                raise KeyboardInterrupt("Solver interrupted by user")
+                
             print(f"\n{Style.BRIGHT}Solving {filename}.{Style.RESET_ALL}")
             print(
                 f"Downsample: {downsample}, RA: {ra}, Dec: {dec}, Radius: {radius}\n"
             )
 
+            # Validate image before attempting to solve
+            if config.SOLVER_VALIDATE_IMAGES:
+                print(f"{Style.BRIGHT}Image validation is enabled.{Style.RESET_ALL}")
+                is_valid, reason = validate_image_for_solving(filename)
+                if not is_valid:
+                    print(f"{Style.BRIGHT}Skipping {filename}: {reason}{Style.RESET_ALL}")
+                    continue
+            else:
+                print(f"{Style.BRIGHT}Image validation is disabled.{Style.RESET_ALL}")
+
             # Generate WCS filename
             base_name = Path(filename).stem
             wcs_filename = f"solved/{base_name}.wcs"
             
-            proc = run(
-                [
-                    "solve-field",
-                    "--dir",
-                    "solved",
-                    "--no-plots",
-                    "--no-verify",
-                    "--guess-scale",
-                    "--overwrite",
-                    "--downsample",
-                    str(downsample),
-                    "--ra",
-                    str(ra),
-                    "--dec",
-                    str(dec),
-                    "--radius",
-                    str(radius),
-                    "--wcs",
-                    wcs_filename,
-                    filename,
-                ],
-                check=True,
-            )
-            
-            # Apply WCS to original file
-            if os.path.exists(wcs_filename):
-                apply_wcs_to_file(filename, wcs_filename)
-                # Clean up WCS file
-                os.remove(wcs_filename)
-            
-            solver_cleanup()
+            try:
+                proc = run(
+                    [
+                        "solve-field",
+                        "--dir",
+                        "solved",
+                        "--no-plots",
+                        "--no-verify",
+                        "--guess-scale",
+                        "--overwrite",
+                        "--downsample",
+                        str(downsample),
+                        "--ra",
+                        str(ra),
+                        "--dec",
+                        str(dec),
+                        "--radius",
+                        str(radius),
+                        "--wcs",
+                        wcs_filename,
+                        filename,
+                    ],
+                    check=True,
+                    timeout=config.SOLVER_OFFLINE_TIMEOUT,
+                )
+                
+                # Apply WCS to original file
+                if os.path.exists(wcs_filename):
+                    apply_wcs_to_file(filename, wcs_filename)
+                    # Clean up WCS file
+                    os.remove(wcs_filename)
+                    print(f"{Style.BRIGHT}Successfully solved {filename}{Style.RESET_ALL}")
+                else:
+                    print(f"{Style.BRIGHT}No WCS file generated for {filename}{Style.RESET_ALL}")
+                    
+            except TimeoutExpired:
+                print(f"{Style.BRIGHT}Timeout solving {filename} (exceeded {config.SOLVER_OFFLINE_TIMEOUT}s){Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Style.BRIGHT}Error solving {filename}: {e}{Style.RESET_ALL}")
+            finally:
+                solver_cleanup()
