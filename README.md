@@ -24,6 +24,7 @@ For manual installation, Astro-Pipelines depends on the following pakages:
 - `pyds9`
 - `photutils`
 - `requests`
+- `watchdog` (for autopipe.py)
 
 ### Astrometry.Net
 
@@ -41,7 +42,36 @@ Before using, the user must edit `config.py` to write down the correct `CALIBRAT
 
 ### Executable scripts
 
-Astro-Pipelines has two executable scrips.
+Astro-Pipelines has several executable scripts:
 
 - `astro-pipelines.py`: Main script giving access to all the package functions. See `--help` option for details.
 - `platesolve.py`: Separate wrapper for the Astrometry.Net engine. Use for online platesolving and better control over the platesolving options (although in that last case I would recommend to use `solve-field` directly). See `--help` option for details.
+- `autopipe.py`: Automated pipeline that monitors the observation directory for new FITS files and automatically calibrates and platesolves them.
+
+### AutoPipe Usage
+
+AutoPipe automatically monitors the observation directory (configured via `OBS_PATH` in `config.py`) for new FITS files and processes them through the calibration and platesolving pipeline.
+
+Before using AutoPipe, make sure to set the correct `OBS_PATH` in `config.py`:
+
+```python
+OBS_PATH = '/path/to/your/observations'
+```
+
+Usage examples:
+
+```bash
+# Use default paths from config.py
+python autopipe.py
+
+# With custom observation directory
+python autopipe.py --obs-path /custom/obs/path
+
+# With custom output directory
+python autopipe.py --autopipe-path /custom/output/path
+
+# Process existing files before starting monitoring
+python autopipe.py --process-existing
+```
+
+The default autopipe output directory is `OBS_PATH/autopipe`.
