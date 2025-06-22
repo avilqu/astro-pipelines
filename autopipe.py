@@ -31,6 +31,7 @@ from colorama import Fore, Style
 import warnings
 from astropy import wcs
 from astropy.utils.exceptions import AstropyUserWarning
+import lib.helpers
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=wcs.FITSFixedWarning)
@@ -142,20 +143,18 @@ class AutoPipeProcessor:
             try:
                 seq = FITSSequence([file_path])
                 header = seq.files[0]['header']
-                solver_options.ra = header.get('ra')
-                solver_options.dec = header.get('dec')
                 
-                if solver_options.ra is None or solver_options.dec is None:
-                    # Try WCS fallback
-                    if 'CRVAL1' in header and 'CRVAL2' in header:
-                        solver_options.ra = header['CRVAL1']
-                        solver_options.dec = header['CRVAL2']
-                        print(f"{Style.BRIGHT + Fore.GREEN}Found WCS coordinates in file.{Style.RESET_ALL}")
-                    else:
-                        print(f"{Style.BRIGHT + Fore.YELLOW}No coordinates found, using blind solving.{Style.RESET_ALL}")
-                        solver_options.blind = True
+                # Use helper function to extract coordinates
+                ra_center, dec_center, has_wcs, source = lib.helpers.extract_coordinates_from_header(header)
+                
+                if has_wcs:
+                    solver_options.ra = ra_center
+                    solver_options.dec = dec_center
+                    print(f"{Style.BRIGHT + Fore.GREEN}Found coordinates in file header.{Style.RESET_ALL}")
+                    print(f"  Source: {source}")
                 else:
-                    print(f"{Style.BRIGHT + Fore.GREEN}Found RA/DEC in file header.{Style.RESET_ALL}")
+                    print(f"{Style.BRIGHT + Fore.YELLOW}No coordinates found, using blind solving.{Style.RESET_ALL}")
+                    solver_options.blind = True
                     
             except Exception as e:
                 print(f"{Style.BRIGHT + Fore.YELLOW}Could not read coordinates from header: {e}{Style.RESET_ALL}")

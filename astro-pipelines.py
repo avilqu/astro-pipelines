@@ -215,23 +215,19 @@ if __name__ == "__main__":
             f"{Style.BRIGHT}Platesolving {len(seq.files)} files.{Style.RESET_ALL}"
         )
         try:
-            # Try WCS coordinates first (most accurate)
+            # Use helper function to extract coordinates
             header = seq.files[0]["header"]
-            if "CRVAL1" in header and "CRVAL2" in header:
-                solver_options.ra = header["CRVAL1"]
-                solver_options.dec = header["CRVAL2"]
+            ra_center, dec_center, has_wcs, source = hlp.extract_coordinates_from_header(header)
+            
+            if has_wcs:
+                solver_options.ra = ra_center
+                solver_options.dec = dec_center
                 print(
-                    f"{Style.BRIGHT + Fore.GREEN}Found WCS coordinates in file, using as target.{Style.RESET_ALL}"
+                    f"{Style.BRIGHT + Fore.GREEN}Found coordinates in file, using as target.{Style.RESET_ALL}"
                 )
-                print(f'  CRVAL1 (RA): {solver_options.ra} degrees')
-                print(f'  CRVAL2 (DEC): {solver_options.dec} degrees')
-            # Fallback to simple RA/DEC keywords
-            elif "ra" in header and "dec" in header:
-                solver_options.ra = header["ra"]
-                solver_options.dec = header["dec"]
-                print(
-                    f"{Style.BRIGHT + Fore.GREEN}Found RA/DEC in file, using as target.{Style.RESET_ALL}"
-                )
+                print(f"  Source: {source}")
+                print(f"  RA: {solver_options.ra} degrees")
+                print(f"  Dec: {solver_options.dec} degrees")
             else:
                 print(f"{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}")
                 solver_options.blind = True

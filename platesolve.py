@@ -56,18 +56,16 @@ if __name__ == "__main__":
             header = hdu[0].header
             hdu.close()
             
-            # First try to get coordinates from simple ra/dec keywords
-            if 'ra' in header and 'dec' in header:
-                args.ra = header['ra']
-                args.dec = header['dec']
-                print(f'{Style.BRIGHT + Fore.GREEN}Found RA/DEC keywords in file, using as target.{Style.RESET_ALL}')
-            # If not found, try to extract from WCS
-            elif 'CRVAL1' in header and 'CRVAL2' in header:
-                args.ra = header['CRVAL1']
-                args.dec = header['CRVAL2']
-                print(f'{Style.BRIGHT + Fore.GREEN}Found WCS coordinates in file, using as target.{Style.RESET_ALL}')
-                print(f'  CRVAL1 (RA): {args.ra} degrees')
-                print(f'  CRVAL2 (DEC): {args.dec} degrees')
+            # Use helper function to extract coordinates
+            ra_center, dec_center, has_wcs, source = hlp.extract_coordinates_from_header(header)
+            
+            if has_wcs:
+                args.ra = ra_center
+                args.dec = dec_center
+                print(f'{Style.BRIGHT + Fore.GREEN}Found coordinates in file, using as target.{Style.RESET_ALL}')
+                print(f'  Source: {source}')
+                print(f'  RA: {args.ra} degrees')
+                print(f'  Dec: {args.dec} degrees')
             else:
                 raise Exception("No coordinate information found")
                 

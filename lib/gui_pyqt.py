@@ -7,11 +7,13 @@ from astropy.wcs import WCS
 from astropy.time import Time
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
                              QVBoxLayout, QHBoxLayout, QFileDialog, QScrollArea,
-                             QLabel, QFrame, QSizePolicy, QTextEdit, QDialog, QStatusBar)
+                             QLabel, QFrame, QSizePolicy, QTextEdit, QDialog, QStatusBar,
+                             QLineEdit, QMessageBox)
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QFont, QPen, QColor
-from .astrometry import AstrometryCatalog, SolarSystemObject
+from .astrometry import AstrometryCatalog, SolarSystemObject, SIMBADObject
 from .solver import solve_offline
+from .helpers import extract_coordinates_from_header, calculate_field_radius, validate_wcs_solution, create_solver_options
 import config
 
 
@@ -319,6 +321,100 @@ class SolarSystemObjectsDialog(QDialog):
         self.text_area.setHtml(objects_html)
 
 
+class SIMBADSearchDialog(QDialog):
+    """Dialog window for SIMBAD object search"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("SIMBAD Object Search")
+        self.setGeometry(300, 300, 400, 150)
+        self.setModal(True)
+        
+        self.parent_viewer = parent
+        self.result = None
+        
+        layout = QVBoxLayout(self)
+        
+        # Instructions
+        instruction_label = QLabel("Enter the name of an astronomical object to search in SIMBAD:")
+        instruction_label.setWordWrap(True)
+        layout.addWidget(instruction_label)
+        
+        # Search input
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("e.g., M31, NGC 224, Vega, Sirius")
+        self.search_input.returnPressed.connect(self.search_object)
+        layout.addWidget(self.search_input)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.search_button = QPushButton("Search")
+        self.search_button.clicked.connect(self.search_object)
+        button_layout.addWidget(self.search_button)
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Set focus to search input
+        self.search_input.setFocus()
+    
+    def search_object(self):
+        """Search for the object in SIMBAD"""
+        object_name = self.search_input.text().strip()
+        
+        if not object_name:
+            QMessageBox.warning(self, "Search Error", "Please enter an object name.")
+            return
+        
+        # Disable search button during search
+        self.search_button.setEnabled(False)
+        self.search_button.setText("Searching...")
+        
+        try:
+            # Search SIMBAD
+            simbad_object = self.parent_viewer.astrometry_catalog.simbad_search(object_name)
+            
+            if simbad_object is None:
+                QMessageBox.information(self, "Not Found", f"The object '{object_name}' was not found in SIMBAD.")
+                return
+            
+            # Check if object is in the field
+            if self.parent_viewer.wcs is None:
+                QMessageBox.warning(self, "No WCS", "No WCS information available. Please solve the image first.")
+                return
+            
+            is_in_field, pixel_coords = self.parent_viewer.astrometry_catalog.check_object_in_field(
+                self.parent_viewer.wcs, 
+                self.parent_viewer.image_data.shape, 
+                simbad_object
+            )
+            
+            if is_in_field:
+                # Object found and in field
+                self.result = (simbad_object, pixel_coords)
+                QMessageBox.information(self, "Object Found", 
+                    f"Found '{simbad_object.name}' in the field!\n"
+                    f"Type: {simbad_object.object_type}\n"
+                    f"RA: {simbad_object.ra:.4f}°, Dec: {simbad_object.dec:.4f}°")
+                self.accept()
+            else:
+                # Object found but out of field
+                QMessageBox.information(self, "Object Out of Field", 
+                    f"The object '{simbad_object.name}' was found in SIMBAD but is out of frame.\n"
+                    f"Coordinates: RA {simbad_object.ra:.4f}°, Dec {simbad_object.dec:.4f}°")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Search Error", f"Error searching SIMBAD: {str(e)}")
+        finally:
+            # Re-enable search button
+            self.search_button.setEnabled(True)
+            self.search_button.setText("Search")
+
+
 class FITSImageViewer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -352,6 +448,11 @@ class FITSImageViewer(QMainWindow):
         self.show_objects = False
         self.objects_dialog = None
         self.header_dialog = None
+        
+        # SIMBAD objects
+        self.simbad_object = None
+        self.simbad_pixel_coords = None
+        self.show_simbad_object = False
         
         # Create central widget and layout
         central_widget = QWidget()
@@ -419,6 +520,13 @@ class FITSImageViewer(QMainWindow):
         self.objects_button.clicked.connect(self.toggle_solar_system_objects)
         self.objects_button.setEnabled(False)  # Disabled until a file is loaded
         layout.addWidget(self.objects_button)
+        
+        # SIMBAD Search button
+        self.simbad_button = QPushButton("Find Object")
+        self.simbad_button.setToolTip("Search for an object in the SIMBAD database")
+        self.simbad_button.clicked.connect(self.search_simbad_object)
+        self.simbad_button.setEnabled(False)  # Disabled until a file is loaded
+        layout.addWidget(self.simbad_button)
         
         # Solve button
         self.solve_button = QPushButton("Solve")
@@ -577,8 +685,10 @@ class FITSImageViewer(QMainWindow):
         # Enable objects button if WCS is available
         if self.wcs is not None:
             self.objects_button.setEnabled(True)
+            self.simbad_button.setEnabled(True)
         else:
             self.objects_button.setEnabled(False)
+            self.simbad_button.setEnabled(False)
         
         # Enable solve button when a file is loaded
         self.solve_button.setEnabled(True)
@@ -634,52 +744,96 @@ class FITSImageViewer(QMainWindow):
         return QPixmap.fromImage(q_image)
 
     def _add_object_markers(self, pixmap):
-        """Add green circles for solar system objects to the pixmap - optimized version"""
-        if not self.object_pixel_coords:
-            return pixmap
+        """Add circles for solar system objects and SIMBAD objects to the pixmap - optimized version"""
+        # Add solar system objects (green circles)
+        if self.object_pixel_coords:
+            # Create a painter to draw on the pixmap
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Calculate font size based on zoom level (larger font for higher zoom)
+            base_font_size = 16
+            scaled_font_size = max(8, base_font_size * self.scale_factor)
+            font = QFont("Arial", int(scaled_font_size))
+            painter.setFont(font)
+            
+            # Scale circle size and line width with zoom level (larger circles for higher zoom)
+            base_circle_radius = 12
+            scaled_circle_radius = max(6, base_circle_radius * self.scale_factor)
+            scaled_pen_width = max(1, 2 * self.scale_factor)
+            
+            # Draw circles for each solar system object
+            for obj, x_pixel, y_pixel in self.object_pixel_coords:
+                if (0 <= x_pixel < pixmap.width() and 0 <= y_pixel < pixmap.height()):
+                    # Draw circle in green
+                    circle_pen = QPen(QColor(0, 255, 0))
+                    circle_pen.setWidth(int(scaled_pen_width))
+                    painter.setPen(circle_pen)
+                    painter.drawEllipse(int(x_pixel - scaled_circle_radius), int(y_pixel - scaled_circle_radius), 
+                                       int(scaled_circle_radius * 2), int(scaled_circle_radius * 2))
+                    
+                    # Add object name
+                    if len(self.object_pixel_coords) <= 10:
+                        text_x = int(x_pixel + scaled_circle_radius + 8)
+                        text_y = int(y_pixel + 8)
+                        
+                        # Draw outline
+                        outline_pen = QPen(QColor(0, 0, 0))
+                        outline_pen.setWidth(int(max(2, 5 * self.scale_factor)))
+                        painter.setPen(outline_pen)
+                        painter.drawText(text_x, text_y, obj.name)
+                        
+                        # Draw text in green
+                        text_pen = QPen(QColor(0, 255, 0))
+                        painter.setPen(text_pen)
+                        painter.drawText(text_x, text_y, obj.name)
+            
+            painter.end()
         
-        # Create a painter to draw on the pixmap
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # Calculate font size based on zoom level (larger font for higher zoom)
-        base_font_size = 16
-        scaled_font_size = max(8, base_font_size * self.scale_factor)
-        font = QFont("Arial", int(scaled_font_size))
-        painter.setFont(font)
-        
-        # Scale circle size and line width with zoom level (larger circles for higher zoom)
-        base_circle_radius = 12
-        scaled_circle_radius = max(6, base_circle_radius * self.scale_factor)
-        scaled_pen_width = max(1, 2 * self.scale_factor)
-        
-        # Draw circles for each object
-        for obj, x_pixel, y_pixel in self.object_pixel_coords:
+        # Add SIMBAD object (red circle)
+        if self.show_simbad_object and self.simbad_object and self.simbad_pixel_coords:
+            # Create a painter to draw on the pixmap
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Calculate font size based on zoom level (larger font for higher zoom)
+            base_font_size = 16
+            scaled_font_size = max(8, base_font_size * self.scale_factor)
+            font = QFont("Arial", int(scaled_font_size))
+            painter.setFont(font)
+            
+            # Scale circle size and line width with zoom level (larger circles for higher zoom)
+            base_circle_radius = 15  # Slightly larger for SIMBAD objects
+            scaled_circle_radius = max(8, base_circle_radius * self.scale_factor)
+            scaled_pen_width = max(2, 3 * self.scale_factor)  # Thicker line for SIMBAD objects
+            
+            x_pixel, y_pixel = self.simbad_pixel_coords
+            
             if (0 <= x_pixel < pixmap.width() and 0 <= y_pixel < pixmap.height()):
-                # Draw circle
-                circle_pen = QPen(QColor(0, 255, 0))
+                # Draw circle in red
+                circle_pen = QPen(QColor(255, 0, 0))
                 circle_pen.setWidth(int(scaled_pen_width))
                 painter.setPen(circle_pen)
                 painter.drawEllipse(int(x_pixel - scaled_circle_radius), int(y_pixel - scaled_circle_radius), 
                                    int(scaled_circle_radius * 2), int(scaled_circle_radius * 2))
                 
                 # Add object name
-                if len(self.object_pixel_coords) <= 10:
-                    text_x = int(x_pixel + scaled_circle_radius + 8)
-                    text_y = int(y_pixel + 8)
-                    
-                    # Draw outline
-                    outline_pen = QPen(QColor(0, 0, 0))
-                    outline_pen.setWidth(int(max(2, 5 * self.scale_factor)))
-                    painter.setPen(outline_pen)
-                    painter.drawText(text_x, text_y, obj.name)
-                    
-                    # Draw text
-                    text_pen = QPen(QColor(0, 255, 0))
-                    painter.setPen(text_pen)
-                    painter.drawText(text_x, text_y, obj.name)
+                text_x = int(x_pixel + scaled_circle_radius + 8)
+                text_y = int(y_pixel + 8)
+                
+                # Draw outline
+                outline_pen = QPen(QColor(0, 0, 0))
+                outline_pen.setWidth(int(max(2, 5 * self.scale_factor)))
+                painter.setPen(outline_pen)
+                painter.drawText(text_x, text_y, self.simbad_object.name)
+                
+                # Draw text in red
+                text_pen = QPen(QColor(255, 0, 0))
+                painter.setPen(text_pen)
+                painter.drawText(text_x, text_y, self.simbad_object.name)
+            
+            painter.end()
         
-        painter.end()
         return pixmap
 
     def _get_cached_zoom(self, scale_factor, working_pixmap):
@@ -747,6 +901,9 @@ class FITSImageViewer(QMainWindow):
         
         # Add object markers if enabled
         if self.show_objects and self.object_pixel_coords:
+            working_pixmap = working_pixmap.copy()
+            working_pixmap = self._add_object_markers(working_pixmap)
+        elif self.show_simbad_object and self.simbad_object:
             working_pixmap = working_pixmap.copy()
             working_pixmap = self._add_object_markers(working_pixmap)
         
@@ -1022,41 +1179,117 @@ class FITSImageViewer(QMainWindow):
         try:
             print(f"Solving image: {current_file}")
             
-            # Create a simple options object for the solver
-            class SolverOptions:
-                def __init__(self):
-                    self.files = [current_file]
-                    self.blind = True  # Use blind solving
-                    self.downsample = config.SOLVER_DOWNSAMPLE
-                    self.ra = None
-                    self.dec = None
-                    self.radius = None
+            # Extract coordinates from header using helper function
+            try:
+                from astropy.io import fits
+                header = fits.getheader(current_file)
+                
+                ra_center, dec_center, has_wcs, source = extract_coordinates_from_header(header)
+                
+                if has_wcs:
+                    print(f"Found coordinates in file, using as target.")
+                    print(f"  Source: {source}")
+                    print(f"  RA: {ra_center} degrees")
+                    print(f"  Dec: {dec_center} degrees")
+                else:
+                    print("No WCS found.")
+                
+                # Calculate field radius if we have WCS
+                radius = None
+                if has_wcs and self.wcs is not None:
+                    radius = calculate_field_radius(self.wcs, ra_center, dec_center)
+                    
+            except Exception as e:
+                print(f"Error reading WCS from file: {e}")
+                has_wcs = False
+                ra_center = dec_center = radius = None
             
-            options = SolverOptions()
+            # Create solver options using helper function
+            options = create_solver_options(
+                files=[current_file],
+                ra=ra_center,
+                dec=dec_center,
+                radius=radius,
+                blind=not has_wcs
+            )
+            
+            # Use guided solving if WCS is available, otherwise use blind solving
+            if has_wcs and ra_center is not None and dec_center is not None and radius is not None:
+                print(f"Using guided solving with existing WCS information")
+                print(f"Target RA / DEC: {ra_center:.6f}° / {dec_center:.6f}°")
+                print(f"Search radius: {radius:.3f}°")
+            else:
+                print("Using blind solving (no WCS information available)")
             
             # Call the offline solver
             solve_offline(options)
             
-            # Reset all state variables to clean state
-            self.solar_system_objects = []
-            self.object_pixel_coords = []
-            self.show_objects = False
-            
-            # Close any open dialogs
-            if self.objects_dialog and self.objects_dialog.isVisible():
-                self.objects_dialog.close()
-                self.objects_dialog = None
-            if self.header_dialog and self.header_dialog.isVisible():
-                self.header_dialog.close()
-                self.header_dialog = None
-            
-            # Reload the file to get the updated WCS information
-            self.load_file_from_path(current_file)
-            
-            print("Image solved successfully!")
+            # Check if solving was successful using helper function
+            try:
+                with fits.open(current_file) as hdu:
+                    header = hdu[0].header
+                    is_valid, error_message = validate_wcs_solution(header)
+                    
+                    if is_valid:
+                        print("Image solved successfully!")
+                        
+                        # Reset all state variables to clean state
+                        self.solar_system_objects = []
+                        self.object_pixel_coords = []
+                        self.show_objects = False
+                        
+                        # Clear SIMBAD objects
+                        self.simbad_object = None
+                        self.simbad_pixel_coords = None
+                        self.show_simbad_object = False
+                        
+                        # Close any open dialogs
+                        if self.objects_dialog and self.objects_dialog.isVisible():
+                            self.objects_dialog.close()
+                            self.objects_dialog = None
+                        if self.header_dialog and self.header_dialog.isVisible():
+                            self.header_dialog.close()
+                            self.header_dialog = None
+                        
+                        # Reload the file to get the updated WCS information
+                        self.load_file_from_path(current_file)
+                    else:
+                        print(f"Solving failed: {error_message}")
+                        
+            except Exception as e:
+                print(f"Error checking solving result: {e}")
             
         except Exception as e:
-            print(f"Error solving image: {e}")
+            print(f"Error during solving: {e}")
+            print("Solving failed!")
+
+    def search_simbad_object(self):
+        """Search for an object in SIMBAD and display it if found in the field"""
+        if self.wcs is None:
+            QMessageBox.warning(self, "No WCS", "No WCS information available. Please solve the image first.")
+            return
+        
+        # Create and show the SIMBAD search dialog
+        dialog = SIMBADSearchDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.result:
+            simbad_object, pixel_coords = dialog.result
+            
+            # Store the SIMBAD object and its pixel coordinates
+            self.simbad_object = simbad_object
+            self.simbad_pixel_coords = pixel_coords
+            self.show_simbad_object = True
+            
+            # Update the image display to show the SIMBAD object
+            self.update_image_display()
+            
+            print(f"SIMBAD object displayed: {simbad_object.name} at pixel coordinates {pixel_coords}")
+
+    def clear_simbad_object(self):
+        """Clear the current SIMBAD object display"""
+        self.simbad_object = None
+        self.simbad_pixel_coords = None
+        self.show_simbad_object = False
+        self.update_image_display()
 
 
 def main():

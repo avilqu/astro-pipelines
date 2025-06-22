@@ -7,6 +7,7 @@ from astropy.wcs import WCS
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional, Tuple
 import logging
+from astroquery.simbad import Simbad
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -30,12 +31,90 @@ class SolarSystemObject:
         return f"{self.name} ({self.object_type}) - RA: {self.ra:.4f}°, Dec: {self.dec:.4f}°, Mag: {self.magnitude:.2f}"
 
 
+class SIMBADObject:
+    """Class to represent a SIMBAD object found in the field"""
+    
+    def __init__(self, name: str, ra: float, dec: float, object_type: str = "Unknown", 
+                 magnitude: float = None, distance: float = None):
+        self.name = name
+        self.ra = ra  # degrees
+        self.dec = dec  # degrees
+        self.object_type = object_type
+        self.magnitude = magnitude
+        self.distance = distance  # parsecs
+        
+    def __str__(self):
+        mag_str = f", Mag: {self.magnitude:.2f}" if self.magnitude is not None else ""
+        dist_str = f", Dist: {self.distance:.1f}pc" if self.distance is not None else ""
+        return f"{self.name} ({self.object_type}) - RA: {self.ra:.4f}°, Dec: {self.dec:.4f}°{mag_str}{dist_str}"
+
+
 class AstrometryCatalog:
     """Class to handle catalog searches and astrometry operations"""
     
     def __init__(self):
         self.skybot_url = "http://vo.imcce.fr/webservices/skybot/skybotconesearch_query.php"
+        self.simbad_url = "http://simbad.u-strasbg.fr/simbad/sim-id"
         
+    def simbad_search(self, object_name: str) -> Optional[SIMBADObject]:
+        """
+        Search for an object in the SIMBAD database using astroquery
+        """
+        try:
+            result = Simbad.query_object(object_name)
+            if result is not None:
+                ra = result['ra'][0]   # already in degrees
+                dec = result['dec'][0] # already in degrees
+                return SIMBADObject(object_name, ra, dec, "Unknown")
+            else:
+                return None
+        except Exception as e:
+            logger.error(f"Astroquery SIMBAD error: {e}")
+            return None
+    
+    def check_object_in_field(self, wcs: WCS, image_shape: Tuple[int, int], 
+                             simbad_object: SIMBADObject) -> Tuple[bool, Optional[Tuple[float, float]]]:
+        """
+        Check if a SIMBAD object is within the image field
+        
+        Parameters:
+        -----------
+        wcs : WCS
+            World Coordinate System object
+        image_shape : Tuple[int, int]
+            Image dimensions (height, width)
+        simbad_object : SIMBADObject
+            The SIMBAD object to check
+            
+        Returns:
+        --------
+        Tuple[bool, Optional[Tuple[float, float]]]
+            (is_in_field, pixel_coordinates) where pixel_coordinates is (x, y) if in field
+        """
+        try:
+            # Convert object coordinates to pixel coordinates
+            obj_coords = SkyCoord(ra=simbad_object.ra*u.deg, dec=simbad_object.dec*u.deg)
+            pixel_result = wcs.world_to_pixel(obj_coords)
+            
+            # Handle both single coordinates and arrays
+            if hasattr(pixel_result, '__len__') and len(pixel_result) == 2:
+                pixel_x, pixel_y = pixel_result
+            else:
+                pixel_x, pixel_y = pixel_result[0], pixel_result[1]
+            
+            # Check if object is within image bounds
+            if (0 <= pixel_x <= image_shape[1] and 
+                0 <= pixel_y <= image_shape[0]):
+                logger.info(f"Object {simbad_object.name} is in field at pixel coordinates ({pixel_x:.1f}, {pixel_y:.1f})")
+                return True, (float(pixel_x), float(pixel_y))
+            else:
+                logger.info(f"Object {simbad_object.name} is out of field (pixel coordinates: {pixel_x:.1f}, {pixel_y:.1f})")
+                return False, None
+                
+        except Exception as e:
+            logger.error(f"Error checking if object {simbad_object.name} is in field: {e}")
+            return False, None
+    
     def skybot_cone_search(self, ra: float, dec: float, radius: float, 
                           epoch: Time, max_magnitude: float = 25.0) -> List[SolarSystemObject]:
         """
