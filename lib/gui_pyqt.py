@@ -365,7 +365,7 @@ class FITSImageViewer(QMainWindow):
         layout.addWidget(self.header_button)
         
         # Solar System Objects button
-        self.objects_button = QPushButton("Solar System Objects")
+        self.objects_button = QPushButton("Show SSO")
         self.objects_button.setToolTip("Search for and display solar system objects in the field")
         self.objects_button.clicked.connect(self.toggle_solar_system_objects)
         self.objects_button.setEnabled(False)  # Disabled until a file is loaded
