@@ -8,7 +8,7 @@ from astropy.time import Time
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
                              QVBoxLayout, QHBoxLayout, QFileDialog, QScrollArea,
                              QLabel, QFrame, QSizePolicy, QTextEdit, QDialog, QStatusBar)
-from PyQt6.QtCore import Qt, QPoint, QRect
+from PyQt6.QtCore import Qt, QPoint, QRect, QTimer
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QFont, QPen, QColor
 from .astrometry import AstrometryCatalog, SolarSystemObject
 
@@ -21,6 +21,11 @@ class ImageLabel(QLabel):
         self.parent_viewer = parent
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Add timer for coordinate updates to reduce CPU usage
+        self.coord_timer = QTimer()
+        self.coord_timer.setSingleShot(True)
+        self.coord_timer.timeout.connect(self._update_coordinates)
+        self.last_mouse_pos = QPoint()
     
     def mousePressEvent(self, event: QMouseEvent):
         """Handle mouse press events for panning"""
@@ -28,7 +33,6 @@ class ImageLabel(QLabel):
             self.parent_viewer.panning = True
             self.parent_viewer.last_mouse_pos = event.pos()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
-            print(f"Panning started at {event.pos()}")
         super().mousePressEvent(event)
     
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -46,85 +50,86 @@ class ImageLabel(QLabel):
                 
                 self.parent_viewer.last_mouse_pos = event.pos()
             
-            # Handle coordinate display
-            if self.parent_viewer.wcs is not None:
-                # Get mouse position relative to the image label
-                mouse_pos = event.pos()
-                
-                # Get the scaled pixmap size
-                scaled_pixmap = self.pixmap()
-                if scaled_pixmap:
-                    pixmap_size = scaled_pixmap.size()
-                    label_size = self.size()
-                    
-                    # Calculate position within the pixmap
-                    x_offset = (label_size.width() - pixmap_size.width()) // 2
-                    y_offset = (label_size.height() - pixmap_size.height()) // 2
-                    
-                    pixmap_x = mouse_pos.x() - x_offset
-                    pixmap_y = mouse_pos.y() - y_offset
-                    
-                    # Check if mouse is within the pixmap bounds
-                    if (0 <= pixmap_x < pixmap_size.width() and 
-                        0 <= pixmap_y < pixmap_size.height()):
-                        
-                        # Convert to original image coordinates
-                        orig_x = pixmap_x / self.parent_viewer.scale_factor
-                        orig_y = pixmap_y / self.parent_viewer.scale_factor
-                        
-                        # Get pixel value
-                        try:
-                            if (0 <= orig_x < self.parent_viewer.image_data.shape[1] and 
-                                0 <= orig_y < self.parent_viewer.image_data.shape[0]):
-                                pixel_value = self.parent_viewer.image_data[int(orig_y), int(orig_x)]
-                                if self.parent_viewer.bit_depth:
-                                    self.parent_viewer.pixel_value_label.setText(f"{pixel_value} / {self.parent_viewer.bit_depth}")
-                                else:
-                                    self.parent_viewer.pixel_value_label.setText(f"{pixel_value}")
-                            else:
-                                self.parent_viewer.pixel_value_label.setText("--")
-                        except Exception as e:
-                            self.parent_viewer.pixel_value_label.setText("--")
-                        
-                        # Convert to sky coordinates
-                        try:
-                            sky_coords = self.parent_viewer.wcs.pixel_to_world(orig_x, orig_y)
-                            # Handle SkyCoord object properly
-                            if hasattr(sky_coords, 'ra') and hasattr(sky_coords, 'dec'):
-                                # Single SkyCoord object
-                                ra = sky_coords.ra.to_string(unit='hourangle', precision=2)
-                                dec = sky_coords.dec.to_string(unit='deg', precision=2)
-                            else:
-                                # Array of coordinates
-                                ra = sky_coords[0].to_string(unit='hourangle', precision=2)
-                                dec = sky_coords[1].to_string(unit='deg', precision=2)
-                            coord_text = f"RA: {ra}  Dec: {dec}  Pixel: ({orig_x:.1f}, {orig_y:.1f})"
-                            self.parent_viewer.coord_label.setText(coord_text)
-                        except Exception as e:
-                            self.parent_viewer.coord_label.setText(f"WCS error: {str(e)}")
-                    else:
-                        self.parent_viewer.coord_label.setText("WCS ready - move mouse over image for coordinates")
-                        self.parent_viewer.pixel_value_label.setText("--")
+            # Throttle coordinate updates to reduce CPU usage
+            self.last_mouse_pos = event.pos()
+            if not self.coord_timer.isActive():
+                self.coord_timer.start(50)  # Update every 50ms max
         
         super().mouseMoveEvent(event)
+    
+    def _update_coordinates(self):
+        """Update coordinate display (called by timer to reduce CPU usage)"""
+        if not self.parent_viewer or not self.parent_viewer.wcs:
+            return
+            
+        mouse_pos = self.last_mouse_pos
+        scaled_pixmap = self.pixmap()
+        if not scaled_pixmap:
+            return
+            
+        pixmap_size = scaled_pixmap.size()
+        label_size = self.size()
+        
+        # Calculate position within the pixmap
+        x_offset = (label_size.width() - pixmap_size.width()) // 2
+        y_offset = (label_size.height() - pixmap_size.height()) // 2
+        
+        pixmap_x = mouse_pos.x() - x_offset
+        pixmap_y = mouse_pos.y() - y_offset
+        
+        # Check if mouse is within the pixmap bounds
+        if (0 <= pixmap_x < pixmap_size.width() and 
+            0 <= pixmap_y < pixmap_size.height()):
+            
+            # Convert to original image coordinates
+            orig_x = pixmap_x / self.parent_viewer.scale_factor
+            orig_y = pixmap_y / self.parent_viewer.scale_factor
+            
+            # Get pixel value
+            try:
+                if (0 <= orig_x < self.parent_viewer.image_data.shape[1] and 
+                    0 <= orig_y < self.parent_viewer.image_data.shape[0]):
+                    pixel_value = self.parent_viewer.image_data[int(orig_y), int(orig_x)]
+                    if self.parent_viewer.bit_depth:
+                        self.parent_viewer.pixel_value_label.setText(f"{pixel_value} / {self.parent_viewer.bit_depth}")
+                    else:
+                        self.parent_viewer.pixel_value_label.setText(f"{pixel_value}")
+                else:
+                    self.parent_viewer.pixel_value_label.setText("--")
+            except Exception:
+                self.parent_viewer.pixel_value_label.setText("--")
+            
+            # Convert to sky coordinates
+            try:
+                sky_coords = self.parent_viewer.wcs.pixel_to_world(orig_x, orig_y)
+                if hasattr(sky_coords, 'ra') and hasattr(sky_coords, 'dec'):
+                    ra = sky_coords.ra.to_string(unit='hourangle', precision=2)
+                    dec = sky_coords.dec.to_string(unit='deg', precision=2)
+                else:
+                    ra = sky_coords[0].to_string(unit='hourangle', precision=2)
+                    dec = sky_coords[1].to_string(unit='deg', precision=2)
+                coord_text = f"RA: {ra}  Dec: {dec}  Pixel: ({orig_x:.1f}, {orig_y:.1f})"
+                self.parent_viewer.coord_label.setText(coord_text)
+            except Exception as e:
+                self.parent_viewer.coord_label.setText(f"WCS error: {str(e)}")
+        else:
+            self.parent_viewer.coord_label.setText("WCS ready - move mouse over image for coordinates")
+            self.parent_viewer.pixel_value_label.setText("--")
     
     def mouseReleaseEvent(self, event: QMouseEvent):
         """Handle mouse release events"""
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
             self.parent_viewer.panning = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
-            print("Panning stopped")
         super().mouseReleaseEvent(event)
     
     def wheelEvent(self, event: QWheelEvent):
         """Handle mouse wheel events for zooming"""
-        if self.parent_viewer and self.parent_viewer.pixmap is not None:
+        if self.parent_viewer and self.parent_viewer.base_pixmap is not None:
             # Determine zoom factor
             if event.angleDelta().y() > 0:
-                # Zoom in
                 self.parent_viewer.scale_factor *= 1.1
             else:
-                # Zoom out
                 self.parent_viewer.scale_factor /= 1.1
                 if self.parent_viewer.scale_factor < 0.1:
                     self.parent_viewer.scale_factor = 0.1
@@ -289,20 +294,30 @@ class FITSImageViewer(QMainWindow):
         # Image data and display variables
         self.image_data = None
         self.pixmap = None
+        self.base_pixmap = None  # Cache the base pixmap without scaling
         self.scale_factor = 1.0
         self.last_mouse_pos = QPoint()
         self.panning = False
-        self.current_header = None  # Store the current FITS header
-        self.wcs = None  # Store WCS information
-        self.bit_depth = None  # Store bit depth information
+        self.current_header = None
+        self.wcs = None
+        self.bit_depth = None
+        
+        # Performance optimization: cache display parameters
+        self.display_min = None
+        self.display_max = None
+        self.last_stretch_state = None  # Track if stretch changed
+        
+        # Zoom cache for performance
+        self.zoom_cache = {}  # Cache scaled pixmaps for common zoom levels
+        self.max_cache_size = 10  # Maximum number of cached zoom levels
         
         # Astrometry and solar system objects
         self.astrometry_catalog = AstrometryCatalog()
-        self.solar_system_objects = []  # List of SolarSystemObject instances
-        self.object_pixel_coords = []  # List of (object, x_pixel, y_pixel) tuples
-        self.show_objects = False  # Toggle for displaying object markers
-        self.objects_dialog = None  # Store reference to the objects dialog
-        self.header_dialog = None  # Store reference to the header dialog
+        self.solar_system_objects = []
+        self.object_pixel_coords = []
+        self.show_objects = False
+        self.objects_dialog = None
+        self.header_dialog = None
         
         # Create central widget and layout
         central_widget = QWidget()
@@ -323,7 +338,7 @@ class FITSImageViewer(QMainWindow):
         # Create custom image label
         self.image_label = ImageLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setMinimumSize(800, 600)  # Set a reasonable minimum size
+        self.image_label.setMinimumSize(800, 600)
         self.image_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.image_label.setStyleSheet("QLabel { background-color: black; }")
         self.image_label.setText("No image loaded")
@@ -415,7 +430,6 @@ class FITSImageViewer(QMainWindow):
             # Use actual data min/max for true "no stretch"
             self.display_min = self.image_data.min()
             self.display_max = self.image_data.max()
-            print(f"No stretch: min={self.display_min}, max={self.display_max}")
             self.update_image_display()
 
     def apply_auto_stretch(self):
@@ -424,7 +438,6 @@ class FITSImageViewer(QMainWindow):
             # Use 5th and 95th percentiles (the bright stretch code that works)
             self.display_min = np.percentile(self.image_data, 1)
             self.display_max = np.percentile(self.image_data, 99)
-            print(f"Auto stretch: min={self.display_min}, max={self.display_max}")
             self.update_image_display()
 
     def open_file(self):
@@ -504,7 +517,6 @@ class FITSImageViewer(QMainWindow):
                 self.wcs = WCS(header)
                 self.coord_label.setText("WCS ready - move mouse over image for coordinates")
             except Exception as e:
-                print(f"Error creating WCS: {e}")
                 self.coord_label.setText("WCS present but invalid")
                 
         elif 'CD1_1' in header or 'CDELT1' in header:
@@ -514,30 +526,28 @@ class FITSImageViewer(QMainWindow):
                 self.wcs = WCS(header)
                 self.coord_label.setText("WCS ready - move mouse over image for coordinates")
             except Exception as e:
-                print(f"Error creating WCS: {e}")
                 self.coord_label.setText("WCS present but invalid")
         else:
             self.coord_label.setText("No WCS - coordinates unavailable")
         
         self.wcs_label.setText(wcs_status)
         self.wcs_label.setStyleSheet(f"color: {wcs_color};")
+        
+        # Enable objects button if WCS is available
+        if self.wcs is not None:
+            self.objects_button.setEnabled(True)
+        else:
+            self.objects_button.setEnabled(False)
 
     def load_file_from_path(self, filepath):
         """Load a FITS file from a given filepath"""
         try:
             hdu_list = fits.open(filepath)
-            hdu_list.info()
             image_data = hdu_list[0].data
             self.load_image(image_data, filepath)
             self.update_image_info(hdu_list)
             self.current_header = hdu_list[0].header
             self.header_button.setEnabled(True)  # Enable header button
-            
-            # Enable objects button if WCS is available
-            if self.wcs is not None:
-                self.objects_button.setEnabled(True)
-            else:
-                self.objects_button.setEnabled(False)
             
             hdu_list.close()
         except Exception as e:
@@ -546,46 +556,27 @@ class FITSImageViewer(QMainWindow):
             self.objects_button.setEnabled(False)  # Disable objects button on error
 
     def create_image_object(self, image_data: np.ndarray, display_min=None, display_max=None):
-        """Convert numpy array to QPixmap for display with optional object markers"""
-        print(f'image_data shape: {image_data.shape}')
-        print(f'image_data dtype: {image_data.dtype}')
-        print(f'Input display_min: {display_min}, display_max: {display_max}')
-        
+        """Convert numpy array to QPixmap for display - optimized version"""
         # Use provided display range or calculate from histogram
         if display_min is None or display_max is None:
-            # Create histogram for display scaling - use the same approach as original
             histo = np.histogram(image_data, 60, None, True)
-            # Use the bin edges (histo[1]) for min/max, not the actual data min/max
-            self.display_min = histo[1][0]  # First bin edge
-            self.display_max = histo[1][-1]  # Last bin edge
-            print(f'Calculated from histogram: min={self.display_min}, max={self.display_max}')
+            self.display_min = histo[1][0]
+            self.display_max = histo[1][-1]
         else:
             self.display_min = display_min
             self.display_max = display_max
-            print(f'Using provided values: min={self.display_min}, max={self.display_max}')
-        
-        print(f'Final Histogram min: {self.display_min}, max: {self.display_max}')
-        print(f'Data min: {image_data.min()}, max: {image_data.max()}')
         
         # Apply histogram stretching
         if self.display_max > self.display_min:
-            # Clip the data to the histogram range first
             clipped_data = np.clip(image_data, self.display_min, self.display_max)
-            # Then normalize to 0-1 range
             normalized_data = (clipped_data - self.display_min) / (self.display_max - self.display_min)
-            print(f'Clipped data range: {clipped_data.min()} to {clipped_data.max()}')
-            print(f'Normalized data range: {normalized_data.min():.3f} to {normalized_data.max():.3f}')
         else:
-            # Fallback if histogram range is invalid
             normalized_data = image_data - image_data.min()
             if normalized_data.max() > 0:
                 normalized_data = normalized_data / normalized_data.max()
-            print(f'Using fallback normalization')
         
         # Convert to 8-bit for display
         display_data = (normalized_data * 255).astype(np.uint8)
-        
-        print(f'Display data min: {display_data.min()}, max: {display_data.max()}')
         
         # Create QImage from numpy array
         height, width = display_data.shape
@@ -594,19 +585,10 @@ class FITSImageViewer(QMainWindow):
         q_image = q_image.copy()
         
         # Convert to pixmap
-        pixmap = QPixmap.fromImage(q_image)
-        
-        # Add object markers if enabled
-        if self.show_objects and self.object_pixel_coords:
-            # Create a copy of the pixmap to avoid overdrawing
-            pixmap_with_markers = pixmap.copy()
-            pixmap_with_markers = self._add_object_markers(pixmap_with_markers)
-            return pixmap_with_markers
-        
-        return pixmap
+        return QPixmap.fromImage(q_image)
 
     def _add_object_markers(self, pixmap):
-        """Add green circles for solar system objects to the pixmap"""
+        """Add green circles for solar system objects to the pixmap - optimized version"""
         if not self.object_pixel_coords:
             return pixmap
         
@@ -614,50 +596,39 @@ class FITSImageViewer(QMainWindow):
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Calculate font size based on zoom level - inverse scaling
-        # Base font size of 16pt, scaled down by zoom factor to maintain apparent size
+        # Calculate font size based on zoom level (larger font for higher zoom)
         base_font_size = 16
-        scaled_font_size = max(8, base_font_size / self.scale_factor)  # Minimum 8pt
-        
-        # Set up font for text - scale with zoom level
-        font = QFont("Arial", int(scaled_font_size))  # Scale font size
+        scaled_font_size = max(8, base_font_size * self.scale_factor)
+        font = QFont("Arial", int(scaled_font_size))
         painter.setFont(font)
         
-        # Scale circle size and line width with zoom level
+        # Scale circle size and line width with zoom level (larger circles for higher zoom)
         base_circle_radius = 12
-        scaled_circle_radius = max(6, base_circle_radius / self.scale_factor)  # Minimum 6px
-        scaled_pen_width = max(1, 2 / self.scale_factor)  # Reduced from 5 to 2, minimum 1px
+        scaled_circle_radius = max(6, base_circle_radius * self.scale_factor)
+        scaled_pen_width = max(1, 2 * self.scale_factor)
         
         # Draw circles for each object
         for obj, x_pixel, y_pixel in self.object_pixel_coords:
-            # The pixmap is already scaled, so use the original pixel coordinates
-            # Check if coordinates are within pixmap bounds
             if (0 <= x_pixel < pixmap.width() and 0 <= y_pixel < pixmap.height()):
-                # Create a fresh pen for each object to ensure consistency
-                circle_pen = QPen(QColor(0, 255, 0))  # Green
+                # Draw circle
+                circle_pen = QPen(QColor(0, 255, 0))
                 circle_pen.setWidth(int(scaled_pen_width))
                 painter.setPen(circle_pen)
-                
-                # Draw a scaled circle
                 painter.drawEllipse(int(x_pixel - scaled_circle_radius), int(y_pixel - scaled_circle_radius), 
                                    int(scaled_circle_radius * 2), int(scaled_circle_radius * 2))
                 
-                # Add object name with better positioning
+                # Add object name
                 if len(self.object_pixel_coords) <= 10:
-                    # Position text to the right and slightly below the circle
                     text_x = int(x_pixel + scaled_circle_radius + 8)
                     text_y = int(y_pixel + 8)
                     
-                    # Scale outline width with zoom
-                    scaled_outline_width = max(2, 5 / self.scale_factor)
-                    
-                    # Draw a thick black outline around the text for maximum visibility
-                    outline_pen = QPen(QColor(0, 0, 0))  # Black outline
-                    outline_pen.setWidth(int(scaled_outline_width))  # Scaled outline
+                    # Draw outline
+                    outline_pen = QPen(QColor(0, 0, 0))
+                    outline_pen.setWidth(int(max(2, 5 * self.scale_factor)))
                     painter.setPen(outline_pen)
                     painter.drawText(text_x, text_y, obj.name)
                     
-                    # Draw the bright green text on top
+                    # Draw text
                     text_pen = QPen(QColor(0, 255, 0))
                     painter.setPen(text_pen)
                     painter.drawText(text_x, text_y, obj.name)
@@ -665,8 +636,86 @@ class FITSImageViewer(QMainWindow):
         painter.end()
         return pixmap
 
+    def _get_cached_zoom(self, scale_factor, working_pixmap):
+        """Get cached zoom level or create and cache it"""
+        # Round scale factor to reduce cache size
+        rounded_scale = round(scale_factor, 2)
+        cache_key = (rounded_scale, working_pixmap.width(), working_pixmap.height())
+        
+        if cache_key in self.zoom_cache:
+            return self.zoom_cache[cache_key]
+        
+        # Calculate the scaled size
+        scaled_width = int(working_pixmap.width() * rounded_scale)
+        scaled_height = int(working_pixmap.height() * rounded_scale)
+        
+        # Use faster scaling for better performance
+        if rounded_scale > 2.0:
+            # For high zoom levels, use smooth transformation
+            scaled_pixmap = working_pixmap.scaled(
+                scaled_width,
+                scaled_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+        else:
+            # For normal zoom levels, use fast transformation
+            scaled_pixmap = working_pixmap.scaled(
+                scaled_width,
+                scaled_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+        
+        # Cache the result
+        self.zoom_cache[cache_key] = scaled_pixmap
+        
+        # Limit cache size
+        if len(self.zoom_cache) > self.max_cache_size:
+            # Remove oldest entry (simple FIFO)
+            oldest_key = next(iter(self.zoom_cache))
+            del self.zoom_cache[oldest_key]
+        
+        return scaled_pixmap
+
+    def clear_zoom_cache(self):
+        """Clear the zoom cache when image changes"""
+        self.zoom_cache.clear()
+
+    def update_image_display(self):
+        """Update the displayed image with current scale and position - optimized version"""
+        if self.base_pixmap is None or self.image_data is None:
+            return
+        
+        # Check if stretch settings changed
+        current_stretch = (self.display_min, self.display_max)
+        if current_stretch != self.last_stretch_state:
+            # Recreate base pixmap with new stretch settings
+            self.base_pixmap = self.create_image_object(self.image_data, self.display_min, self.display_max)
+            self.last_stretch_state = current_stretch
+            # Clear zoom cache when stretch changes
+            self.clear_zoom_cache()
+        
+        # Start with base pixmap
+        working_pixmap = self.base_pixmap
+        
+        # Add object markers if enabled
+        if self.show_objects and self.object_pixel_coords:
+            working_pixmap = working_pixmap.copy()
+            working_pixmap = self._add_object_markers(working_pixmap)
+        
+        # Get cached or create scaled pixmap
+        scaled_pixmap = self._get_cached_zoom(self.scale_factor, working_pixmap)
+        
+        # Set the pixmap
+        self.image_label.setPixmap(scaled_pixmap)
+        self.image_label.setFixedSize(scaled_pixmap.size())
+        
+        # Store current pixmap for coordinate calculations
+        self.pixmap = scaled_pixmap
+
     def load_image(self, image_data=None, title=None):
-        """Load and display an image"""
+        """Load and display an image - optimized version"""
         self.image_data = image_data
         
         # Calculate bit depth information
@@ -691,54 +740,19 @@ class FITSImageViewer(QMainWindow):
         else:
             self.bit_depth = None
         
-        self.original_pixmap = self.create_image_object(image_data)
-        self.pixmap = self.original_pixmap
+        # Create base pixmap (without scaling)
+        self.base_pixmap = self.create_image_object(image_data)
+        self.pixmap = self.base_pixmap
         self.scale_factor = 1.0
+        self.last_stretch_state = None
+        
+        # Clear zoom cache for new image
+        self.clear_zoom_cache()
         
         self.update_image_display()
         
         if title:
             self.setWindowTitle(f'Astro-Pipelines - {title}')
-
-    def update_image_display(self):
-        """Update the displayed image with current scale and position"""
-        if self.pixmap is None or self.image_data is None:
-            return
-            
-        print(f"Updating display with stretch: min={self.display_min}, max={self.display_max}")
-        
-        # Recreate the pixmap with current stretch settings
-        self.pixmap = self.create_image_object(self.image_data, self.display_min, self.display_max)
-        
-        # Get the scroll area viewport size
-        viewport_size = self.scroll_area.viewport().size()
-        
-        # Calculate the scaled size
-        scaled_width = int(self.pixmap.width() * self.scale_factor)
-        scaled_height = int(self.pixmap.height() * self.scale_factor)
-        
-        # Scale the pixmap
-        scaled_pixmap = self.pixmap.scaled(
-            scaled_width,
-            scaled_height,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
-        
-        # Set the pixmap
-        self.image_label.setPixmap(scaled_pixmap)
-        
-        # Resize the label to exactly match the scaled pixmap size
-        self.image_label.setFixedSize(scaled_pixmap.size())
-        
-        # Force a repaint
-        self.image_label.repaint()
-        self.scroll_area.viewport().repaint()
-        
-        print(f"Display updated - pixmap size: {scaled_pixmap.size()}, viewport size: {viewport_size}")
-        print(f"Label size: {self.image_label.size()}")
-        print(f"Scroll bars - H: {self.scroll_area.horizontalScrollBar().isVisible()}, V: {self.scroll_area.verticalScrollBar().isVisible()}")
-        print(f"Scroll ranges - H: {self.scroll_area.horizontalScrollBar().minimum()}-{self.scroll_area.horizontalScrollBar().maximum()}, V: {self.scroll_area.verticalScrollBar().minimum()}-{self.scroll_area.verticalScrollBar().maximum()}")
 
     def zoom_in(self):
         """Zoom in by 25%"""
@@ -781,7 +795,6 @@ class FITSImageViewer(QMainWindow):
                 self.objects_dialog.hide()
                 self.show_objects = False
                 self.update_image_display()
-                print("Solar system objects dialog and markers hidden")
             else:
                 # Show dialog and markers
                 if self.objects_dialog:
@@ -792,7 +805,6 @@ class FITSImageViewer(QMainWindow):
                     self.objects_dialog.show()
                 self.show_objects = True
                 self.update_image_display()
-                print("Solar system objects dialog and markers shown")
 
     def search_solar_system_objects(self):
         """Search for solar system objects in the current field"""
@@ -806,8 +818,6 @@ class FITSImageViewer(QMainWindow):
             if epoch is None:
                 print("Could not determine observation time from header")
                 return
-            
-            print(f"Searching for solar system objects at epoch: {epoch}")
             
             # Get solar system objects in the field
             self.solar_system_objects = self.astrometry_catalog.get_field_objects(

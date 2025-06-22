@@ -27,12 +27,28 @@ def apply_wcs_to_file(original_file, wcs_file):
         wcs_hdu = fits.open(wcs_file)
         wcs_header = wcs_hdu[0].header
         
+        print(f"WCS file contains {len(wcs_header)} header cards")
+        print("Available WCS keywords in WCS file:")
+        wcs_keywords_in_file = [k for k in wcs_header.keys() if any(wcs_key in k for wcs_key in ['CRPIX', 'CRVAL', 'CD', 'CTYPE', 'CUNIT', 'CDELT', 'CROTA', 'PC'])]
+        for k in wcs_keywords_in_file:
+            print(f"  {k}: {wcs_header[k]}")
+        
         # Read the original file
         original_hdu = fits.open(original_file, mode='update')
         
+        # First, remove any existing WCS keywords that might conflict
+        wcs_keywords_to_remove = ['CRPIX1', 'CRPIX2', 'CRVAL1', 'CRVAL2', 'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2',
+                                 'CTYPE1', 'CTYPE2', 'CUNIT1', 'CUNIT2', 'LONPOLE', 'LATPOLE',
+                                 'PC1_1', 'PC1_2', 'PC2_1', 'PC2_2', 'CDELT1', 'CDELT2', 'CROTA1', 'CROTA2']
+        
+        for keyword in wcs_keywords_to_remove:
+            if keyword in original_hdu[0].header:
+                del original_hdu[0].header[keyword]
+        
         # Update the WCS keywords in the original file
+        # Standard WCS keywords that should be copied
         wcs_keywords = ['CRPIX1', 'CRPIX2', 'CRVAL1', 'CRVAL2', 'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2',
-                       'CTYPE1', 'CTYPE2', 'CUNIT1', 'CUNIT2', 'CRRES1', 'CRRES2', 'LONPOLE', 'LATPOLE',
+                       'CTYPE1', 'CTYPE2', 'CUNIT1', 'CUNIT2', 'LONPOLE', 'LATPOLE',
                        'PC1_1', 'PC1_2', 'PC2_1', 'PC2_2', 'CDELT1', 'CDELT2', 'CROTA1', 'CROTA2']
         
         keywords_updated = 0
@@ -40,6 +56,7 @@ def apply_wcs_to_file(original_file, wcs_file):
             if keyword in wcs_header:
                 original_hdu[0].header[keyword] = wcs_header[keyword]
                 keywords_updated += 1
+                print(f"  Updated {keyword}: {wcs_header[keyword]}")
         
         # Add a comment indicating the file was plate solved
         original_hdu[0].header['HISTORY'] = 'Plate solved with astrometry.net'

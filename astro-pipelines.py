@@ -215,13 +215,7 @@ if __name__ == "__main__":
             f"{Style.BRIGHT}Platesolving {len(seq.files)} files.{Style.RESET_ALL}"
         )
         try:
-            solver_options.ra = seq.files[0]["header"]["ra"]
-            solver_options.dec = seq.files[0]["header"]["dec"]
-            print(
-                f"{Style.BRIGHT + Fore.GREEN}Found RA/DEC in file, using as target.{Style.RESET_ALL}"
-            )
-        except Exception:
-            # Try WCS fallback
+            # Try WCS coordinates first (most accurate)
             header = seq.files[0]["header"]
             if "CRVAL1" in header and "CRVAL2" in header:
                 solver_options.ra = header["CRVAL1"]
@@ -231,9 +225,19 @@ if __name__ == "__main__":
                 )
                 print(f'  CRVAL1 (RA): {solver_options.ra} degrees')
                 print(f'  CRVAL2 (DEC): {solver_options.dec} degrees')
+            # Fallback to simple RA/DEC keywords
+            elif "ra" in header and "dec" in header:
+                solver_options.ra = header["ra"]
+                solver_options.dec = header["dec"]
+                print(
+                    f"{Style.BRIGHT + Fore.GREEN}Found RA/DEC in file, using as target.{Style.RESET_ALL}"
+                )
             else:
                 print(f"{Style.BRIGHT + Fore.RED}No WCS found.{Style.RESET_ALL}")
                 solver_options.blind = True
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error reading coordinates: {e}{Style.RESET_ALL}")
+            solver_options.blind = True
 
         if not solver_options.blind:
             c = SkyCoord(
