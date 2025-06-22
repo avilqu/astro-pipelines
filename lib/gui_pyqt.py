@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton,
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QFont, QPen, QColor
 from .astrometry import AstrometryCatalog, SolarSystemObject
+from .solver import solve_offline
+import config
 
 
 class ImageLabel(QLabel):
@@ -126,7 +128,25 @@ class ImageLabel(QLabel):
     def wheelEvent(self, event: QWheelEvent):
         """Handle mouse wheel events for zooming"""
         if self.parent_viewer and self.parent_viewer.base_pixmap is not None:
-            # Determine zoom factor
+            event.accept()
+            
+            # Get the current scroll positions
+            scroll_area = self.parent_viewer.scroll_area
+            h_scroll = scroll_area.horizontalScrollBar()
+            v_scroll = scroll_area.verticalScrollBar()
+            
+            # Get the mouse position relative to the viewport
+            mouse_x = event.position().x()
+            mouse_y = event.position().y()
+            
+            # Calculate the center point of the zoom (where the mouse is)
+            zoom_center_x = mouse_x + h_scroll.value()
+            zoom_center_y = mouse_y + v_scroll.value()
+            
+            # Store the old scale factor
+            old_scale = self.parent_viewer.scale_factor
+            
+            # Apply zoom
             if event.angleDelta().y() > 0:
                 self.parent_viewer.scale_factor *= 1.1
             else:
@@ -134,16 +154,30 @@ class ImageLabel(QLabel):
                 if self.parent_viewer.scale_factor < 0.1:
                     self.parent_viewer.scale_factor = 0.1
             
+            # Update the image display
             self.parent_viewer.update_image_display()
-        super().wheelEvent(event)
+            
+            # Calculate the new scroll positions to keep the zoom center point fixed
+            scale_ratio = self.parent_viewer.scale_factor / old_scale
+            new_zoom_center_x = zoom_center_x * scale_ratio
+            new_zoom_center_y = zoom_center_y * scale_ratio
+            
+            # Set the new scroll positions
+            new_h_scroll = int(new_zoom_center_x - mouse_x)
+            new_v_scroll = int(new_zoom_center_y - mouse_y)
+            
+            h_scroll.setValue(new_h_scroll)
+            v_scroll.setValue(new_v_scroll)
+        else:
+            super().wheelEvent(event)
     
     def keyPressEvent(self, event: QKeyEvent):
         """Handle key press events"""
         if self.parent_viewer:
             if event.key() == Qt.Key.Key_Plus or event.key() == Qt.Key.Key_Equal:
-                self.parent_viewer.zoom_in()
+                self.parent_viewer.zoom_in_at_center()
             elif event.key() == Qt.Key.Key_Minus:
-                self.parent_viewer.zoom_out()
+                self.parent_viewer.zoom_out_at_center()
             elif event.key() == Qt.Key.Key_0:
                 self.parent_viewer.reset_zoom()
             elif event.key() == Qt.Key.Key_O:
@@ -386,6 +420,13 @@ class FITSImageViewer(QMainWindow):
         self.objects_button.setEnabled(False)  # Disabled until a file is loaded
         layout.addWidget(self.objects_button)
         
+        # Solve button
+        self.solve_button = QPushButton("Solve")
+        self.solve_button.setToolTip("Plate solve the current image using astrometry.net")
+        self.solve_button.clicked.connect(self.solve_current_image)
+        self.solve_button.setEnabled(False)  # Disabled until a file is loaded
+        layout.addWidget(self.solve_button)
+        
         # Reset zoom button
         reset_zoom_button = QPushButton("Reset Zoom")
         reset_zoom_button.clicked.connect(self.reset_zoom)
@@ -538,6 +579,9 @@ class FITSImageViewer(QMainWindow):
             self.objects_button.setEnabled(True)
         else:
             self.objects_button.setEnabled(False)
+        
+        # Enable solve button when a file is loaded
+        self.solve_button.setEnabled(True)
 
     def load_file_from_path(self, filepath):
         """Load a FITS file from a given filepath"""
@@ -547,6 +591,7 @@ class FITSImageViewer(QMainWindow):
             self.load_image(image_data, filepath)
             self.update_image_info(hdu_list)
             self.current_header = hdu_list[0].header
+            self.current_file_path = filepath  # Store the file path
             self.header_button.setEnabled(True)  # Enable header button
             
             hdu_list.close()
@@ -554,6 +599,7 @@ class FITSImageViewer(QMainWindow):
             print(f"Error opening file: {e}")
             self.header_button.setEnabled(False)  # Disable header button on error
             self.objects_button.setEnabled(False)  # Disable objects button on error
+            self.solve_button.setEnabled(False)  # Disable solve button on error
 
     def create_image_object(self, image_data: np.ndarray, display_min=None, display_max=None):
         """Convert numpy array to QPixmap for display - optimized version"""
@@ -755,16 +801,81 @@ class FITSImageViewer(QMainWindow):
             self.setWindowTitle(f'Astro-Pipelines - {title}')
 
     def zoom_in(self):
-        """Zoom in by 25%"""
+        """Zoom in by 25% (deprecated - use zoom_in_at_center)"""
         self.scale_factor *= 1.25
         self.update_image_display()
 
     def zoom_out(self):
-        """Zoom out by 25%"""
+        """Zoom out by 25% (deprecated - use zoom_out_at_center)"""
         self.scale_factor /= 1.25
         if self.scale_factor < 0.1:
             self.scale_factor = 0.1
         self.update_image_display()
+
+    def zoom_in_at_center(self):
+        """Zoom in by 25% keeping the center of the viewport fixed"""
+        self._zoom_at_center(1.25)
+
+    def zoom_out_at_center(self):
+        """Zoom out by 25% keeping the center of the viewport fixed"""
+        self._zoom_at_center(1/1.25)
+
+    def _zoom_at_center(self, zoom_factor):
+        """Helper method to zoom while keeping the center of the viewport fixed"""
+        if self.base_pixmap is None:
+            return
+            
+        # Get current scroll positions
+        h_scroll = self.scroll_area.horizontalScrollBar()
+        v_scroll = self.scroll_area.verticalScrollBar()
+        
+        # Calculate the center of the current viewport
+        viewport_center_x = h_scroll.value() + self.scroll_area.viewport().width() // 2
+        viewport_center_y = v_scroll.value() + self.scroll_area.viewport().height() // 2
+        
+        # Calculate the center of the image label
+        label_center_x = self.image_label.width() // 2
+        label_center_y = self.image_label.height() // 2
+        
+        # Calculate the pixel in the original image coordinates at the viewport center
+        if self.pixmap:
+            pixmap_size = self.pixmap.size()
+            label_size = self.image_label.size()
+            
+            # Calculate position within the pixmap
+            x_offset = (label_size.width() - pixmap_size.width()) // 2
+            y_offset = (label_size.height() - pixmap_size.height()) // 2
+            
+            # Calculate the pixel position relative to the image label
+            pixmap_x = viewport_center_x - x_offset
+            pixmap_y = viewport_center_y - y_offset
+            
+            # Convert to original image coordinates
+            orig_x = pixmap_x / self.scale_factor
+            orig_y = pixmap_y / self.scale_factor
+        
+        # Apply zoom
+        old_scale = self.scale_factor
+        self.scale_factor *= zoom_factor
+        if self.scale_factor < 0.1:
+            self.scale_factor = 0.1
+        
+        # Update the image display
+        self.update_image_display()
+        
+        # Calculate new scroll positions to keep the same pixel centered
+        if self.pixmap and (0 <= pixmap_x < pixmap_size.width() and 0 <= pixmap_y < pixmap_size.height()):
+            # Calculate the new position of the same pixel after zooming
+            new_pixmap_x = orig_x * self.scale_factor
+            new_pixmap_y = orig_y * self.scale_factor
+            
+            # Calculate the new scroll positions to center this pixel
+            new_h_scroll = new_pixmap_x - self.scroll_area.viewport().width() // 2
+            new_v_scroll = new_pixmap_y - self.scroll_area.viewport().height() // 2
+            
+            # Apply the new scroll positions
+            h_scroll.setValue(int(new_h_scroll))
+            v_scroll.setValue(int(new_v_scroll))
 
     def reset_zoom(self):
         """Reset zoom to 100%"""
@@ -893,6 +1004,59 @@ class FITSImageViewer(QMainWindow):
             print(f"Error parsing observation time: {e}")
             # Fallback to current time
             return Time.now()
+
+    def solve_current_image(self):
+        """Solve the current image using astrometry.net"""
+        if self.image_data is None:
+            print("No image data loaded to solve")
+            return
+        
+        # Get the current file path from the window title or use a default
+        current_file = None
+        if hasattr(self, 'current_file_path') and self.current_file_path:
+            current_file = self.current_file_path
+        else:
+            print("No file path available for solving")
+            return
+        
+        try:
+            print(f"Solving image: {current_file}")
+            
+            # Create a simple options object for the solver
+            class SolverOptions:
+                def __init__(self):
+                    self.files = [current_file]
+                    self.blind = True  # Use blind solving
+                    self.downsample = config.SOLVER_DOWNSAMPLE
+                    self.ra = None
+                    self.dec = None
+                    self.radius = None
+            
+            options = SolverOptions()
+            
+            # Call the offline solver
+            solve_offline(options)
+            
+            # Reset all state variables to clean state
+            self.solar_system_objects = []
+            self.object_pixel_coords = []
+            self.show_objects = False
+            
+            # Close any open dialogs
+            if self.objects_dialog and self.objects_dialog.isVisible():
+                self.objects_dialog.close()
+                self.objects_dialog = None
+            if self.header_dialog and self.header_dialog.isVisible():
+                self.header_dialog.close()
+                self.header_dialog = None
+            
+            # Reload the file to get the updated WCS information
+            self.load_file_from_path(current_file)
+            
+            print("Image solved successfully!")
+            
+        except Exception as e:
+            print(f"Error solving image: {e}")
 
 
 def main():
