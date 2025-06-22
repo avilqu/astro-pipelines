@@ -40,6 +40,7 @@ pycparser==2.22
 pyds9==1.8.1
 pyerfa==2.0.1.5
 pyvo==1.7
+PyQt6==6.8.0
 PyYAML==6.0.2
 reproject==0.14.1
 requests==2.32.3

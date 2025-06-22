@@ -323,10 +323,6 @@ def solve_offline(options):
         for filename in options.files:
             print(f"\n{Style.BRIGHT}Solving {filename}.{Style.RESET_ALL}")
 
-            # Create solved directory if it doesn't exist
-            solved_dir = Path("solved")
-            solved_dir.mkdir(exist_ok=True)
-            
             # Generate WCS filename
             base_name = Path(filename).stem
             wcs_filename = f"solved/{base_name}.wcs"
@@ -364,10 +360,6 @@ def solve_offline(options):
                 f"Downsample: {downsample}, RA: {ra}, Dec: {dec}, Radius: {radius}\n"
             )
 
-            # Create solved directory if it doesn't exist
-            solved_dir = Path("solved")
-            solved_dir.mkdir(exist_ok=True)
-            
             # Generate WCS filename
             base_name = Path(filename).stem
             wcs_filename = f"solved/{base_name}.wcs"

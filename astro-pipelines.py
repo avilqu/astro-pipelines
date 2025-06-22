@@ -27,10 +27,7 @@ if __name__ == "__main__":
     logging.disable(sys.maxsize)
 
     from lib.class_fits_sequence import FITSSequence
-    from lib.class_data_display import DataDisplay
-    from lib.class_sources import Sources
     import lib.helpers as hlp
-    import lib.astrometry
     import lib.solver
     import config
 
@@ -72,28 +69,11 @@ if __name__ == "__main__":
         "-I", "--integrate", action="store_true", help="integrate input files"
     )
     parser.add_argument(
-        "--blink",
-        action="store_true",
-        help="blink input files (interval in seconds as argument)",
-    )
-    parser.add_argument(
-        "--sso",
-        type=int,
-        help="overlay solar system object (mag limit as argument)",
-    )
-    parser.add_argument(
-        "--show", action="store_true", help="display FITS image"
-    )
-    parser.add_argument(
-        "--sources", action="store_true", help="extract and show sources"
-    )
-    parser.add_argument(
-        "--find",
-        type=str,
-        help="query SIMBAD and overlays result on input image",
-    )
-    parser.add_argument(
         "--config", action="store_true", help="print current config"
+    )
+    parser.add_argument(
+        "-G", "--gui", nargs="?", const="", metavar="FITS_FILE",
+        help="open GUI viewer (optionally with a FITS file to load)"
     )
     args = parser.parse_args()
 
@@ -110,7 +90,33 @@ if __name__ == "__main__":
             )
             sys.exit()
 
-    if args.masters:
+    def launch_gui():
+        """Launch the PyQt6 GUI viewer"""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from lib.gui_pyqt import FITSImageViewer
+            
+            app = QApplication(sys.argv)
+            window = FITSImageViewer()
+            window.show()
+            
+            # Load file if provided
+            if args.gui and args.gui.strip():
+                window.load_file_from_path(args.gui.strip())
+            
+            sys.exit(app.exec())
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: PyQt6 is required for GUI functionality.{Style.RESET_ALL}")
+            print(f"Install with: pip install PyQt6")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error launching GUI: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
+    if args.gui is not None:
+        launch_gui()
+
+    elif args.masters:
         cal = load_calibration_masters()
         print(f"{Style.BRIGHT}Loading FITS sequence...{Style.RESET_ALL}")
         seq = FITSSequence(args.files)
@@ -261,41 +267,6 @@ if __name__ == "__main__":
         seq.check_sequence_consistency()
 
         seq.integrate_sequence(write=True)
-
-    elif args.blink:
-        seq = FITSSequence(args.files)
-
-        seq.blink_sequence(args.blink)
-
-    elif args.sso:
-        single_file_filter()
-
-        seq = FITSSequence(args.files)
-
-        lib.astrometry.overlay_sso(seq.files[0], args.sso)
-
-    elif args.show:
-        single_file_filter()
-
-        seq = FITSSequence(args.files)
-
-        dd = DataDisplay(seq.files[0])
-        dd.show()
-
-    elif args.find:
-        single_file_filter()
-
-        seq = FITSSequence(args.files)
-
-        lib.astrometry.find_object(seq.files[0], args.find)
-
-    elif args.sources:
-        single_file_filter()
-
-        seq = FITSSequence(args.files)
-
-        sources = Sources(seq.files[0])
-        sources.show_sources()
 
     elif len(args.files) > 1:
         seq = FITSSequence(args.files)

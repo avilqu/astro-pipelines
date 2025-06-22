@@ -25,6 +25,7 @@ For manual installation, Astro-Pipelines depends on the following pakages:
 - `photutils`
 - `requests`
 - `watchdog` (for autopipe.py)
+- `PyQt6` (for GUI functionality)
 
 ### Astrometry.Net
 
@@ -47,6 +48,79 @@ Astro-Pipelines has several executable scripts:
 - `astro-pipelines.py`: Main script giving access to all the package functions. See `--help` option for details.
 - `platesolve.py`: Separate wrapper for the Astrometry.Net engine. Use for online platesolving and better control over the platesolving options (although in that last case I would recommend to use `solve-field` directly). See `--help` option for details.
 - `autopipe.py`: Automated pipeline that monitors the observation directory for new FITS files and automatically calibrates and platesolves them.
+
+### GUI Viewer
+
+Astro-Pipelines includes a PyQt6-based GUI viewer for FITS images (located in `lib/gui_pyqt.py`) with the following features:
+
+- **Interactive Image Display**: Pan, zoom, and navigate through FITS images
+- **WCS Coordinate Display**: Real-time RA/Dec coordinates when hovering over the image
+- **Pixel Value Display**: Shows pixel values and bit depth information
+- **FITS Header Viewer**: Complete FITS header display with formatted table view
+- **Auto Stretch**: Toggle between no stretch and automatic histogram stretching
+- **Image Information**: Display target, filter, exposure, gain, offset, and WCS status
+- **Solar System Object Search**: Search for and display solar system objects in the field using Skybot cone search
+- **Object Markers**: Visual green circles and labels for solar system objects found in the image
+
+#### GUI Usage
+
+```bash
+# Open GUI without loading any file
+python astro-pipelines.py -G
+
+# Open GUI and load a specific FITS file
+python astro-pipelines.py -G path/to/image.fits
+
+# Alternative long form
+python astro-pipelines.py --gui path/to/image.fits
+```
+
+#### GUI Controls
+
+- **Mouse**: 
+  - Left-click and drag to pan
+  - Mouse wheel to zoom in/out
+- **Keyboard**:
+  - `+` or `=` to zoom in
+  - `-` to zoom out
+  - `0` to reset zoom
+  - `O` to open a new file
+- **Buttons**:
+  - **Open FITS File**: Browse and load a FITS file
+  - **Auto Stretch**: Toggle automatic histogram stretching
+  - **FITS Header**: View complete FITS header information
+  - **Solar System Objects**: Search for solar system objects in the field (requires WCS)
+  - **Toggle Object Markers**: Show/hide green circles for solar system objects
+  - **Reset Zoom**: Return to 100% zoom level
+
+#### Solar System Object Search
+
+The GUI includes advanced functionality to search for and display solar system objects in astronomical images:
+
+**Requirements:**
+- FITS image with valid WCS (World Coordinate System) information
+- Observation date/time in the FITS header (DATE-OBS, TIME-OBS, etc.)
+- Internet connection for Skybot service access
+
+**Features:**
+- **Skybot Cone Search**: Uses the IMCCE Skybot service to find solar system objects in the field
+- **Object Information**: Displays name, type, coordinates, magnitude, distance, and velocity
+- **Visual Markers**: Green circles with object names overlaid on the image
+- **Filtered Results**: Only shows objects actually within the image boundaries
+
+**Usage:**
+1. Load a FITS image with WCS information
+2. Click "Solar System Objects" button
+3. The system will search for objects and display results in a dialog
+4. Use "Toggle Object Markers" to show/hide green circles on the image
+
+**Object Information Displayed:**
+- **Name**: Object identifier (e.g., asteroid number, comet designation)
+- **Type**: Object classification (asteroid, comet, planet, etc.)
+- **RA/Dec**: Right ascension and declination in degrees
+- **Magnitude**: Apparent brightness
+- **Distance**: Distance from Earth in Astronomical Units (AU)
+- **Velocity**: Apparent motion in arcseconds per hour
 
 ### AutoPipe Usage
 

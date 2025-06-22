@@ -11,7 +11,6 @@ import numpy as np
 from astropy.io import fits
 from astropy.stats import mad_std
 import ccdproc as ccdp
-import pyds9
 
 import config as cfg
 import lib.helpers as hlp
@@ -186,23 +185,3 @@ class FITSSequence:
             registered_image.write(
                 write_path / f'r_{filename}', overwrite=True)
             count += 1
-
-    def blink_sequence(self, interval):
-        ''' Blinks images in sequence with ds9.
-
-            :param interval: float (blink interval in seconds)
-        '''
-
-        self.filenames[0][0:self.filenames[0].find('/')] + '/'
-        d = pyds9.DS9()
-
-        for filename in self.filenames:
-            d.set(f'file new {filename}')
-            d.set('zoom to fit')
-            d.set('scale zscale')
-
-        d.set('frame move first')
-        d.set('frame delete')
-        d.set('frame match wcs')
-        d.set('blink yes')
-        d.set('blink interval ' + str(interval))
