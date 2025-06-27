@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QLabel
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QLabel, QHBoxLayout
 from PyQt6.QtCore import Qt
 
 
@@ -50,11 +50,6 @@ def create_control_panel(parent_viewer):
     parent_viewer.solve_button.setEnabled(False)  # Disabled until a file is loaded
     layout.addWidget(parent_viewer.solve_button)
     
-    # Reset zoom button
-    reset_zoom_button = QPushButton("Reset Zoom")
-    reset_zoom_button.clicked.connect(parent_viewer.reset_zoom)
-    layout.addWidget(reset_zoom_button)
-    
     # Add stretch to push everything to the top
     layout.addStretch()
     
@@ -79,6 +74,34 @@ def create_control_panel(parent_viewer):
     layout.addWidget(parent_viewer.offset_label)
     layout.addWidget(parent_viewer.wcs_label)
     
+    # Zoom controls section at the bottom
+    zoom_label = QLabel("Zoom control:")
+    zoom_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+    layout.addWidget(zoom_label)
+    
+    # Zoom controls - three side-by-side buttons
+    zoom_layout = QHBoxLayout()
+    
+    parent_viewer.zoom_out_button = QPushButton("-")
+    parent_viewer.zoom_out_button.setToolTip("Zoom out")
+    parent_viewer.zoom_out_button.clicked.connect(parent_viewer.zoom_out_at_center)
+    parent_viewer.zoom_out_button.setFixedWidth(50)
+    zoom_layout.addWidget(parent_viewer.zoom_out_button)
+    
+    parent_viewer.zoom_reset_button = QPushButton("0")
+    parent_viewer.zoom_reset_button.setToolTip("Reset zoom to 100%")
+    parent_viewer.zoom_reset_button.clicked.connect(parent_viewer.reset_zoom)
+    parent_viewer.zoom_reset_button.setFixedWidth(50)
+    zoom_layout.addWidget(parent_viewer.zoom_reset_button)
+    
+    parent_viewer.zoom_in_button = QPushButton("+")
+    parent_viewer.zoom_in_button.setToolTip("Zoom in")
+    parent_viewer.zoom_in_button.clicked.connect(parent_viewer.zoom_in_at_center)
+    parent_viewer.zoom_in_button.setFixedWidth(50)
+    zoom_layout.addWidget(parent_viewer.zoom_in_button)
+    
+    layout.addLayout(zoom_layout)
+
     return panel
 
 

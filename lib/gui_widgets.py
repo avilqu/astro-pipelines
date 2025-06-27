@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
                              QScrollArea, QLabel, QFrame, QSizePolicy, QTextEdit, 
                              QDialog, QStatusBar, QLineEdit, QMessageBox, QProgressBar)
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QFont, QPen, QColor
+from PyQt6.QtGui import QPixmap, QImage, QPainter, QMouseEvent, QKeyEvent, QFont, QPen, QColor
 
 
 class ImageLabel(QLabel):
@@ -174,52 +174,6 @@ class ImageLabel(QLabel):
                 self.setCursor(self.original_cursor)
                 self.original_cursor = None
         super().mouseReleaseEvent(event)
-    
-    def wheelEvent(self, event: QWheelEvent):
-        """Handle mouse wheel events for zooming"""
-        if self.parent_viewer and self.parent_viewer.base_pixmap is not None:
-            event.accept()
-            
-            # Get the current scroll positions
-            scroll_area = self.parent_viewer.scroll_area
-            h_scroll = scroll_area.horizontalScrollBar()
-            v_scroll = scroll_area.verticalScrollBar()
-            
-            # Get the mouse position relative to the viewport
-            mouse_x = event.position().x()
-            mouse_y = event.position().y()
-            
-            # Calculate the center point of the zoom (where the mouse is)
-            zoom_center_x = mouse_x + h_scroll.value()
-            zoom_center_y = mouse_y + v_scroll.value()
-            
-            # Store the old scale factor
-            old_scale = self.parent_viewer.scale_factor
-            
-            # Apply zoom
-            if event.angleDelta().y() > 0:
-                self.parent_viewer.scale_factor *= 1.1
-            else:
-                self.parent_viewer.scale_factor /= 1.1
-                if self.parent_viewer.scale_factor < 0.1:
-                    self.parent_viewer.scale_factor = 0.1
-            
-            # Update the image display
-            self.parent_viewer.update_image_display()
-            
-            # Calculate the new scroll positions to keep the zoom center point fixed
-            scale_ratio = self.parent_viewer.scale_factor / old_scale
-            new_zoom_center_x = zoom_center_x * scale_ratio
-            new_zoom_center_y = zoom_center_y * scale_ratio
-            
-            # Set the new scroll positions
-            new_h_scroll = int(new_zoom_center_x - mouse_x)
-            new_v_scroll = int(new_zoom_center_y - mouse_y)
-            
-            h_scroll.setValue(new_h_scroll)
-            v_scroll.setValue(new_v_scroll)
-        else:
-            super().wheelEvent(event)
     
     def keyPressEvent(self, event: QKeyEvent):
         """Handle key press events"""

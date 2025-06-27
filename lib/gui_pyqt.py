@@ -317,6 +317,8 @@ class FITSImageViewer(QMainWindow):
                 # Hide dialog and markers
                 self.objects_dialog.hide()
                 self.show_objects = False
+                # Clear zoom cache to ensure markers are removed
+                self.clear_zoom_cache()
                 self.update_image_display()
             else:
                 # Show dialog and markers
@@ -327,6 +329,8 @@ class FITSImageViewer(QMainWindow):
                     self.objects_dialog = SolarSystemObjectsDialog(self.solar_system_objects, self)
                     self.objects_dialog.show()
                 self.show_objects = True
+                # Clear zoom cache to ensure markers are visible
+                self.clear_zoom_cache()
                 self.update_image_display()
 
     def search_solar_system_objects(self):
@@ -496,6 +500,8 @@ class FITSImageViewer(QMainWindow):
         # Enable the toggle markers if objects were found
         if filtered_objects:
             self.show_objects = True
+            # Clear zoom cache to ensure markers are visible
+            self.clear_zoom_cache()
             self.update_image_display()  # Redraw with markers
             
             # Show the objects dialog (non-modal)
@@ -870,6 +876,9 @@ class FITSImageViewer(QMainWindow):
             self.simbad_pixel_coords = pixel_coords
             self.show_simbad_object = True
             
+            # Clear zoom cache to ensure markers are visible
+            self.clear_zoom_cache()
+            
             # Update the image display to show the SIMBAD object
             self.update_image_display()
             
@@ -880,6 +889,10 @@ class FITSImageViewer(QMainWindow):
         self.simbad_object = None
         self.simbad_pixel_coords = None
         self.show_simbad_object = False
+        
+        # Clear zoom cache to ensure markers are removed
+        self.clear_zoom_cache()
+        
         self.update_image_display()
 
 

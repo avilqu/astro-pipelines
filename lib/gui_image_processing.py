@@ -1,5 +1,5 @@
 import numpy as np
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QFont, QPen, QColor
+from PyQt6.QtGui import QPixmap, QImage, QPainter, QFont, QPen, QColor, QFontMetrics
 from PyQt6.QtCore import Qt
 
 
@@ -43,15 +43,15 @@ def add_object_markers(pixmap, object_pixel_coords, show_objects,
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Calculate font size based on zoom level (larger font for higher zoom)
-        base_font_size = 16
-        scaled_font_size = max(8, base_font_size * scale_factor)
+        base_font_size = 120  # Increased from 96 to 120 for better visibility
+        scaled_font_size = max(60, base_font_size * scale_factor)  # Increased minimum from 48 to 60
         font = QFont("Arial", int(scaled_font_size))
         painter.setFont(font)
         
         # Scale circle size and line width with zoom level (larger circles for higher zoom)
-        base_circle_radius = 12
-        scaled_circle_radius = max(6, base_circle_radius * scale_factor)
-        scaled_pen_width = max(1, 2 * scale_factor)
+        base_circle_radius = 90  # Reduced from 180 to 90 (half size)
+        scaled_circle_radius = max(45, base_circle_radius * scale_factor)  # Reduced minimum from 90 to 45
+        scaled_pen_width = max(4, 6 * scale_factor)  # Reduced from max(8, 12 * scale_factor) to max(4, 6 * scale_factor)
         
         # Draw circles for each solar system object
         for obj, x_pixel, y_pixel in object_pixel_coords:
@@ -63,21 +63,20 @@ def add_object_markers(pixmap, object_pixel_coords, show_objects,
                 painter.drawEllipse(int(x_pixel - scaled_circle_radius), int(y_pixel - scaled_circle_radius), 
                                    int(scaled_circle_radius * 2), int(scaled_circle_radius * 2))
                 
-                # Add object name
-                if len(object_pixel_coords) <= 10:
-                    text_x = int(x_pixel + scaled_circle_radius + 8)
-                    text_y = int(y_pixel + 8)
-                    
-                    # Draw outline
-                    outline_pen = QPen(QColor(0, 0, 0))
-                    outline_pen.setWidth(int(max(2, 5 * scale_factor)))
-                    painter.setPen(outline_pen)
-                    painter.drawText(text_x, text_y, obj.name)
-                    
-                    # Draw text in green
-                    text_pen = QPen(QColor(0, 255, 0))
-                    painter.setPen(text_pen)
-                    painter.drawText(text_x, text_y, obj.name)
+                # Add object name - always draw the text
+                text_x = int(x_pixel + scaled_circle_radius + 30)  # Reduced offset from 60 to 30
+                text_y = int(y_pixel + 30)  # Reduced offset from 60 to 30
+                
+                # Draw outline
+                outline_pen = QPen(QColor(0, 0, 0))
+                outline_pen.setWidth(int(max(12, 24 * scale_factor)))  # Reduced from max(24, 48 * scale_factor) to max(12, 24 * scale_factor)
+                painter.setPen(outline_pen)
+                painter.drawText(text_x, text_y, obj.name)
+                
+                # Draw text in green
+                text_pen = QPen(QColor(0, 255, 0))
+                painter.setPen(text_pen)
+                painter.drawText(text_x, text_y, obj.name)
         
         painter.end()
     
@@ -88,15 +87,15 @@ def add_object_markers(pixmap, object_pixel_coords, show_objects,
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Calculate font size based on zoom level (larger font for higher zoom)
-        base_font_size = 16
-        scaled_font_size = max(8, base_font_size * scale_factor)
+        base_font_size = 192
+        scaled_font_size = max(96, base_font_size * scale_factor)
         font = QFont("Arial", int(scaled_font_size))
         painter.setFont(font)
         
         # Scale circle size and line width with zoom level (larger circles for higher zoom)
-        base_circle_radius = 15  # Slightly larger for SIMBAD objects
-        scaled_circle_radius = max(8, base_circle_radius * scale_factor)
-        scaled_pen_width = max(2, 3 * scale_factor)  # Thicker line for SIMBAD objects
+        base_circle_radius = 180
+        scaled_circle_radius = max(90, base_circle_radius * scale_factor)
+        scaled_pen_width = max(8, 12 * scale_factor)
         
         x_pixel, y_pixel = simbad_pixel_coords
         
@@ -108,13 +107,13 @@ def add_object_markers(pixmap, object_pixel_coords, show_objects,
             painter.drawEllipse(int(x_pixel - scaled_circle_radius), int(y_pixel - scaled_circle_radius), 
                                int(scaled_circle_radius * 2), int(scaled_circle_radius * 2))
             
-            # Add object name
-            text_x = int(x_pixel + scaled_circle_radius + 8)
-            text_y = int(y_pixel + 8)
+            # Simple text positioning - always draw the text
+            text_x = int(x_pixel + scaled_circle_radius + 60)
+            text_y = int(y_pixel + 60)
             
             # Draw outline
             outline_pen = QPen(QColor(0, 0, 0))
-            outline_pen.setWidth(int(max(2, 5 * scale_factor)))
+            outline_pen.setWidth(int(max(24, 48 * scale_factor)))
             painter.setPen(outline_pen)
             painter.drawText(text_x, text_y, simbad_object.name)
             
