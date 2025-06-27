@@ -30,40 +30,90 @@ class ImageLabel(QLabel):
         self.coord_timer.setSingleShot(True)
         self.coord_timer.timeout.connect(self._update_coordinates)
         self.last_mouse_pos = QPoint()
+        # Add panning state tracking
+        self.panning = False
+        self.pan_start_pos = QPoint()
+        self.pan_start_scroll = QPoint()
+        self.original_cursor = None
+        # Add smooth panning timer
+        self.pan_timer = QTimer()
+        self.pan_timer.timeout.connect(self._update_pan)
+        self.pan_timer.setInterval(16)  # ~60 FPS for smooth panning
+        self.target_scroll_pos = QPoint()
     
     def mousePressEvent(self, event: QMouseEvent):
         """Handle mouse press events for panning"""
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
-            self.parent_viewer.panning = True
-            self.parent_viewer.last_mouse_pos = event.pos()
+            self.panning = True
+            self.pan_start_pos = event.pos()
+            # Store the initial scroll positions
+            scroll_area = self.parent_viewer.scroll_area
+            self.pan_start_scroll = QPoint(
+                scroll_area.horizontalScrollBar().value(),
+                scroll_area.verticalScrollBar().value()
+            )
+            # Store original cursor and set closed hand cursor
+            self.original_cursor = self.cursor()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            # Hide the cursor during panning
+            self.setCursor(Qt.CursorShape.BlankCursor)
+            # Start the pan timer
+            self.pan_timer.start()
         super().mousePressEvent(event)
     
     def mouseMoveEvent(self, event: QMouseEvent):
         """Handle mouse move events for panning and coordinate display"""
         if self.parent_viewer and self.parent_viewer.pixmap is not None:
-            # Handle panning
-            if self.parent_viewer.panning:
-                delta = event.pos() - self.parent_viewer.last_mouse_pos
-                scroll_area = self.parent_viewer.scroll_area
-                h_scroll = scroll_area.horizontalScrollBar()
-                v_scroll = scroll_area.verticalScrollBar()
-                
-                h_scroll.setValue(h_scroll.value() - delta.x())
-                v_scroll.setValue(v_scroll.value() - delta.y())
-                
-                self.parent_viewer.last_mouse_pos = event.pos()
-            
-            # Throttle coordinate updates to reduce CPU usage
-            self.last_mouse_pos = event.pos()
-            if not self.coord_timer.isActive():
-                self.coord_timer.start(50)  # Update every 50ms max
+            # Handle panning with improved logic
+            if self.panning:
+                # Calculate the target scroll position based on total movement
+                delta = event.pos() - self.pan_start_pos
+                self.target_scroll_pos = QPoint(
+                    self.pan_start_scroll.x() - delta.x(),
+                    self.pan_start_scroll.y() - delta.y()
+                )
+            else:
+                # Only update coordinates when not panning
+                # Throttle coordinate updates to reduce CPU usage
+                self.last_mouse_pos = event.pos()
+                if not self.coord_timer.isActive():
+                    self.coord_timer.start(50)  # Update every 50ms max
         
         super().mouseMoveEvent(event)
     
+    def _update_pan(self):
+        """Update panning position smoothly using timer"""
+        if not self.panning or not self.parent_viewer:
+            return
+            
+        scroll_area = self.parent_viewer.scroll_area
+        h_scroll = scroll_area.horizontalScrollBar()
+        v_scroll = scroll_area.verticalScrollBar()
+        
+        # Ensure target scroll values stay within bounds
+        target_h = max(0, min(self.target_scroll_pos.x(), h_scroll.maximum()))
+        target_v = max(0, min(self.target_scroll_pos.y(), v_scroll.maximum()))
+        
+        # Get current positions
+        current_h = h_scroll.value()
+        current_v = v_scroll.value()
+        
+        # Use simple linear interpolation
+        interpolation_factor = 0.7
+        new_h = int(current_h + (target_h - current_h) * interpolation_factor)
+        new_v = int(current_v + (target_v - current_v) * interpolation_factor)
+        
+        # Ensure final values are within bounds
+        new_h = max(0, min(new_h, h_scroll.maximum()))
+        new_v = max(0, min(new_v, v_scroll.maximum()))
+        
+        # Update scroll positions
+        h_scroll.setValue(new_h)
+        v_scroll.setValue(new_v)
+    
     def _update_coordinates(self):
         """Update coordinate display (called by timer to reduce CPU usage)"""
-        if not self.parent_viewer or not self.parent_viewer.wcs:
+        if not self.parent_viewer or not self.parent_viewer.wcs or self.panning:
             return
             
         mouse_pos = self.last_mouse_pos
@@ -123,8 +173,13 @@ class ImageLabel(QLabel):
     def mouseReleaseEvent(self, event: QMouseEvent):
         """Handle mouse release events"""
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
-            self.parent_viewer.panning = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.panning = False
+            # Stop the pan timer
+            self.pan_timer.stop()
+            # Restore the original cursor
+            if self.original_cursor:
+                self.setCursor(self.original_cursor)
+                self.original_cursor = None
         super().mouseReleaseEvent(event)
     
     def wheelEvent(self, event: QWheelEvent):
@@ -426,8 +481,6 @@ class FITSImageViewer(QMainWindow):
         self.pixmap = None
         self.base_pixmap = None  # Cache the base pixmap without scaling
         self.scale_factor = 1.0
-        self.last_mouse_pos = QPoint()
-        self.panning = False
         self.current_header = None
         self.wcs = None
         self.bit_depth = None
