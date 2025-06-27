@@ -5,8 +5,8 @@ from astropy.wcs import WCS
 from astropy.time import Time
 from PyQt6.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QHBoxLayout, 
                              QScrollArea, QLabel, QFrame, QSizePolicy, QTextEdit, 
-                             QDialog, QStatusBar, QLineEdit, QMessageBox)
-from PyQt6.QtCore import Qt, QPoint, QRect, QTimer
+                             QDialog, QStatusBar, QLineEdit, QMessageBox, QProgressBar)
+from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QFont, QPen, QColor
 
 
@@ -460,4 +460,97 @@ class SIMBADSearchDialog(QDialog):
         finally:
             # Re-enable search button
             self.search_button.setEnabled(True)
-            self.search_button.setText("Search") 
+            self.search_button.setText("Search")
+
+
+class SolvingProgressDialog(QDialog):
+    """Dialog to show solving progress with real-time console output"""
+    
+    # Signals for thread-safe GUI updates
+    output_added = pyqtSignal(str)
+    solving_finished_signal = pyqtSignal(bool)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Solving Progress")
+        self.setGeometry(200, 200, 600, 400)
+        self.setModal(True)
+        
+        # Setup layout
+        layout = QVBoxLayout(self)
+        
+        # Console output area
+        self.console_output = QTextEdit()
+        self.console_output.setReadOnly(True)
+        self.console_output.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-family: 'Courier New', monospace;
+                font-size: 10px;
+                border: 1px solid #333333;
+            }
+        """)
+        layout.addWidget(self.console_output)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.cancel_solving)
+        button_layout.addWidget(self.cancel_button)
+        
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close)
+        self.close_button.setEnabled(False)  # Disabled until solving completes
+        button_layout.addWidget(self.close_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Solving state
+        self.solving_completed = False
+        self.solving_successful = False
+        self.solving_cancelled = False
+        
+        # Connect signals to slots
+        self.output_added.connect(self._add_output_slot)
+        self.solving_finished_signal.connect(self._solving_finished_slot)
+        
+    def add_output(self, text):
+        """Add text to the console output (thread-safe)"""
+        self.output_added.emit(text)
+        
+    def solving_finished(self, successful=True):
+        """Called when solving is finished (thread-safe)"""
+        self.solving_finished_signal.emit(successful)
+        
+    # Slot methods (run on main thread)
+    def _add_output_slot(self, text):
+        """Slot to add output on main thread"""
+        self.console_output.append(text)
+        # Auto-scroll to bottom
+        cursor = self.console_output.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.console_output.setTextCursor(cursor)
+        
+    def _solving_finished_slot(self, successful):
+        """Slot to handle solving finished on main thread"""
+        self.solving_completed = True
+        self.solving_successful = successful
+        
+        # Enable close button and disable cancel button
+        self.close_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        
+    def cancel_solving(self):
+        """Cancel the solving process"""
+        self.solving_cancelled = True
+        self.console_output.append("User cancelled solving process.")
+        
+        # Import and set the solver interruption flag
+        from .solver import set_solver_interrupted
+        set_solver_interrupted(True)
+        
+        # Enable close button
+        self.close_button.setEnabled(True)
+        self.cancel_button.setEnabled(False) 

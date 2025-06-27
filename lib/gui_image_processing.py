@@ -208,10 +208,6 @@ def apply_auto_stretch(image_data):
 
 def apply_no_stretch(image_data):
     """Apply no histogram stretching - use actual data min/max"""
-    if image_data is None:
-        return None, None
-    
-    # Use actual data min/max for true "no stretch"
     display_min = image_data.min()
     display_max = image_data.max()
     return display_min, display_max 

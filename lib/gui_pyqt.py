@@ -12,10 +12,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog,
 from PyQt6.QtCore import Qt
 
 # Import our refactored modules
-from .gui_widgets import ImageLabel, HeaderDialog, SolarSystemObjectsDialog, SIMBADSearchDialog
+from .gui_widgets import ImageLabel, HeaderDialog, SolarSystemObjectsDialog, SIMBADSearchDialog, SolvingProgressDialog
 from .gui_image_processing import (create_image_object, add_object_markers, get_cached_zoom,
                                   calculate_bit_depth, apply_auto_stretch, apply_no_stretch)
-from .gui_control_panel import create_control_panel, update_image_info
+from .gui_control_panel import create_control_panel, update_image_info, set_solve_button_solving
 from .astrometry import AstrometryCatalog
 from .solver import solve_offline
 from .helpers import (extract_coordinates_from_header, calculate_field_radius, 
@@ -416,7 +416,7 @@ class FITSImageViewer(QMainWindow):
             return Time.now()
 
     def solve_current_image(self):
-        """Solve the current image using astrometry.net"""
+        """Solve the current image using astrometry.net with progress dialog"""
         if self.image_data is None:
             print("No image data loaded to solve")
             return
@@ -430,8 +430,6 @@ class FITSImageViewer(QMainWindow):
             return
         
         try:
-            print(f"Solving image: {current_file}")
-            
             # Extract coordinates from header using helper function
             try:
                 header = fits.getheader(current_file)
@@ -465,55 +463,254 @@ class FITSImageViewer(QMainWindow):
                 blind=not has_wcs
             )
             
+            # Create and show progress dialog
+            progress_dialog = SolvingProgressDialog(self)
+            
+            # Set solve button to solving state
+            set_solve_button_solving(self, True)
+            
             # Use guided solving if WCS is available, otherwise use blind solving
             if has_wcs and ra_center is not None and dec_center is not None and radius is not None:
-                print(f"Using guided solving with existing WCS information")
-                print(f"Target RA / DEC: {ra_center:.6f}° / {dec_center:.6f}°")
-                print(f"Search radius: {radius:.3f}°")
+                progress_dialog.add_output(f"Using guided solving with existing WCS information")
+                progress_dialog.add_output(f"Target RA / DEC: {ra_center:.6f}° / {dec_center:.6f}°")
+                progress_dialog.add_output(f"Search radius: {radius:.3f}°")
             else:
-                print("Using blind solving (no WCS information available)")
+                progress_dialog.add_output("Using blind solving (no WCS information available)")
             
-            # Call the offline solver
-            solve_offline(options)
+            # Show the dialog
+            progress_dialog.show()
             
-            # Check if solving was successful using helper function
-            try:
-                with fits.open(current_file) as hdu:
-                    header = hdu[0].header
-                    is_valid, error_message = validate_wcs_solution(header)
+            # Run the solving process in a separate thread to avoid blocking the GUI
+            from PyQt6.QtCore import QThread, pyqtSignal
+            
+            class SolvingThread(QThread):
+                finished = pyqtSignal(bool)
+                output_signal = pyqtSignal(str)
+                
+                def __init__(self, options, progress_dialog, parent_viewer):
+                    super().__init__()
+                    self.options = options
+                    self.progress_dialog = progress_dialog
+                    self.parent_viewer = parent_viewer
+                
+                def run(self):
+                    try:
+                        # Create a custom solving function that uses signals
+                        self._solve_with_signals()
+                        self.finished.emit(True)
+                    except Exception as e:
+                        self.output_signal.emit(f"Error in solving thread: {e}")
+                        self.progress_dialog.solving_finished(False)
+                        self.finished.emit(False)
+                
+                def _solve_with_signals(self):
+                    """Solve with signal-based output instead of direct dialog calls"""
+                    import subprocess
+                    import sys
+                    import os
+                    from pathlib import Path
+                    from .solver import set_solver_interrupted, is_solver_interrupted
                     
-                    if is_valid:
-                        print("Image solved successfully!")
+                    def run_solve_field_with_output(options):
+                        """Run solve-field with real-time output capture"""
+                        try:
+                            # Reset interruption flag
+                            set_solver_interrupted(False)
+                            
+                            # Build solve-field command
+                            cmd = ["solve-field"]
+                            cmd.extend(["--dir", "solved"])
+                            cmd.extend(["--no-plots", "--no-verify", "--overwrite"])
+                            
+                            if options.downsample:
+                                cmd.extend(["--downsample", str(options.downsample)])
+                            
+                            if not options.blind and options.ra and options.dec and options.radius:
+                                cmd.extend(["--guess-scale"])
+                                cmd.extend(["--ra", str(options.ra)])
+                                cmd.extend(["--dec", str(options.dec)])
+                                cmd.extend(["--radius", str(options.radius)])
+                            
+                            # Add WCS output filename
+                            if options.files:
+                                base_name = Path(options.files[0]).stem
+                                wcs_filename = f"solved/{base_name}.wcs"
+                                cmd.extend(["--wcs", wcs_filename])
+                            
+                            # Add input file
+                            if options.files:
+                                cmd.append(options.files[0])
+                            
+                            self.output_signal.emit(f"Running command: {' '.join(cmd)}")
+                            
+                            # Run the process with real-time output capture
+                            process = subprocess.Popen(
+                                cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                universal_newlines=True,
+                                bufsize=1
+                            )
+                            
+                            # Read output in real-time
+                            while True:
+                                # Check if solving was cancelled
+                                if is_solver_interrupted() or self.progress_dialog.solving_cancelled:
+                                    process.terminate()
+                                    self.output_signal.emit("Process terminated by user.")
+                                    return False
+                                
+                                # Read a line of output
+                                output = process.stdout.readline()
+                                if output == '' and process.poll() is not None:
+                                    break
+                                if output:
+                                    self.output_signal.emit(output.strip())
+                            
+                            # Wait for process to complete
+                            return_code = process.wait()
+                            
+                            if return_code == 0:
+                                self.output_signal.emit("solve-field completed successfully!")
+                                return True
+                            else:
+                                self.output_signal.emit(f"solve-field failed with return code: {return_code}")
+                                return False
+                                
+                        except Exception as e:
+                            self.output_signal.emit(f"Error running solve-field: {e}")
+                            return False
+                    
+                    try:
+                        # Create solved directory if it doesn't exist
+                        solved_dir = "solved"
+                        if not os.path.exists(solved_dir):
+                            os.makedirs(solved_dir)
+                            self.output_signal.emit(f"Created directory: {solved_dir}")
                         
-                        # Reset all state variables to clean state
-                        self.solar_system_objects = []
-                        self.object_pixel_coords = []
-                        self.show_objects = False
+                        # Start solving process
+                        self.output_signal.emit("Starting plate solving process...")
+                        self.output_signal.emit(f"File: {self.options.files[0] if self.options.files else 'Unknown'}")
                         
-                        # Clear SIMBAD objects
-                        self.simbad_object = None
-                        self.simbad_pixel_coords = None
-                        self.show_simbad_object = False
+                        if self.options.blind:
+                            self.output_signal.emit("Mode: Blind solving")
+                        else:
+                            self.output_signal.emit(f"Mode: Guided solving")
+                            self.output_signal.emit(f"Target: RA={self.options.ra:.6f}°, Dec={self.options.dec:.6f}°")
+                            self.output_signal.emit(f"Radius: {self.options.radius}°")
                         
-                        # Close any open dialogs
-                        if self.objects_dialog and self.objects_dialog.isVisible():
-                            self.objects_dialog.close()
-                            self.objects_dialog = None
-                        if self.header_dialog and self.header_dialog.isVisible():
-                            self.header_dialog.close()
-                            self.header_dialog = None
+                        self.output_signal.emit(f"Downsample: {self.options.downsample}")
+                        self.output_signal.emit("")
                         
-                        # Reload the file to get the updated WCS information
-                        self.load_file_from_path(current_file)
-                    else:
-                        print(f"Solving failed: {error_message}")
+                        # Run the solving process
+                        success = run_solve_field_with_output(self.options)
                         
-            except Exception as e:
-                print(f"Error checking solving result: {e}")
+                        if success:
+                            # Apply WCS to original file
+                            if self.options.files:
+                                base_name = Path(self.options.files[0]).stem
+                                wcs_filename = f"solved/{base_name}.wcs"
+                                
+                                if os.path.exists(wcs_filename):
+                                    self.output_signal.emit("Applying WCS solution to original file...")
+                                    
+                                    # Import the apply_wcs_to_file function
+                                    from .solver import apply_wcs_to_file
+                                    apply_wcs_to_file(self.options.files[0], wcs_filename)
+                                    
+                                    # Clean up WCS file
+                                    os.remove(wcs_filename)
+                                    self.output_signal.emit("WCS solution applied successfully!")
+                                    
+                                    # Clean up other temporary files
+                                    from .solver import solver_cleanup
+                                    solver_cleanup()
+                                    
+                                    # Validate the solution
+                                    try:
+                                        from astropy.io import fits
+                                        from .helpers import validate_wcs_solution
+                                        
+                                        with fits.open(self.options.files[0]) as hdu:
+                                            header = hdu[0].header
+                                            is_valid, error_message = validate_wcs_solution(header)
+                                            
+                                            if is_valid:
+                                                self.output_signal.emit("WCS solution validated successfully!")
+                                                self.progress_dialog.solving_finished(True)
+                                                
+                                                # Signal to reload the file in the main viewer
+                                                self.finished.emit(True)
+                                            else:
+                                                self.output_signal.emit(f"WCS validation failed: {error_message}")
+                                                self.progress_dialog.solving_finished(False)
+                                                self.finished.emit(False)
+                                    except Exception as e:
+                                        self.output_signal.emit(f"Error validating WCS: {e}")
+                                        self.progress_dialog.solving_finished(False)
+                                        self.finished.emit(False)
+                                else:
+                                    self.output_signal.emit("No WCS file generated!")
+                                    self.progress_dialog.solving_finished(False)
+                                    self.finished.emit(False)
+                            else:
+                                self.output_signal.emit("No input file specified!")
+                                self.progress_dialog.solving_finished(False)
+                                self.finished.emit(False)
+                        else:
+                            self.output_signal.emit("Solving process failed!")
+                            self.progress_dialog.solving_finished(False)
+                            self.finished.emit(False)
+                            
+                    except Exception as e:
+                        self.output_signal.emit(f"Unexpected error during solving: {e}")
+                        self.progress_dialog.solving_finished(False)
+                        self.finished.emit(False)
+            
+            # Create and start the solving thread
+            self.solving_thread = SolvingThread(options, progress_dialog, self)
+            
+            # Connect signals
+            self.solving_thread.output_signal.connect(progress_dialog.add_output)
+            self.solving_thread.finished.connect(lambda success: self._on_solving_finished(success, progress_dialog))
+            
+            self.solving_thread.start()
             
         except Exception as e:
             print(f"Error during solving: {e}")
             print("Solving failed!")
+    
+    def _on_solving_finished(self, success, progress_dialog):
+        """Called when solving thread finishes"""
+        # Reset solve button to not solving state
+        set_solve_button_solving(self, False)
+        
+        if success:
+            # Reset all state variables to clean state
+            self.solar_system_objects = []
+            self.object_pixel_coords = []
+            self.show_objects = False
+            
+            # Clear SIMBAD objects
+            self.simbad_object = None
+            self.simbad_pixel_coords = None
+            self.show_simbad_object = False
+            
+            # Close any open dialogs
+            if self.objects_dialog and self.objects_dialog.isVisible():
+                self.objects_dialog.close()
+                self.objects_dialog = None
+            if self.header_dialog and self.header_dialog.isVisible():
+                self.header_dialog.close()
+                self.header_dialog = None
+    
+    def closeEvent(self, event):
+        """Handle window close event to clean up threads"""
+        # Clean up solving thread if it exists and is running
+        if hasattr(self, 'solving_thread') and self.solving_thread.isRunning():
+            self.solving_thread.terminate()
+            self.solving_thread.wait(1000)  # Wait up to 1 second for thread to finish
+        super().closeEvent(event)
 
     def search_simbad_object(self):
         """Search for an object in SIMBAD and display it if found in the field"""

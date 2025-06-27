@@ -104,6 +104,38 @@ python astro-pipelines.py --gui path/to/image.fits
   - **Toggle Object Markers**: Show/hide green circles for solar system objects
   - **Reset Zoom**: Return to 100% zoom level
 
+#### Plate Solving with Progress Dialog
+
+The GUI includes an enhanced plate solving feature with real-time progress monitoring:
+
+**Features:**
+- **Progress Dialog**: A dedicated window shows solving progress with real-time console output
+- **Live Output Capture**: See the actual `solve-field` command output as it happens
+- **Cancel Support**: Ability to cancel solving process at any time
+- **Button State Feedback**: Solve button changes to "Solving..." with orange background during processing
+- **Threaded Processing**: Solving runs in background thread to keep GUI responsive
+
+**Usage:**
+1. Load a FITS image (with or without WCS information)
+2. Click the "Solve" button
+3. A progress dialog will open showing:
+   - Real-time console output from the solving process
+   - Cancel and Close buttons
+4. The solve button will change to "Solving..." and be disabled
+5. When solving completes, the dialog enables the Close button
+6. If successful, the image is automatically reloaded with the new WCS information
+
+**Solving Modes:**
+- **Guided Solving**: Uses existing WCS information for faster, more accurate solving
+- **Blind Solving**: Searches the entire sky when no WCS information is available
+
+**Progress Dialog Features:**
+- **Dark Theme**: Console output uses dark background with white text for better readability
+- **Auto-scroll**: Output automatically scrolls to show the latest messages
+- **Process Monitoring**: Shows the exact `solve-field` command being executed
+- **Error Handling**: Displays detailed error messages if solving fails
+- **WCS Validation**: Automatically validates and applies the WCS solution to the original file
+
 #### Solar System Object Search
 
 The GUI includes advanced functionality to search for and display solar system objects in astronomical images:

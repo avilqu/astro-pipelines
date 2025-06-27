@@ -174,4 +174,16 @@ def update_image_info(hdu_list, parent_viewer):
         parent_viewer.simbad_button.setEnabled(False)
     
     # Enable solve button when a file is loaded
-    parent_viewer.solve_button.setEnabled(True) 
+    parent_viewer.solve_button.setEnabled(True)
+
+
+def set_solve_button_solving(parent_viewer, solving=True):
+    """Update the solve button to show solving state"""
+    if solving:
+        parent_viewer.solve_button.setText("Solving...")
+        parent_viewer.solve_button.setEnabled(False)
+        parent_viewer.solve_button.setStyleSheet("background-color: #ffa500; color: white;")
+    else:
+        parent_viewer.solve_button.setText("Solve")
+        parent_viewer.solve_button.setEnabled(True)
+        parent_viewer.solve_button.setStyleSheet("") 
