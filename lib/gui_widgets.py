@@ -553,4 +553,92 @@ class SolvingProgressDialog(QDialog):
         
         # Enable close button
         self.close_button.setEnabled(True)
-        self.cancel_button.setEnabled(False) 
+        self.cancel_button.setEnabled(False)
+
+
+class SSOProgressDialog(QDialog):
+    """Progress dialog for solar system object searches"""
+    
+    # Signals for thread-safe GUI updates
+    output_added = pyqtSignal(str)
+    search_finished_signal = pyqtSignal(bool)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Solar System Object Search")
+        self.setGeometry(300, 200, 600, 400)
+        self.setModal(False)  # Non-modal so user can still interact with main window
+        
+        layout = QVBoxLayout(self)
+        
+        # Progress text area
+        self.output_text = QTextEdit()
+        self.output_text.setReadOnly(True)
+        self.output_text.setFont(QFont("Courier", 10))
+        self.output_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #333333;
+                font-family: 'Courier New', monospace;
+            }
+        """)
+        layout.addWidget(self.output_text)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.cancel_search)
+        button_layout.addWidget(self.cancel_button)
+        
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.close)
+        self.close_button.setEnabled(False)  # Disabled until search completes
+        button_layout.addWidget(self.close_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Search state
+        self.search_cancelled = False
+        self.search_completed = False
+        self.search_successful = False
+        
+        # Connect signals to slots
+        self.output_added.connect(self._add_output_slot)
+        self.search_finished_signal.connect(self._search_finished_slot)
+    
+    def add_output(self, text):
+        """Add text to the output area (thread-safe)"""
+        self.output_added.emit(text)
+    
+    def cancel_search(self):
+        """Cancel the search"""
+        self.search_cancelled = True
+        self.add_output("Search cancelled by user.")
+        self.search_finished(False)
+    
+    def search_finished(self, success):
+        """Called when search finishes (thread-safe)"""
+        self.search_finished_signal.emit(success)
+    
+    # Slot methods (run on main thread)
+    def _add_output_slot(self, text):
+        """Slot to add output on main thread"""
+        self.output_text.append(text)
+        # Auto-scroll to bottom
+        cursor = self.output_text.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.output_text.setTextCursor(cursor)
+    
+    def _search_finished_slot(self, success):
+        """Slot to handle search finished on main thread"""
+        self.search_completed = True
+        self.search_successful = success
+        self.cancel_button.setEnabled(False)
+        self.close_button.setEnabled(True)
+        
+        if success:
+            self.add_output("Search completed successfully!")
+        else:
+            self.add_output("Search failed or was cancelled.") 

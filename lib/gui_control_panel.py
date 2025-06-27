@@ -186,4 +186,16 @@ def set_solve_button_solving(parent_viewer, solving=True):
     else:
         parent_viewer.solve_button.setText("Solve")
         parent_viewer.solve_button.setEnabled(True)
-        parent_viewer.solve_button.setStyleSheet("") 
+        parent_viewer.solve_button.setStyleSheet("")
+
+
+def set_sso_button_searching(parent_viewer, searching=True):
+    """Update the SSO button to show searching state"""
+    if searching:
+        parent_viewer.objects_button.setText("Searching...")
+        parent_viewer.objects_button.setEnabled(False)
+        parent_viewer.objects_button.setStyleSheet("background-color: #ffa500; color: white;")
+    else:
+        parent_viewer.objects_button.setText("Show SSO")
+        parent_viewer.objects_button.setEnabled(True)
+        parent_viewer.objects_button.setStyleSheet("") 

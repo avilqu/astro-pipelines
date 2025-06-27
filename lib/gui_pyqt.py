@@ -10,12 +10,14 @@ from astropy.time import Time
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog, 
                              QScrollArea, QLabel, QStatusBar, QSizePolicy, QDialog, QHBoxLayout)
 from PyQt6.QtCore import Qt
+from astropy.coordinates import SkyCoord
+from astropy import units as u
 
 # Import our refactored modules
-from .gui_widgets import ImageLabel, HeaderDialog, SolarSystemObjectsDialog, SIMBADSearchDialog, SolvingProgressDialog
+from .gui_widgets import ImageLabel, HeaderDialog, SolarSystemObjectsDialog, SIMBADSearchDialog, SolvingProgressDialog, SSOProgressDialog
 from .gui_image_processing import (create_image_object, add_object_markers, get_cached_zoom,
                                   calculate_bit_depth, apply_auto_stretch, apply_no_stretch)
-from .gui_control_panel import create_control_panel, update_image_info, set_solve_button_solving
+from .gui_control_panel import create_control_panel, update_image_info, set_solve_button_solving, set_sso_button_searching
 from .astrometry import AstrometryCatalog
 from .solver import solve_offline
 from .helpers import (extract_coordinates_from_header, calculate_field_radius, 
@@ -328,49 +330,182 @@ class FITSImageViewer(QMainWindow):
                 self.update_image_display()
 
     def search_solar_system_objects(self):
-        """Search for solar system objects in the current field"""
+        """Search for solar system objects in the current field with progress dialog"""
         if self.wcs is None or self.image_data is None:
             print("No WCS information available for solar system object search")
             return
         
         try:
-            # Get observation time from header
-            epoch = self._get_observation_time()
-            if epoch is None:
-                print("Could not determine observation time from header")
-                return
+            # Create and show progress dialog
+            progress_dialog = SSOProgressDialog(self)
             
-            # Get solar system objects in the field
-            self.solar_system_objects = self.astrometry_catalog.get_field_objects(
-                self.wcs, 
-                self.image_data.shape, 
-                epoch
-            )
+            # Set SSO button to searching state
+            set_sso_button_searching(self, True)
             
-            # Get pixel coordinates for the objects
-            self.object_pixel_coords = self.astrometry_catalog.get_object_pixel_coordinates(
-                self.wcs, 
-                self.solar_system_objects
-            )
+            # Show the dialog
+            progress_dialog.show()
             
-            print(f"Found {len(self.solar_system_objects)} solar system objects")
+            # Run the search process in a separate thread to avoid blocking the GUI
+            from PyQt6.QtCore import QThread, pyqtSignal
             
-            # Enable the toggle markers button if objects were found
-            if self.solar_system_objects:
-                self.show_objects = True
-                self.update_image_display()  # Redraw with markers
+            class SSOSearchThread(QThread):
+                finished = pyqtSignal(bool)
+                output_signal = pyqtSignal(str)
+                show_objects_dialog = pyqtSignal(list)  # Signal to show objects dialog
                 
-                # Show the objects dialog (non-modal)
-                self.objects_dialog = SolarSystemObjectsDialog(self.solar_system_objects, self)
-                self.objects_dialog.show()
-            else:
-                self.show_objects = False
-                # Show a message that no objects were found (non-modal)
-                self.objects_dialog = SolarSystemObjectsDialog([], self)
-                self.objects_dialog.show()
+                def __init__(self, parent_viewer, progress_dialog):
+                    super().__init__()
+                    self.parent_viewer = parent_viewer
+                    self.progress_dialog = progress_dialog
                 
+                def run(self):
+                    try:
+                        self._search_with_signals()
+                        self.finished.emit(True)
+                    except Exception as e:
+                        self.output_signal.emit(f"Error in SSO search thread: {e}")
+                        self.progress_dialog.search_finished(False)
+                        self.finished.emit(False)
+                
+                def _search_with_signals(self):
+                    """Search for solar system objects with signal-based output"""
+                    try:
+                        self.output_signal.emit("Starting solar system object search...")
+                        
+                        # Get observation time from header
+                        epoch = self.parent_viewer._get_observation_time()
+                        if epoch is None:
+                            self.output_signal.emit("Could not determine observation time from header")
+                            self.output_signal.emit("Using current time as fallback")
+                            epoch = Time.now()
+                        
+                        self.output_signal.emit(f"Observation time: {epoch.iso}")
+                        
+                        # Get field center and radius
+                        center_x = self.parent_viewer.image_data.shape[1] / 2
+                        center_y = self.parent_viewer.image_data.shape[0] / 2
+                        center_coords = self.parent_viewer.wcs.pixel_to_world(center_x, center_y)
+                        ra_center = center_coords.ra.deg
+                        dec_center = center_coords.dec.deg
+                        
+                        self.output_signal.emit(f"Field center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°")
+                        
+                        # Calculate field radius
+                        corners = self.parent_viewer.wcs.calc_footprint()
+                        if corners is not None:
+                            max_radius = 0
+                            for corner_ra, corner_dec in corners:
+                                dra = (corner_ra - ra_center) * np.cos(np.radians(dec_center))
+                                ddec = corner_dec - dec_center
+                                radius = np.sqrt(dra**2 + ddec**2)
+                                max_radius = max(max_radius, radius)
+                            search_radius = max_radius + 0.1
+                        else:
+                            search_radius = 1.1
+                        
+                        self.output_signal.emit(f"Search radius: {search_radius:.3f}°")
+                        self.output_signal.emit("")
+                        
+                        # Check if search was cancelled
+                        if self.progress_dialog.search_cancelled:
+                            self.output_signal.emit("Search cancelled by user.")
+                            return
+                        
+                        # Perform the cone search
+                        self.output_signal.emit("Making API call to Skybot service...")
+                        self.output_signal.emit("This may take a few seconds...")
+                        
+                        objects = self.parent_viewer.astrometry_catalog.skybot_cone_search(
+                            ra_center, dec_center, search_radius, epoch
+                        )
+                        
+                        # Check if search was cancelled
+                        if self.progress_dialog.search_cancelled:
+                            self.output_signal.emit("Search cancelled by user.")
+                            return
+                        
+                        self.output_signal.emit(f"Found {len(objects)} objects in search area")
+                        
+                        # Filter objects to only include those actually in the image
+                        filtered_objects = []
+                        for obj in objects:
+                            # Check if search was cancelled
+                            if self.progress_dialog.search_cancelled:
+                                self.output_signal.emit("Search cancelled by user.")
+                                return
+                            
+                            # Convert object coordinates to pixel coordinates
+                            try:
+                                obj_coords = SkyCoord(ra=obj.ra*u.deg, dec=obj.dec*u.deg)
+                                pixel_result = self.parent_viewer.wcs.world_to_pixel(obj_coords)
+                                if hasattr(pixel_result, '__len__') and len(pixel_result) == 2:
+                                    pixel_x, pixel_y = pixel_result
+                                else:
+                                    pixel_x, pixel_y = pixel_result[0], pixel_result[1]
+                                # Check if object is within image bounds
+                                if (0 <= pixel_x <= self.parent_viewer.image_data.shape[1] and 
+                                    0 <= pixel_y <= self.parent_viewer.image_data.shape[0]):
+                                    filtered_objects.append(obj)
+                                    self.output_signal.emit(f"Object in field: {obj.name}")
+                            except Exception as e:
+                                self.output_signal.emit(f"Error checking if object {obj.name} is in field: {e}")
+                                continue
+                        
+                        self.output_signal.emit(f"")
+                        self.output_signal.emit(f"Final result: {len(filtered_objects)} objects in image field")
+                        
+                        # Store the results in the parent viewer
+                        self.parent_viewer.solar_system_objects = filtered_objects
+                        
+                        # Get pixel coordinates for the objects
+                        self.parent_viewer.object_pixel_coords = self.parent_viewer.astrometry_catalog.get_object_pixel_coordinates(
+                            self.parent_viewer.wcs, 
+                            filtered_objects
+                        )
+                        
+                        # Signal to show the objects dialog on the main thread
+                        self.show_objects_dialog.emit(filtered_objects)
+                        
+                        self.progress_dialog.search_finished(True)
+                        
+                    except Exception as e:
+                        self.output_signal.emit(f"Error searching for solar system objects: {e}")
+                        self.progress_dialog.search_finished(False)
+            
+            # Create and start the search thread
+            self.sso_search_thread = SSOSearchThread(self, progress_dialog)
+            
+            # Connect signals
+            self.sso_search_thread.output_signal.connect(progress_dialog.add_output)
+            self.sso_search_thread.show_objects_dialog.connect(self._show_objects_dialog)
+            self.sso_search_thread.finished.connect(lambda success: self._on_sso_search_finished(success, progress_dialog))
+            
+            self.sso_search_thread.start()
+            
         except Exception as e:
-            print(f"Error searching for solar system objects: {e}")
+            print(f"Error during SSO search: {e}")
+            print("SSO search failed!")
+    
+    def _on_sso_search_finished(self, success, progress_dialog):
+        """Called when SSO search thread finishes"""
+        # Reset SSO button to not searching state
+        set_sso_button_searching(self, False)
+    
+    def _show_objects_dialog(self, filtered_objects):
+        """Show the objects dialog on the main thread"""
+        # Enable the toggle markers if objects were found
+        if filtered_objects:
+            self.show_objects = True
+            self.update_image_display()  # Redraw with markers
+            
+            # Show the objects dialog (non-modal)
+            self.objects_dialog = SolarSystemObjectsDialog(filtered_objects, self)
+            self.objects_dialog.show()
+        else:
+            self.show_objects = False
+            # Show a message that no objects were found (non-modal)
+            self.objects_dialog = SolarSystemObjectsDialog([], self)
+            self.objects_dialog.show()
 
     def _get_observation_time(self):
         """Extract observation time from FITS header"""
@@ -710,6 +845,12 @@ class FITSImageViewer(QMainWindow):
         if hasattr(self, 'solving_thread') and self.solving_thread.isRunning():
             self.solving_thread.terminate()
             self.solving_thread.wait(1000)  # Wait up to 1 second for thread to finish
+        
+        # Clean up SSO search thread if it exists and is running
+        if hasattr(self, 'sso_search_thread') and self.sso_search_thread.isRunning():
+            self.sso_search_thread.terminate()
+            self.sso_search_thread.wait(1000)  # Wait up to 1 second for thread to finish
+            
         super().closeEvent(event)
 
     def search_simbad_object(self):
