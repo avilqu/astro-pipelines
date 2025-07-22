@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from .menu_context import build_single_file_menu, build_multi_file_menu, build_empty_menu
-from .header_viewer import HeaderViewer
+from lib.gui.common.header_viewer import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
 
 class MainFitsTableWidget(QTableWidget):

@@ -17,9 +17,7 @@ class NavigationMixin:
         if not hasattr(self, 'image_label'):
             return super().wheelEvent(event)
         label = self.image_label
-        # Store the original pixmap on first zoom
-        if self._orig_pixmap is None:
-            self._orig_pixmap = label.pixmap()
+        # Do not set self._orig_pixmap here; it should be set by the viewer to the original image
         if self._orig_pixmap is None:
             return
         angle = event.angleDelta().y()

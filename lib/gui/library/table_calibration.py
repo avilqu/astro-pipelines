@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import Qt
 import os
 from datetime import datetime, date
-from .header_viewer import HeaderViewer
+from lib.gui.common.header_viewer import HeaderViewer
 from .menu_context import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
 from PyQt6.QtGui import QColor
 

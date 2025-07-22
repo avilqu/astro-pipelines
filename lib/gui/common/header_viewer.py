@@ -17,30 +17,25 @@ class HeaderViewer(QDialog):
 
     def display_header(self, header_dict):
         header_html = """
-        <table style="font-family: 'Courier New', monospace; font-size: 10pt; border-collapse: collapse; width: 100%;">
-        <tr style="background-color: #333333;">
-            <th style="color: #0066CC; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;">Keyword</th>
-            <th style="color: #FFFFFF; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;">Value</th>
-            <th style="color: #AAAAAA; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;">Comment</th>
+        <table style=\"font-family: 'Courier New', monospace; font-size: 10pt; border-collapse: collapse; width: 100%;\">
+        <tr style=\"background-color: #333333;\">
+            <th style=\"color: #0066CC; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;\">Keyword</th>
+            <th style=\"color: #FFFFFF; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;\">Value</th>
+            <th style=\"color: #AAAAAA; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;\">Comment</th>
         </tr>
         """
         for i, (key, value) in enumerate(header_dict.items()):
-            # value may be (value, comment) tuple or list, or just value
             comment = ""
             if (isinstance(value, tuple) or isinstance(value, list)) and len(value) == 2:
                 value, comment = value
-            # Format value
-            if value is not None:
-                value_str = str(value)
-            else:
-                value_str = ""
+            value_str = str(value) if value is not None else ""
             comment_str = comment if comment else ""
             row_color = "#222222" if i % 2 == 0 else "#2A2A2A"
             header_html += f"""
-            <tr style="background-color: {row_color};">
-                <td style="color: #0066CC; font-weight: bold; padding: 2px 5px; border-right: 1px solid #555555; word-break: break-all;">{key}</td>
-                <td style="color: #FFFFFF; padding: 2px 5px; border-right: 1px solid #555555; word-break: break-all;">{value_str}</td>
-                <td style="color: #AAAAAA; padding: 2px 5px; word-break: break-all;">{comment_str}</td>
+            <tr style=\"background-color: {row_color};\">
+                <td style=\"color: #0066CC; font-weight: bold; padding: 2px 5px; border-right: 1px solid #555555; word-break: break-all;\">{key}</td>
+                <td style=\"color: #FFFFFF; padding: 2px 5px; border-right: 1px solid #555555; word-break: break-all;\">{value_str}</td>
+                <td style=\"color: #AAAAAA; padding: 2px 5px; word-break: break-all;\">{comment_str}</td>
             </tr>
             """
         header_html += "</table>"
