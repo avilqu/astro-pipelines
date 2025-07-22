@@ -90,7 +90,7 @@ class FitsTableWidget(QTableWidget):
         """Initialize the table structure."""
         self.setColumnCount(16)
         self.setHorizontalHeaderLabels([
-            "Filename", "Target", "Filter", "Exposure", "Binning", "Gain", "Offset", "CCD Temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
+            "Filename", "Target", "Filter", "Exposure", "Bin", "Gain", "Offset", "CCD temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
         ])
         
         # Hide row numbers (vertical header)
@@ -117,10 +117,10 @@ class FitsTableWidget(QTableWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)  # Target
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Filter
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)  # Exposure
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)  # Binning
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)  # Bin
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)  # Gain
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)  # Offset
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)  # CCD Temp
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)  # CCD temp
         header.setSectionResizeMode(8, QHeaderView.ResizeMode.Interactive)  # Focus
         header.setSectionResizeMode(9, QHeaderView.ResizeMode.Interactive)  # HFR
         header.setSectionResizeMode(10, QHeaderView.ResizeMode.Interactive)  # Sources
@@ -135,10 +135,10 @@ class FitsTableWidget(QTableWidget):
         self.setColumnWidth(1, 100)   # Target
         self.setColumnWidth(2, 80)    # Filter
         self.setColumnWidth(3, 80)    # Exposure
-        self.setColumnWidth(4, 60)    # Binning
+        self.setColumnWidth(4, 60)    # Bin
         self.setColumnWidth(5, 60)    # Gain
         self.setColumnWidth(6, 60)    # Offset
-        self.setColumnWidth(7, 80)    # CCD Temp
+        self.setColumnWidth(7, 80)    # CCD temp
         self.setColumnWidth(8, 100)   # Focus
         self.setColumnWidth(9, 60)    # HFR
         self.setColumnWidth(10, 60)   # Sources
@@ -356,7 +356,7 @@ class FitsTableWidget(QTableWidget):
         exposure_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, 3, exposure_item)
         
-        # Binning
+        # Bin
         binning = fits_file.binning or "-"
         binning_item = QTableWidgetItem(binning)
         binning_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -380,7 +380,7 @@ class FitsTableWidget(QTableWidget):
         offset_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, 6, offset_item)
         
-        # CCD Temperature
+        # CCD temperature
         temp_item = QTableWidgetItem(f"{fits_file.ccd_temp:.1f}°C" if fits_file.ccd_temp is not None else "-")
         temp_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, 7, temp_item)

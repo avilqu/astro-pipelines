@@ -24,7 +24,7 @@ class MainFitsTableWidget(QTableWidget):
     def init_table(self):
         self.setColumnCount(17)
         self.setHorizontalHeaderLabels([
-            "Filename", "Date obs", "Target", "Filter", "Exposure", "Binning", "Gain", "Offset", "CCD Temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
+            "Filename", "Date obs", "Target", "Filter", "Exposure", "Bin", "Gain", "Offset", "CCD temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
         ])
         self.verticalHeader().setVisible(False)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
@@ -42,10 +42,10 @@ class MainFitsTableWidget(QTableWidget):
         self.setColumnWidth(2, 100)   # Target
         self.setColumnWidth(3, 80)    # Filter
         self.setColumnWidth(4, 80)    # Exposure
-        self.setColumnWidth(5, 60)    # Binning
+        self.setColumnWidth(5, 60)    # Bin
         self.setColumnWidth(6, 60)    # Gain
         self.setColumnWidth(7, 60)    # Offset
-        self.setColumnWidth(8, 80)    # CCD Temp
+        self.setColumnWidth(8, 80)    # CCD temp
         self.setColumnWidth(9, 100)   # Focus
         self.setColumnWidth(10, 60)   # HFR
         self.setColumnWidth(11, 60)   # Sources
