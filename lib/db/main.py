@@ -199,6 +199,28 @@ class DatabaseManager:
         finally:
             session.close()
     
+    def get_unique_targets(self) -> list:
+        """Get all unique targets from the database."""
+        session = self.get_session()
+        try:
+            return [row[0] for row in session.query(FitsFile.target).distinct().order_by(FitsFile.target).all() if row[0]]
+        finally:
+            session.close()
+
+    def get_unique_dates(self) -> list:
+        """Get all unique observation dates (YYYY-MM-DD) from the database."""
+        session = self.get_session()
+        try:
+            # Extract date part from datetime, return as string
+            dates = session.query(FitsFile.date_obs).distinct().all()
+            date_strs = set()
+            for (dt,) in dates:
+                if dt:
+                    date_strs.add(dt.strftime('%Y-%m-%d'))
+            return sorted(date_strs)
+        finally:
+            session.close()
+    
     def close(self):
         """Close the database connection."""
         if self.engine:

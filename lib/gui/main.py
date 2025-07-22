@@ -7,14 +7,16 @@ A PyQt6-based interface for managing a library of FITS files.
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, 
-    QMenuBar, QMessageBox, QProgressBar, QStatusBar
+    QMenuBar, QMessageBox, QProgressBar, QStatusBar, QSplitter, QStackedWidget
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
 # Import our modular components
 from .database import DatabaseLoaderThread, DatabaseScannerThread, DatabaseManager
-from .table import FitsTableWidget
+from .table_obslog import FitsTableWidget
+from .table_main import MainFitsTableWidget
+from .left_panel import LeftPanel
 
 
 class AstroLibraryGUI(QMainWindow):
@@ -44,9 +46,23 @@ class AstroLibraryGUI(QMainWindow):
         # Create main layout
         main_layout = QVBoxLayout(central_widget)
         
-        # Create table widget
+        # Create splitter for resizable panels
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(splitter)
+        
+        # Left panel (menu)
+        self.left_panel = LeftPanel()
+        splitter.addWidget(self.left_panel)
+        
+        # Right panel (stacked widget for future extensibility)
+        self.right_stack = QStackedWidget()
         self.table_widget = FitsTableWidget()
-        main_layout.addWidget(self.table_widget)
+        self.main_table_widget = MainFitsTableWidget()
+        self.right_stack.addWidget(self.table_widget)  # index 0: Obs log
+        self.right_stack.addWidget(self.main_table_widget)  # index 1: Main table (targets/dates)
+        splitter.addWidget(self.right_stack)
+        splitter.setStretchFactor(1, 1)  # Make right panel expand more
+        splitter.setSizes([self.left_panel.minimumWidth(), 1000])  # Left panel at min width
         
         # Create status bar
         self.create_status_bar()
@@ -88,6 +104,8 @@ class AstroLibraryGUI(QMainWindow):
         """Connect all the signals and slots."""
         # Table connections
         self.table_widget.selection_changed.connect(self.on_table_selection_changed)
+        # Menu selection
+        self.left_panel.menu_selection_changed.connect(self.on_menu_selection_changed)
     
     def load_database(self):
         """Load FITS files from the database."""
@@ -119,6 +137,20 @@ class AstroLibraryGUI(QMainWindow):
         # Currently no actions needed on selection change
         # The selection now returns a list of file IDs from the selected run(s)
         pass
+    
+    def on_menu_selection_changed(self, category, value):
+        """Switch right panel content based on menu selection."""
+        if category == "obslog":
+            self.right_stack.setCurrentIndex(0)
+        elif category == "target":
+            filtered = [f for f in self.fits_files if f.target == value]
+            self.main_table_widget.populate_table(filtered)
+            self.right_stack.setCurrentIndex(1)
+        elif category == "date":
+            filtered = [f for f in self.fits_files if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == value]
+            self.main_table_widget.populate_table(filtered)
+            self.right_stack.setCurrentIndex(1)
+        # Do nothing for 'targets' or 'dates' parent nodes
     
     def scan_for_files(self):
         """Scan for new FITS files."""
