@@ -11,7 +11,7 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QMouseEvent, QKeyEvent, QFont
 
 
 class ImageLabel(QLabel):
-    """Custom QLabel that handles mouse events for panning and zooming"""
+    """Custom QLabel that handles mouse events for panning and zooming, and supports overlays"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -187,6 +187,32 @@ class ImageLabel(QLabel):
             elif event.key() == Qt.Key.Key_O:
                 self.parent_viewer.open_file()
         super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw overlays if present
+        if self.parent_viewer and hasattr(self.parent_viewer, '_simbad_overlay') and self.parent_viewer._simbad_overlay:
+            try:
+                from lib.gui.viewer.overlay import SIMBADOverlay
+                simbad_object, pixel_coords = self.parent_viewer._simbad_overlay
+                # Map image pixel coordinates to label coordinates (apply scale and offset)
+                scaled_pixmap = self.pixmap()
+                if not scaled_pixmap:
+                    return
+                pixmap_size = scaled_pixmap.size()
+                label_size = self.size()
+                x_offset = (label_size.width() - pixmap_size.width()) // 2
+                y_offset = (label_size.height() - pixmap_size.height()) // 2
+                scale = getattr(self.parent_viewer, 'scale_factor', 1.0)
+                x_img, y_img = pixel_coords
+                x_disp = x_img * scale + x_offset
+                y_disp = y_img * scale + y_offset
+                overlay = SIMBADOverlay(simbad_object.name, (x_disp, y_disp))
+                painter = QPainter(self)
+                overlay.draw(painter)
+                painter.end()
+            except Exception as e:
+                pass  # Optionally log error
 
 
 class HeaderDialog(QDialog):
@@ -408,6 +434,7 @@ class SIMBADSearchDialog(QDialog):
                 QMessageBox.information(self, "Object Out of Field", 
                     f"The object '{simbad_object.name}' was found in SIMBAD but is out of frame.\n"
                     f"Coordinates: RA {simbad_object.ra:.4f}°, Dec {simbad_object.dec:.4f}°")
+                self.reject()
                 
         except Exception as e:
             QMessageBox.critical(self, "Search Error", f"Error searching SIMBAD: {str(e)}")

@@ -4,14 +4,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 import numpy as np
 from astropy.io import fits
-from PyQt6.QtWidgets import QApplication, QMainWindow, QScrollArea, QToolBar, QFileDialog
+from PyQt6.QtWidgets import QApplication, QMainWindow, QScrollArea, QToolBar, QFileDialog, QDialog, QWidget, QVBoxLayout, QPushButton, QHBoxLayout
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction
-from lib.gui_widgets import ImageLabel
+from lib.gui.viewer.overlay import ImageLabel
 from lib.gui_image_processing import create_image_object
 from lib.gui.viewer.navigation import NavigationMixin
 from lib.gui.common.header_viewer import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
+from lib.astrometry import AstrometryCatalog
+from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel
 
 class NoWheelScrollArea(QScrollArea):
     def wheelEvent(self, event):
@@ -24,6 +26,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.setWindowTitle("Astropipes FITS Viewer")
         self.setGeometry(100, 100, 1000, 800)
 
+        self.astrometry_catalog = AstrometryCatalog()
         self.pixmap = None  # For ImageLabel compatibility
         self.wcs = None    # For ImageLabel compatibility
         self.image_data = None  # Store current image data
@@ -64,6 +67,21 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.header_button.triggered.connect(self.show_header_dialog)
         self.toolbar.addAction(self.header_button)
         self.toolbar.widgetForAction(self.header_button).setFixedSize(90, 32)
+        # Add SIMBAD search button
+        self.simbad_button = QAction("SIMBAD search", self)
+        self.simbad_button.setToolTip("Search for an object in SIMBAD and overlay on image")
+        self.simbad_button.setEnabled(True)
+        self.simbad_button.triggered.connect(self.open_simbad_search_dialog)
+        self.toolbar.addAction(self.simbad_button)
+        self.toolbar.widgetForAction(self.simbad_button).setFixedSize(120, 32)
+        # Overlay toggle action (toolbar)
+        self.overlay_toggle_action = QAction("Toggle Overlay", self)
+        self.overlay_toggle_action.setCheckable(True)
+        self.overlay_toggle_action.setChecked(True)
+        self.overlay_toggle_action.setVisible(False)
+        self.overlay_toggle_action.triggered.connect(self.toggle_overlay_visibility)
+        self.toolbar.addAction(self.overlay_toggle_action)
+        # Remove sidebar and use only scroll_area as central widget
         self.scroll_area = NoWheelScrollArea()
         self.scroll_area.setWidgetResizable(False)
         self.setCentralWidget(self.scroll_area)
@@ -72,9 +90,26 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.image_label.setStyleSheet("QLabel { background-color: black; }")
         self.image_label.setText("No image loaded")
         self.scroll_area.setWidget(self.image_label)
+        # Add default attributes for compatibility with ImageLabel
+        self.bit_depth = None
+        self.pixel_value_label = QLabel("--", self)
+        self.pixel_value_label.setVisible(False)
+        self.coord_label = QLabel("", self)
+        self.coord_label.setVisible(False)
+        self._overlay_visible = True
         if fits_path:
             self._pending_zoom_to_fit = True
             self.load_fits(fits_path)
+        self.update_overlay_button_visibility()
+        # Status bar: coordinates (left), pixel value (right)
+        self.status_bar = QStatusBar(self)
+        self.setStatusBar(self.status_bar)
+        self.status_coord_label = QLabel("No WCS - coordinates unavailable", self)
+        self.status_coord_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        self.status_bar.addWidget(self.status_coord_label)
+        self.status_pixel_label = QLabel("--", self)
+        self.status_pixel_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        self.status_bar.addPermanentWidget(self.status_pixel_label)
 
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open FITS file", "", "FITS files (*.fits *.fit *.fts);;All files (*)")
@@ -128,6 +163,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.image_label.setPixmap(display_pixmap)
         self.image_label.setFixedSize(new_width, new_height)
         self.pixmap = orig_pixmap
+        # Set scale_factor for coordinate conversion
+        self.scale_factor = self._zoom if hasattr(self, '_zoom') else 1.0
         # Restore scroll position to keep the same view center
         hbar = self.scroll_area.horizontalScrollBar()
         vbar = self.scroll_area.verticalScrollBar()
@@ -163,10 +200,17 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
     def load_fits(self, fits_path):
         try:
+            from astropy.wcs import WCS
             with fits.open(fits_path) as hdul:
                 image_data = hdul[0].data
+                header = hdul[0].header
                 # Use get_fits_header_as_json to get (value, comment) tuples
                 self._current_header = get_fits_header_as_json(fits_path)
+                # Try to construct WCS from header
+                try:
+                    self.wcs = WCS(header)
+                except Exception:
+                    self.wcs = None
                 if image_data is not None:
                     # Only display 2D images
                     if image_data.ndim == 2:
@@ -174,7 +218,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                         self._pending_zoom_to_fit = True
                         self.update_image_display(keep_zoom=False)
                         self.image_label.setText("")
-                        self.setWindowTitle(f"Simple FITS Viewer - {fits_path}")
+                        self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                         self.header_button.setEnabled(True)
                     else:
                         self.image_label.setText("FITS file is not a 2D image.")
@@ -184,15 +228,46 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self.image_label.setText("No image data in FITS file.")
                     self.image_data = None
                     self.header_button.setEnabled(False)
+            # Clear overlay when loading a new file
+            self._simbad_overlay = None
+            self._overlay_visible = True
+            self.update_overlay_button_visibility()
         except Exception as e:
             self.image_label.setText(f"Error loading FITS: {e}")
             self.image_data = None
             self.header_button.setEnabled(False)
+            self._simbad_overlay = None
+            self._overlay_visible = True
+            self.update_overlay_button_visibility()
 
     def show_header_dialog(self):
         if hasattr(self, '_current_header') and self._current_header:
             dlg = HeaderViewer(self._current_header, self)
             dlg.exec()
+
+    def toggle_overlay_visibility(self):
+        self._overlay_visible = not self._overlay_visible
+        self.overlay_toggle_action.setChecked(self._overlay_visible)
+        self.image_label.update()
+
+    def update_overlay_button_visibility(self):
+        has_overlay = hasattr(self, '_simbad_overlay') and self._simbad_overlay is not None
+        self.overlay_toggle_action.setVisible(has_overlay)
+        if has_overlay:
+            self.overlay_toggle_action.setChecked(self._overlay_visible)
+
+    def open_simbad_search_dialog(self):
+        from lib.gui_widgets import SIMBADSearchDialog
+        dlg = SIMBADSearchDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result:
+            simbad_object, pixel_coords = dlg.result
+            # Store overlay info for drawing
+            self._simbad_overlay = (simbad_object, pixel_coords)
+            self._overlay_visible = True
+            self.update_overlay_button_visibility()
+            self.image_label.update()  # Trigger repaint
+        else:
+            self.update_overlay_button_visibility()
 
 def main():
     fits_path = sys.argv[1] if len(sys.argv) > 1 else None
