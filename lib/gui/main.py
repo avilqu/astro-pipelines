@@ -23,7 +23,7 @@ from lib.db.models import CalibrationMaster
 
 
 class AstroLibraryGUI(QMainWindow):
-    """Main window for the Astronomical Image Library application."""
+    """Main window for Astropipes Library."""
     
     def __init__(self):
         super().__init__()
@@ -36,7 +36,7 @@ class AstroLibraryGUI(QMainWindow):
     def init_ui(self):
         """Initialize the user interface."""
         # Set window properties
-        self.setWindowTitle("Astronomical Image Library")
+        self.setWindowTitle("Astropipes Library")
         self.setGeometry(100, 100, 1200, 800)
         
         # Create menu bar
