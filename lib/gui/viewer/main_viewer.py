@@ -32,6 +32,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.image_data = None  # Store current image data
         self.stretch_mode = 'log'  # 'linear' or 'log', default to log
         self.toolbar = QToolBar("Main Toolbar")
+        self.toolbar.setMovable(False)  # Disable moving the toolbar
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)  # Remove handle visual
         self.addToolBar(self.toolbar)
         open_icon = QIcon.fromTheme("document-open")
         if open_icon.isNull():

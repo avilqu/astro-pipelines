@@ -28,7 +28,8 @@ class MainFitsTableWidget(QTableWidget):
         self.setHorizontalHeaderLabels([
             "Filename", "Date obs", "Target", "Filter", "Exposure", "Bin", "Gain", "Offset", "CCD temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
         ])
-        self.verticalHeader().setVisible(False)
+        # self.verticalHeader().setVisible(False)  # Remove this line to show the vertical header
+        self.verticalHeader().setVisible(True)     # Show the vertical header
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
         self.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -70,6 +71,8 @@ class MainFitsTableWidget(QTableWidget):
         self.verticalHeader().setDefaultSectionSize(30)
         for row, fits_file in enumerate(sorted_files):
             self._add_file_row(row, fits_file)
+        # Set vertical header labels to row numbers (1-based)
+        self.setVerticalHeaderLabels([str(i+1) for i in range(len(sorted_files))])
         self._apply_striping()
         self.sortItems(1, Qt.SortOrder.DescendingOrder)
         self.blockSignals(False)

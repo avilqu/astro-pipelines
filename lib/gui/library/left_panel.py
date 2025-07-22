@@ -12,12 +12,18 @@ class LeftPanel(QWidget):
         self.menu_tree.setHeaderHidden(True)
         self.menu_tree.setIndentation(16)
         self.menu_tree.setAnimated(True)
-        self.menu_tree.setMinimumWidth(100)
+        self.menu_tree.setMinimumWidth(200)
         self.menu_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.menu_tree.setColumnCount(1)
 
-        # Set light grey text color
-        self.menu_tree.setStyleSheet("QTreeWidget { color: #cccccc; }")
+        # Set light grey text color, bigger font, and padding
+        self.menu_tree.setStyleSheet("""
+            QTreeWidget {
+                color: #cccccc;
+                font-size: 14px;
+            }
+    
+        """)
 
         # Top-level items
         self.obslog_item = QTreeWidgetItem(["Obs log"])
