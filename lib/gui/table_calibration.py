@@ -5,6 +5,7 @@ import os
 from datetime import datetime, date
 from .header_viewer import HeaderViewer
 from .context import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
+from PyQt6.QtGui import QColor
 
 class MasterDarksTableWidget(MainFitsTableWidget):
     """Table widget for displaying master dark calibration files, using the same model as MainFitsTableWidget."""
@@ -386,6 +387,16 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
             except Exception:
                 age = '-'
             filter_name = getattr(flat, 'filter_name', '-') or '-'
+            filter_item = QTableWidgetItem(str(filter_name))
+            filter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            filter_name_upper = str(filter_name).upper()
+            if filter_name_upper == 'R':
+                filter_item.setForeground(QColor(220, 30, 30))  # Red
+            elif filter_name_upper == 'G':
+                filter_item.setForeground(QColor(30, 180, 30))  # Green
+            elif filter_name_upper == 'B':
+                filter_item.setForeground(QColor(30, 80, 220))  # Blue
+            # L or others: leave as default (white/system)
             exptime = getattr(flat, 'exptime', '-')
             binning = getattr(flat, 'binning', '-') or '-'
             gain = getattr(flat, 'gain', '-')
@@ -402,7 +413,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 QTableWidgetItem(str(filename)),
                 QTableWidgetItem(str(date_str)),
                 QTableWidgetItem(str(age)),
-                QTableWidgetItem(str(filter_name)),
+                filter_item,
                 QTableWidgetItem(f"{exptime:.1f}" if isinstance(exptime, (float, int)) else (str(exptime) if exptime not in (None, '', 'None') else '-')),
                 QTableWidgetItem(str(binning)),
                 QTableWidgetItem(f"{gain:.1f}" if isinstance(gain, (float, int)) else (str(gain) if gain not in (None, '', 'None') else '-')),

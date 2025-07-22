@@ -312,7 +312,8 @@ class FitsTableWidget(QTableWidget):
                         cell = self.item(row, col)
                         if cell:
                             cell.setBackground(color)
-                            if is_dark:
+                            # Only set foreground if not already colored (i.e., default brush), and skip filter column (2)
+                            if is_dark and (col != 2 or cell.foreground().color() == QColor()):
                                 cell.setForeground(QColor(230, 230, 230))
                     file_row_index += 1
     
@@ -345,6 +346,15 @@ class FitsTableWidget(QTableWidget):
         filter_name = fits_file.filter_name or "-"
         filter_item = QTableWidgetItem(filter_name)
         filter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Set foreground color for the filter cell only
+        filter_name_upper = (fits_file.filter_name or "").upper()
+        if filter_name_upper == 'R':
+            filter_item.setForeground(QColor(220, 30, 30))  # Red
+        elif filter_name_upper == 'G':
+            filter_item.setForeground(QColor(30, 180, 30))  # Green
+        elif filter_name_upper == 'B':
+            filter_item.setForeground(QColor(30, 80, 220))  # Blue
+        # L or others: leave as default (white/system)
         self.setItem(row, 2, filter_item)
         
         # Exposure time
