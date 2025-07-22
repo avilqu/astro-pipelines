@@ -88,10 +88,9 @@ class FitsTableWidget(QTableWidget):
     
     def init_table(self):
         """Initialize the table structure."""
-        self.setColumnCount(15)
+        self.setColumnCount(16)
         self.setHorizontalHeaderLabels([
-            "Filename", "Target", "Filter", "Exposure", "Binning", "Gain", "Offset", "CCD Temp",
-            "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
+            "Filename", "Target", "Filter", "Exposure", "Binning", "Gain", "Offset", "CCD Temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
         ])
         
         # Hide row numbers (vertical header)
@@ -122,13 +121,14 @@ class FitsTableWidget(QTableWidget):
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)  # Gain
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Interactive)  # Offset
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)  # CCD Temp
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Interactive)  # HFR
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Interactive)  # Sources
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Interactive)  # Size
-        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Interactive)  # Image Scale
-        header.setSectionResizeMode(12, QHeaderView.ResizeMode.Interactive)  # RA Center
-        header.setSectionResizeMode(13, QHeaderView.ResizeMode.Interactive)  # DEC Center
-        header.setSectionResizeMode(14, QHeaderView.ResizeMode.Interactive)  # WCS Type
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Interactive)  # Focus
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Interactive)  # HFR
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Interactive)  # Sources
+        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Interactive)  # Size
+        header.setSectionResizeMode(12, QHeaderView.ResizeMode.Interactive)  # Image Scale
+        header.setSectionResizeMode(13, QHeaderView.ResizeMode.Interactive)  # RA Center
+        header.setSectionResizeMode(14, QHeaderView.ResizeMode.Interactive)  # DEC Center
+        header.setSectionResizeMode(15, QHeaderView.ResizeMode.Interactive)  # WCS Type
         
         # Set default column widths
         self.setColumnWidth(0, 200)   # Filename
@@ -139,13 +139,14 @@ class FitsTableWidget(QTableWidget):
         self.setColumnWidth(5, 60)    # Gain
         self.setColumnWidth(6, 60)    # Offset
         self.setColumnWidth(7, 80)    # CCD Temp
-        self.setColumnWidth(8, 60)    # HFR
-        self.setColumnWidth(9, 60)    # Sources
-        self.setColumnWidth(10, 80)   # Size
-        self.setColumnWidth(11, 80)   # Image Scale
-        self.setColumnWidth(12, 100)  # RA Center
-        self.setColumnWidth(13, 100)  # DEC Center
-        self.setColumnWidth(14, 80)   # WCS Type
+        self.setColumnWidth(8, 100)   # Focus
+        self.setColumnWidth(9, 60)    # HFR
+        self.setColumnWidth(10, 60)   # Sources
+        self.setColumnWidth(11, 80)   # Size
+        self.setColumnWidth(12, 80)   # Image Scale
+        self.setColumnWidth(13, 100)  # RA Center
+        self.setColumnWidth(14, 100)  # DEC Center
+        self.setColumnWidth(15, 80)   # WCS Type
         
         # Connect selection change and cell click
         self.itemSelectionChanged.connect(self._on_selection_changed)
@@ -380,13 +381,14 @@ class FitsTableWidget(QTableWidget):
         self.setItem(row, 6, offset_item)
         
         # CCD Temperature
-        if fits_file.ccd_temp:
-            temp_str = f"{fits_file.ccd_temp:.1f}°C"
-        else:
-            temp_str = "-"
-        temp_item = QTableWidgetItem(temp_str)
+        temp_item = QTableWidgetItem(f"{fits_file.ccd_temp:.1f}°C" if fits_file.ccd_temp is not None else "-")
         temp_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, 7, temp_item)
+        
+        # Focus
+        focus_item = QTableWidgetItem(str(int(fits_file.focus_position)) if fits_file.focus_position is not None else "-")
+        focus_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setItem(row, 8, focus_item)
         
         # HFR (Half-Flux Radius)
         if fits_file.hfr:
@@ -395,7 +397,7 @@ class FitsTableWidget(QTableWidget):
             hfr_str = "-"
         hfr_item = QTableWidgetItem(hfr_str)
         hfr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 8, hfr_item)
+        self.setItem(row, 9, hfr_item)
         
         # Sources count
         if fits_file.sources_count:
@@ -404,7 +406,7 @@ class FitsTableWidget(QTableWidget):
             sources_str = "-"
         sources_item = QTableWidgetItem(sources_str)
         sources_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 9, sources_item)
+        self.setItem(row, 10, sources_item)
         
         # Image size (X x Y)
         if fits_file.size_x and fits_file.size_y:
@@ -413,7 +415,7 @@ class FitsTableWidget(QTableWidget):
             size_str = "-"
         size_item = QTableWidgetItem(size_str)
         size_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 10, size_item)
+        self.setItem(row, 11, size_item)
         
         # Image scale
         if fits_file.image_scale:
@@ -422,7 +424,7 @@ class FitsTableWidget(QTableWidget):
             scale_str = "-"
         scale_item = QTableWidgetItem(scale_str)
         scale_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 11, scale_item)
+        self.setItem(row, 12, scale_item)
         
         # RA Center
         if fits_file.ra_center:
@@ -436,7 +438,7 @@ class FitsTableWidget(QTableWidget):
             ra_str = "-"
         ra_item = QTableWidgetItem(ra_str)
         ra_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 12, ra_item)
+        self.setItem(row, 13, ra_item)
         
         # DEC Center
         if fits_file.dec_center:
@@ -452,13 +454,13 @@ class FitsTableWidget(QTableWidget):
             dec_str = "-"
         dec_item = QTableWidgetItem(dec_str)
         dec_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 13, dec_item)
+        self.setItem(row, 14, dec_item)
         
         # WCS Type
         wcs_type = fits_file.wcs_type or "-"
         wcs_item = QTableWidgetItem(wcs_type)
         wcs_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 14, wcs_item)
+        self.setItem(row, 15, wcs_item)
     
     def _on_cell_clicked(self, row, column):
         """Handle cell clicks for expanding/collapsing runs."""

@@ -17,6 +17,9 @@ from .database import DatabaseLoaderThread, DatabaseScannerThread, DatabaseManag
 from .table_obslog import FitsTableWidget
 from .table_main import MainFitsTableWidget
 from .left_panel import LeftPanel
+from .table_calibration import MasterDarksTableWidget, MasterBiasTableWidget, MasterFlatsTableWidget
+from lib.db import get_db_manager
+from lib.db.models import CalibrationMaster
 
 
 class AstroLibraryGUI(QMainWindow):
@@ -58,8 +61,14 @@ class AstroLibraryGUI(QMainWindow):
         self.right_stack = QStackedWidget()
         self.table_widget = FitsTableWidget()
         self.main_table_widget = MainFitsTableWidget()
+        self.master_darks_table = MasterDarksTableWidget()
+        self.master_bias_table = MasterBiasTableWidget()
+        self.master_flats_table = MasterFlatsTableWidget()
         self.right_stack.addWidget(self.table_widget)  # index 0: Obs log
         self.right_stack.addWidget(self.main_table_widget)  # index 1: Main table (targets/dates)
+        self.right_stack.addWidget(self.master_darks_table)  # index 2: Master darks
+        self.right_stack.addWidget(self.master_bias_table)   # index 3: Master bias
+        self.right_stack.addWidget(self.master_flats_table)  # index 4: Master flats
         splitter.addWidget(self.right_stack)
         splitter.setStretchFactor(1, 1)  # Make right panel expand more
         splitter.setSizes([self.left_panel.minimumWidth(), 1000])  # Left panel at min width
@@ -150,7 +159,28 @@ class AstroLibraryGUI(QMainWindow):
             filtered = [f for f in self.fits_files if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == value]
             self.main_table_widget.populate_table(filtered)
             self.right_stack.setCurrentIndex(1)
-        # Do nothing for 'targets' or 'dates' parent nodes
+        elif category == "darks":
+            db = get_db_manager()
+            session = db.get_session()
+            darks = session.query(CalibrationMaster).filter_by(frame="Dark").all()
+            session.close()
+            self.master_darks_table.populate(darks)
+            self.right_stack.setCurrentIndex(2)
+        elif category == "bias":
+            db = get_db_manager()
+            session = db.get_session()
+            biases = session.query(CalibrationMaster).filter_by(frame="Bias").all()
+            session.close()
+            self.master_bias_table.populate(biases)
+            self.right_stack.setCurrentIndex(3)
+        elif category == "flats":
+            db = get_db_manager()
+            session = db.get_session()
+            flats = session.query(CalibrationMaster).filter_by(frame="Flat").all()
+            session.close()
+            self.master_flats_table.populate(flats)
+            self.right_stack.setCurrentIndex(4)
+        # Do nothing for 'targets', 'dates', or other parent nodes
     
     def scan_for_files(self):
         """Scan for new FITS files."""

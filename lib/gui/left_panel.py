@@ -27,6 +27,17 @@ class LeftPanel(QWidget):
         self.menu_tree.addTopLevelItem(self.targets_item)
         self.menu_tree.addTopLevelItem(self.dates_item)
 
+        # Calibration section
+        self.calibration_item = QTreeWidgetItem(["Calibration"])
+        self.bias_item = QTreeWidgetItem(["Bias"])
+        self.darks_item = QTreeWidgetItem(["Darks"])
+        self.flats_item = QTreeWidgetItem(["Flats"])
+        self.calibration_item.addChild(self.bias_item)
+        self.calibration_item.addChild(self.darks_item)
+        self.calibration_item.addChild(self.flats_item)
+        self.menu_tree.addTopLevelItem(self.calibration_item)
+        self.menu_tree.expandItem(self.calibration_item)
+
         # Populate targets and dates immediately
         db = get_db_manager()
         for target in db.get_unique_targets():
@@ -54,6 +65,12 @@ class LeftPanel(QWidget):
             self.menu_selection_changed.emit("target", current.text(0))
         elif current.parent() is self.dates_item:
             self.menu_selection_changed.emit("date", current.text(0))
+        elif current is self.darks_item:
+            self.menu_selection_changed.emit("darks", "")
+        elif current is self.bias_item:
+            self.menu_selection_changed.emit("bias", "")
+        elif current is self.flats_item:
+            self.menu_selection_changed.emit("flats", "")
         else:
             self.menu_selection_changed.emit("unknown", current.text(0))
 

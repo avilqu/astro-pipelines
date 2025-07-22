@@ -21,6 +21,7 @@ class FitsFile(Base):
     exptime = Column(Float)
     gain = Column(Float)
     offset = Column(Float)
+    focus_position = Column(Integer)  # From FOCUSPOS header
     ccd_temp = Column(Float)
     binning = Column(String)  # e.g., "1x1", "2x2"
     
@@ -85,3 +86,39 @@ class Source(Base):
     
     def __repr__(self):
         return f"<Source(id={self.id}, x={self.x}, y={self.y}, magnitude={self.magnitude})>" 
+
+class CalibrationMaster(Base):
+    """Model representing a calibration master FITS file (e.g., master dark, flat, bias)."""
+    __tablename__ = 'calibration_masters'
+
+    # Primary key
+    id = Column(Integer, primary_key=True)
+
+    # File information
+    path = Column(String, unique=True, nullable=False)
+    date = Column(String, nullable=False)  # Only the date part (YYYY-MM-DD)
+
+    # Calibration frame type
+    frame = Column(String, nullable=False)  # 'Dark', 'Flat', or 'Bias'
+
+    # Image parameters
+    filter_name = Column(String)  # Astronomical filter (L, R, G, B, Ha, O, S, V, etc.)
+    exptime = Column(Float)
+    gain = Column(Float)
+    offset = Column(Float)
+    focus_position = Column(Integer)  # From FOCUSPOS header
+    ccd_temp = Column(Float)
+    binning = Column(String)  # e.g., "1x1", "2x2"
+
+    # Image dimensions
+    size_x = Column(Integer)  # NAXIS1
+    size_y = Column(Integer)  # NAXIS2
+
+    # FITS header (stored as JSON)
+    header_json = Column(Text)  # Complete FITS header as JSON
+
+    # Number of images integrated to create this master file
+    integration_count = Column(Integer)
+
+    def __repr__(self):
+        return f"<CalibrationMaster(id={self.id}, path='{self.path}', frame='{self.frame}', date='{self.date}')>" 

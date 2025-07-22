@@ -25,9 +25,9 @@ class HeaderViewer(QDialog):
         </tr>
         """
         for i, (key, value) in enumerate(header_dict.items()):
-            # value may be (value, comment) tuple or just value
+            # value may be (value, comment) tuple or list, or just value
             comment = ""
-            if isinstance(value, tuple) and len(value) == 2:
+            if (isinstance(value, tuple) or isinstance(value, list)) and len(value) == 2:
                 value, comment = value
             # Format value
             if value is not None:

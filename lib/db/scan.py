@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .main import get_db_manager
 from ..fits import get_fits_header_as_json
+import config
 
 
 class FitsFileScanner:
@@ -139,6 +140,7 @@ class FitsFileScanner:
             'exptime': get_val('EXPTIME'),
             'gain': get_val('GAIN'),
             'offset': get_val('OFFSET'),
+            'focus_position': get_val('FOCUSPOS'),
             'ccd_temp': get_val('CCD-TEMP'),
             'binning': self._format_binning(get_val('XBINNING'), get_val('YBINNING')),
             'size_x': get_val('NAXIS1'),
@@ -218,6 +220,114 @@ class FitsFileScanner:
                 print(f"  - {error}")
 
 
+class CalibrationMasterScanner:
+    """Scanner for importing calibration master FITS files into the database."""
+    def __init__(self, calibration_path: str = None):
+        if calibration_path is None:
+            calibration_path = config.CALIBRATION_PATH
+        self.calibration_path = Path(calibration_path)
+        self.db_manager = get_db_manager()
+        if not self.calibration_path.exists():
+            raise FileNotFoundError(f"Calibration path does not exist: {self.calibration_path}")
+        self.valid_folders = {"dark": "Dark", "flat": "Flat", "bias": "Bias"}
+
+    def scan_directory(self, verbose: bool = True) -> Dict[str, Any]:
+        if verbose:
+            print(f"Scanning calibration directory: {self.calibration_path}")
+            print(f"Expected structure: {self.calibration_path}/[dark|flat|bias]/master_*.fits")
+            print("-" * 60)
+        results = {
+            'total_files_found': 0,
+            'files_imported': 0,
+            'files_skipped': 0,
+            'errors': [],
+            'frames_found': set(),
+        }
+        for folder, frame_type in self.valid_folders.items():
+            folder_path = self.calibration_path / folder
+            if not folder_path.is_dir():
+                continue
+            results['frames_found'].add(frame_type)
+            if verbose:
+                print(f"Processing frame type: {frame_type}")
+            for fits_file in folder_path.glob("*.fits"):
+                results['total_files_found'] += 1
+                if verbose:
+                    print(f"  Processing: {fits_file.name}")
+                try:
+                    success = self._process_calibration_file(fits_file, frame_type)
+                    if success:
+                        results['files_imported'] += 1
+                    else:
+                        results['files_skipped'] += 1
+                except Exception as e:
+                    error_msg = f"Error processing {fits_file}: {e}"
+                    results['errors'].append(error_msg)
+                    if verbose:
+                        print(f"    ❌ {error_msg}")
+        results['frames_found'] = list(results['frames_found'])
+        if verbose:
+            self._print_summary(results)
+        return results
+
+    def _process_calibration_file(self, fits_file: Path, frame_type: str) -> bool:
+        # Check if file already exists in database
+        existing = self.db_manager.get_calibration_master_by_path(str(fits_file))
+        if existing:
+            return False  # File already exists
+        header_dict = get_fits_header_as_json(str(fits_file))
+        def get_val(key):
+            v = header_dict.get(key)
+            return v[0] if isinstance(v, tuple) else v
+        # Parse date (date only, no time)
+        date_obs = get_val('DATE-OBS')
+        date_str = None
+        if date_obs:
+            for fmt in ['%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d']:
+                try:
+                    date_str = datetime.strptime(date_obs, fmt).strftime('%Y-%m-%d')
+                    break
+                except Exception:
+                    continue
+        master_data = {
+            'path': str(fits_file),
+            'date': date_str,
+            'frame': frame_type,
+            'filter_name': get_val('FILTER'),
+            'exptime': get_val('EXPTIME'),
+            'gain': get_val('GAIN'),
+            'offset': get_val('OFFSET'),
+            'focus_position': get_val('FOCUSPOS'),
+            'ccd_temp': get_val('CCD-TEMP'),
+            'binning': self._format_binning(get_val('XBINNING'), get_val('YBINNING')),
+            'size_x': get_val('NAXIS1'),
+            'size_y': get_val('NAXIS2'),
+            'header_json': json.dumps(header_dict),
+            'integration_count': get_val('NIMAGES'),
+        }
+        self.db_manager.add_calibration_master(master_data)
+        return True
+
+    def _format_binning(self, xbin, ybin) -> str:
+        x = xbin if xbin is not None else 1
+        y = ybin if ybin is not None else 1
+        return f"{x}x{y}"
+
+    def _print_summary(self, results: Dict[str, Any]):
+        print("\n" + "=" * 60)
+        print("CALIBRATION SCAN SUMMARY")
+        print("=" * 60)
+        print(f"Total files found: {results['total_files_found']}")
+        print(f"Files imported: {results['files_imported']}")
+        print(f"Files skipped (already in DB): {results['files_skipped']}")
+        print(f"Errors: {len(results['errors'])}")
+        if results['frames_found']:
+            print(f"\nFrames found: {', '.join(sorted(results['frames_found']))}")
+        if results['errors']:
+            print(f"\nErrors encountered:")
+            for error in results['errors']:
+                print(f"  - {error}")
+
 def scan_fits_library(data_path: Optional[str] = None, verbose: bool = True) -> Dict[str, Any]:
     """
     Convenience function to scan the FITS library.
@@ -230,4 +340,16 @@ def scan_fits_library(data_path: Optional[str] = None, verbose: bool = True) -> 
         Dictionary with scan results
     """
     scanner = FitsFileScanner(data_path)
+    return scanner.scan_directory(verbose) 
+
+def scan_calibration_masters(calibration_path: Optional[str] = None, verbose: bool = True) -> Dict[str, Any]:
+    """
+    Convenience function to scan the calibration master library.
+    Args:
+        calibration_path: Path to scan for calibration masters. If None, uses config.CALIBRATION_PATH.
+        verbose: Whether to print progress information
+    Returns:
+        Dictionary with scan results
+    """
+    scanner = CalibrationMasterScanner(calibration_path)
     return scanner.scan_directory(verbose) 

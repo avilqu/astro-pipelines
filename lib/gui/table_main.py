@@ -22,10 +22,9 @@ class MainFitsTableWidget(QTableWidget):
         self.init_table()
 
     def init_table(self):
-        self.setColumnCount(16)
+        self.setColumnCount(17)
         self.setHorizontalHeaderLabels([
-            "Filename", "Date obs", "Target", "Filter", "Exposure", "Binning", "Gain", "Offset", "CCD Temp",
-            "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
+            "Filename", "Date obs", "Target", "Filter", "Exposure", "Binning", "Gain", "Offset", "CCD Temp", "Focus", "HFR", "Sources", "Size", "Image Scale", "RA Center", "DEC Center", "WCS Type"
         ])
         self.verticalHeader().setVisible(False)
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
@@ -47,13 +46,14 @@ class MainFitsTableWidget(QTableWidget):
         self.setColumnWidth(6, 60)    # Gain
         self.setColumnWidth(7, 60)    # Offset
         self.setColumnWidth(8, 80)    # CCD Temp
-        self.setColumnWidth(9, 60)    # HFR
-        self.setColumnWidth(10, 60)   # Sources
-        self.setColumnWidth(11, 80)   # Size
-        self.setColumnWidth(12, 80)   # Image Scale
-        self.setColumnWidth(13, 100)  # RA Center
-        self.setColumnWidth(14, 100)  # DEC Center
-        self.setColumnWidth(15, 80)   # WCS Type
+        self.setColumnWidth(9, 100)   # Focus
+        self.setColumnWidth(10, 60)   # HFR
+        self.setColumnWidth(11, 60)   # Sources
+        self.setColumnWidth(12, 80)   # Size
+        self.setColumnWidth(13, 80)   # Image Scale
+        self.setColumnWidth(14, 100)  # RA Center
+        self.setColumnWidth(15, 100)  # DEC Center
+        self.setColumnWidth(16, 80)   # WCS Type
         self.itemSelectionChanged.connect(self._on_selection_changed)
 
     def populate_table(self, fits_files):
@@ -127,34 +127,37 @@ class MainFitsTableWidget(QTableWidget):
         temp_item = QTableWidgetItem(temp_str)
         temp_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setItem(row, 8, temp_item)
+        focus_item = QTableWidgetItem(str(int(fits_file.focus_position)) if fits_file.focus_position is not None else "-")
+        focus_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setItem(row, 9, focus_item)
         if fits_file.hfr:
             hfr_str = f"{fits_file.hfr:.2f}"
         else:
             hfr_str = "-"
         hfr_item = QTableWidgetItem(hfr_str)
         hfr_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 9, hfr_item)
+        self.setItem(row, 10, hfr_item)
         if fits_file.sources_count:
             sources_str = str(fits_file.sources_count)
         else:
             sources_str = "-"
         sources_item = QTableWidgetItem(sources_str)
         sources_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 10, sources_item)
+        self.setItem(row, 11, sources_item)
         if fits_file.size_x and fits_file.size_y:
             size_str = f"{fits_file.size_x} × {fits_file.size_y}"
         else:
             size_str = "-"
         size_item = QTableWidgetItem(size_str)
         size_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 11, size_item)
+        self.setItem(row, 12, size_item)
         if fits_file.image_scale:
             scale_str = f"{fits_file.image_scale:.2f}\""
         else:
             scale_str = "-"
         scale_item = QTableWidgetItem(scale_str)
         scale_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 12, scale_item)
+        self.setItem(row, 13, scale_item)
         if fits_file.ra_center:
             ra_hours = fits_file.ra_center / 15.0
             ra_h = int(ra_hours)
@@ -165,7 +168,7 @@ class MainFitsTableWidget(QTableWidget):
             ra_str = "-"
         ra_item = QTableWidgetItem(ra_str)
         ra_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 13, ra_item)
+        self.setItem(row, 14, ra_item)
         if fits_file.dec_center:
             dec_deg = fits_file.dec_center
             dec_sign = "+" if dec_deg >= 0 else "-"
@@ -178,11 +181,11 @@ class MainFitsTableWidget(QTableWidget):
             dec_str = "-"
         dec_item = QTableWidgetItem(dec_str)
         dec_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 14, dec_item)
+        self.setItem(row, 15, dec_item)
         wcs_type = fits_file.wcs_type or "-"
         wcs_item = QTableWidgetItem(wcs_type)
         wcs_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setItem(row, 15, wcs_item)
+        self.setItem(row, 16, wcs_item)
 
     def _apply_striping(self):
         palette = self.palette()

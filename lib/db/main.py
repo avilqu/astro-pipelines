@@ -3,7 +3,7 @@ import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
-from .models import Base, FitsFile, Source
+from .models import Base, FitsFile, Source, CalibrationMaster
 
 class DatabaseManager:
     """Manages database connections and operations for astro-pipelines."""
@@ -218,6 +218,40 @@ class DatabaseManager:
                 if dt:
                     date_strs.add(dt.strftime('%Y-%m-%d'))
             return sorted(date_strs)
+        finally:
+            session.close()
+    
+    def add_calibration_master(self, master_data: dict) -> CalibrationMaster:
+        """Add a new CalibrationMaster to the database.
+        Args:
+            master_data: Dictionary containing calibration master data
+        Returns:
+            The created CalibrationMaster object
+        """
+        session = self.get_session()
+        try:
+            master = CalibrationMaster(**master_data)
+            session.add(master)
+            session.commit()
+            session.refresh(master)
+            return master
+        except SQLAlchemyError as e:
+            session.rollback()
+            print(f"Error adding CalibrationMaster: {e}")
+            raise
+        finally:
+            session.close()
+
+    def get_calibration_master_by_path(self, path: str) -> CalibrationMaster:
+        """Get a CalibrationMaster by its path.
+        Args:
+            path: File path to search for
+        Returns:
+            CalibrationMaster object if found, None otherwise
+        """
+        session = self.get_session()
+        try:
+            return session.query(CalibrationMaster).filter(CalibrationMaster.path == path).first()
         finally:
             session.close()
     
