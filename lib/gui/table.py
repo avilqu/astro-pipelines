@@ -466,13 +466,21 @@ class FitsTableWidget(QTableWidget):
         if item:
             data = item.data(Qt.ItemDataRole.UserRole)
             if data and 'is_run_summary' in data:
-                # This is a run summary row - toggle expansion
-                run_index = data['run_index']
-                if run_index in self.expanded_runs:
-                    self._collapse_run(run_index)
+                # Use the actual row argument, not data['run_index']
+                if row in self.expanded_runs:
+                    self._collapse_run(row)
                 else:
-                    self._expand_run(run_index)
+                    self._expand_run(row)
     
+    def _reindex_run_summaries(self):
+        """Update run_index for all run summary rows to match their current row number."""
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item:
+                run_data = item.data(Qt.ItemDataRole.UserRole)
+                if run_data and 'is_run_summary' in run_data:
+                    run_data['run_index'] = row
+
     def _expand_run(self, run_index):
         """Expand a run to show individual files."""
         if run_index in self.expanded_runs:
@@ -499,7 +507,8 @@ class FitsTableWidget(QTableWidget):
         
         # Mark as expanded
         self.expanded_runs.add(run_index)
-    
+        self._reindex_run_summaries()
+
     def _collapse_run(self, run_index):
         """Collapse a run to hide individual files."""
         if run_index not in self.expanded_runs:
@@ -528,8 +537,8 @@ class FitsTableWidget(QTableWidget):
         for _ in range(len(run_files)):
             self.removeRow(start_row)
         
-        # Update run indices for subsequent runs
-        for row in range(start_row, self.rowCount()):
+        # Update run_index for all run summary rows below
+        for row in range(run_index + 1, self.rowCount()):
             item = self.item(row, 0)
             if item:
                 run_data = item.data(Qt.ItemDataRole.UserRole)
@@ -539,6 +548,7 @@ class FitsTableWidget(QTableWidget):
         # Mark as collapsed
         self.expanded_runs.discard(run_index)
         self._apply_striping()
+        self._reindex_run_summaries()
     
     def _on_selection_changed(self):
         """Handle table selection changes and prevent run summary rows from being selected or highlighted."""
