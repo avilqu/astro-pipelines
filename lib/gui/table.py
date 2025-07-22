@@ -5,10 +5,14 @@ Table widget for displaying FITS files grouped by runs.
 import os
 from datetime import datetime
 from PyQt6.QtWidgets import (
-    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QVBoxLayout, QHBoxLayout, QWidget
+    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel
 from PyQt6.QtGui import QFont, QPalette, QColor
+from .context import build_single_file_menu, build_multi_file_menu, build_empty_menu
+import json
+from astropy.io import fits
+from .header_viewer import HeaderViewer
 
 
 class RunSummaryWidget(QWidget):
@@ -51,19 +55,21 @@ class RunSummaryWidget(QWidget):
     
     def _build_summary_text(self):
         """Build the summary text for the run."""
+        date_str = self.run_data['date_str']
         target = self.run_data['target']
         count = self.run_data['count']
         filters = self.run_data['filters']
         exposures = self.run_data['exposures']
         total_minutes = self.run_data['total_minutes']
+        binning = self.run_data['binning']
         
         # Format filters
-        filter_str = ", ".join(sorted(set(filters))) if filters else "None"
+        filter_str = ", ".join(sorted(set(filters))) if filters else "-"
         
         # Format exposures
-        exposure_str = ", ".join([f"{exp}s" for exp in sorted(set(exposures))]) if exposures else "None"
+        exposure_str = ", ".join([f"{exp:.1f}s" for exp in sorted(set(exposures))]) if exposures else "-"
         
-        return f"{target} / {count} files / Filters: {filter_str} / Exp: {exposure_str} / Tot: {total_minutes}mn"
+        return f"{date_str} / {target} / {count} files / {binning} / {filter_str} / {exposure_str} / Total: {total_minutes}mn"
 
 
 class FitsTableWidget(QTableWidget):
@@ -93,6 +99,10 @@ class FitsTableWidget(QTableWidget):
         # Set selection mode to select individual cells
         self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
         self.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+        
+        # Enable custom context menu
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
         
         # Disable sorting - order is fixed by date_obs
         self.setSortingEnabled(False)
@@ -185,6 +195,8 @@ class FitsTableWidget(QTableWidget):
         exposures = [f.exptime for f in run_files if f.exptime]
         total_seconds = sum(exposures) if exposures else 0
         total_minutes = round(total_seconds / 60)
+        binning = run_files[0].binning if run_files and hasattr(run_files[0], 'binning') else "-"
+        date_str = run_files[0].date_obs.strftime("%Y-%m-%d") if run_files and hasattr(run_files[0], 'date_obs') and run_files[0].date_obs else "-"
         
         return {
             'count': count,
@@ -192,6 +204,8 @@ class FitsTableWidget(QTableWidget):
             'filters': filters,
             'exposures': exposures,
             'total_minutes': total_minutes,
+            'binning': binning,
+            'date_str': date_str,
             'files': run_files
         }
     
@@ -214,6 +228,11 @@ class FitsTableWidget(QTableWidget):
         for row, run_files in enumerate(self.run_groups):
             self._add_run_summary_row(row, run_files)
         self._apply_striping()
+        
+        # Expand all runs by default
+        # (Expanding from last to first to keep indices correct)
+        for run_index in reversed(range(len(self.run_groups))):
+            self._expand_run(run_index)
 
     def _add_run_summary_row(self, row, run_files):
         """Add a run summary row to the table."""
@@ -576,3 +595,24 @@ class FitsTableWidget(QTableWidget):
         """Refresh the table display."""
         if self.fits_files:
             self.populate_table(self.fits_files) 
+
+    def _show_context_menu(self, pos):
+        """Show a context menu depending on the selection."""
+        selected_files = self.get_selected_fits_files()
+        if len(selected_files) == 1:
+            def show_header():
+                fits_file = selected_files[0]
+                # Load header from file
+                try:
+                    with fits.open(fits_file.path) as hdul:
+                        header = dict(hdul[0].header)
+                except Exception as e:
+                    header = {"Error": str(e)}
+                dlg = HeaderViewer(header, self)
+                dlg.exec()
+            menu = build_single_file_menu(self, show_header_callback=show_header)
+        elif len(selected_files) > 1:
+            menu = build_multi_file_menu(self)
+        else:
+            menu = build_empty_menu(self)
+        menu.exec(self.viewport().mapToGlobal(pos)) 

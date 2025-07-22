@@ -57,6 +57,7 @@ if __name__ == "__main__":
         except ImportError as e:
             print(f"{Style.BRIGHT + Fore.RED}Error: PyQt6 is required for GUI functionality.{Style.RESET_ALL}")
             print(f"Install with: pip install PyQt6")
+            print(f"ImportError details: {e}")
             sys.exit(1)
         except Exception as e:
             print(f"{Style.BRIGHT + Fore.RED}Error launching GUI: {e}{Style.RESET_ALL}")
