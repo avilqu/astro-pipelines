@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt
 import os
 from datetime import datetime, date
 from .header_viewer import HeaderViewer
-from .context import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
+from .menu_context import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
 from PyQt6.QtGui import QColor
 
 class MasterDarksTableWidget(MainFitsTableWidget):
@@ -87,7 +87,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/simple_fits_viewer.py',
+                        'lib/gui/viewer/main_viewer.py',
                         fits_path
                     ])
             menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -116,7 +116,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     if fits_path:
                         subprocess.Popen([
                             sys.executable,
-                            'lib/gui/viewer/simple_fits_viewer.py',
+                            'lib/gui/viewer/main_viewer.py',
                             fits_path
                         ])
                 menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -177,6 +177,22 @@ class MasterDarksTableWidget(MainFitsTableWidget):
         self.setSortingEnabled(True)
         if self.rowCount() > 1:
             self.sortItems(1, Qt.SortOrder.DescendingOrder) 
+
+    def mouseDoubleClickEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            data = self.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
+            if data and 'is_calibration' in data and 'calibration' in data:
+                cal = data['calibration']
+                fits_path = getattr(cal, 'path', None)
+                if fits_path:
+                    import sys, subprocess
+                    subprocess.Popen([
+                        sys.executable,
+                        'lib/gui/viewer/main_viewer.py',
+                        fits_path
+                    ])
+        super().mouseDoubleClickEvent(event)
 
 class MasterBiasTableWidget(MainFitsTableWidget):
     """Table widget for displaying master bias calibration files."""
@@ -255,7 +271,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/simple_fits_viewer.py',
+                        'lib/gui/viewer/main_viewer.py',
                         fits_path
                     ])
             menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -315,6 +331,22 @@ class MasterBiasTableWidget(MainFitsTableWidget):
         self.setSortingEnabled(True)
         if self.rowCount() > 1:
             self.sortItems(1, Qt.SortOrder.DescendingOrder) 
+
+    def mouseDoubleClickEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            data = self.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
+            if data and 'is_calibration' in data and 'calibration' in data:
+                cal = data['calibration']
+                fits_path = getattr(cal, 'path', None)
+                if fits_path:
+                    import sys, subprocess
+                    subprocess.Popen([
+                        sys.executable,
+                        'lib/gui/viewer/main_viewer.py',
+                        fits_path
+                    ])
+        super().mouseDoubleClickEvent(event)
 
 class MasterFlatsTableWidget(MainFitsTableWidget):
     """Table widget for displaying master flat calibration files."""
@@ -397,7 +429,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/simple_fits_viewer.py',
+                        'lib/gui/viewer/main_viewer.py',
                         fits_path
                     ])
             menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=lambda: show_image(menu))
@@ -473,3 +505,19 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
         self.setSortingEnabled(True)
         if self.rowCount() > 1:
             self.sortItems(1, Qt.SortOrder.DescendingOrder) 
+
+    def mouseDoubleClickEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            data = self.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
+            if data and 'is_calibration' in data and 'calibration' in data:
+                cal = data['calibration']
+                fits_path = getattr(cal, 'path', None)
+                if fits_path:
+                    import sys, subprocess
+                    subprocess.Popen([
+                        sys.executable,
+                        'lib/gui/viewer/main_viewer.py',
+                        fits_path
+                    ])
+        super().mouseDoubleClickEvent(event) 

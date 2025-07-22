@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
-from .context import build_single_file_menu, build_multi_file_menu, build_empty_menu
+from .menu_context import build_single_file_menu, build_multi_file_menu, build_empty_menu
 from .header_viewer import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
 
@@ -281,7 +281,7 @@ class MainFitsTableWidget(QTableWidget):
                 fits_path = fits_file.path
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/simple_fits_viewer.py',
+                    'lib/gui/viewer/main_viewer.py',
                     fits_path
                 ])
             menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -301,7 +301,7 @@ class MainFitsTableWidget(QTableWidget):
                 # Launch the simple FITS viewer as a subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/simple_fits_viewer.py',
+                    'lib/gui/viewer/main_viewer.py',
                     fits_path
                 ])
         super().mouseDoubleClickEvent(event) 

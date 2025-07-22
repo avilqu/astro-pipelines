@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel
 from PyQt6.QtGui import QFont, QPalette, QColor
-from .context import build_single_file_menu, build_multi_file_menu, build_empty_menu
+from .menu_context import build_single_file_menu, build_multi_file_menu, build_empty_menu
 import json
 from astropy.io import fits
 from .header_viewer import HeaderViewer
@@ -638,7 +638,7 @@ class FitsTableWidget(QTableWidget):
                 fits_path = fits_file.path
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/simple_fits_viewer.py',
+                    'lib/gui/viewer/main_viewer.py',
                     fits_path
                 ])
             menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -658,7 +658,7 @@ class FitsTableWidget(QTableWidget):
                 import sys, subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/simple_fits_viewer.py',
+                    'lib/gui/viewer/main_viewer.py',
                     fits_path
                 ])
         super().mouseDoubleClickEvent(event) 

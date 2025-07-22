@@ -20,6 +20,7 @@ from .left_panel import LeftPanel
 from .table_calibration import MasterDarksTableWidget, MasterBiasTableWidget, MasterFlatsTableWidget
 from lib.db import get_db_manager
 from lib.db.models import CalibrationMaster
+from lib.gui.library.menu_bar import create_menu_bar
 
 
 class AstroLibraryGUI(QMainWindow):
@@ -39,8 +40,8 @@ class AstroLibraryGUI(QMainWindow):
         self.setWindowTitle("Astropipes Library")
         self.setGeometry(100, 100, 1200, 800)
         
-        # Create menu bar
-        self.create_menu_bar()
+        # Create menu bar using the new function
+        create_menu_bar(self, self.close, self.scan_for_files)
         
         # Create central widget
         central_widget = QWidget()
@@ -87,27 +88,6 @@ class AstroLibraryGUI(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
-    
-    def create_menu_bar(self):
-        """Create the menu bar with File and Database menus."""
-        menubar = self.menuBar()
-        
-        # Create File menu
-        file_menu = menubar.addMenu("File")
-        
-        # Add Exit action
-        exit_action = QAction("Exit", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        
-        # Create Database menu
-        db_menu = menubar.addMenu("Database")
-        
-        # Add Scan action
-        scan_action = QAction("Scan for New Files", self)
-        scan_action.triggered.connect(self.scan_for_files)
-        db_menu.addAction(scan_action)
     
     def connect_signals(self):
         """Connect all the signals and slots."""
