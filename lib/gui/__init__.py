@@ -1,1 +1,1 @@
-# GUI package for astro-pipelines 
+# The library GUI code has been moved to lib.gui.library 

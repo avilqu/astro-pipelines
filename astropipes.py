@@ -49,7 +49,7 @@ if __name__ == "__main__":
         """Launch the PyQt6 GUI viewer"""
         try:
             from PyQt6.QtWidgets import QApplication
-            from lib.gui.main_library import AstroLibraryGUI
+            from lib.gui.library.main import AstroLibraryGUI
             
             app = QApplication(sys.argv)
             window = AstroLibraryGUI()
