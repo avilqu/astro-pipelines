@@ -316,7 +316,7 @@ class FitsTableWidget(QTableWidget):
                         if cell:
                             cell.setBackground(color)
                             # Only set foreground if not already colored (i.e., default brush), and skip filter column (2)
-                            if is_dark and (col != 2 or cell.foreground().color() == QColor()):
+                            if is_dark and (col != 3 or cell.foreground().color() == QColor()):
                                 cell.setForeground(QColor(230, 230, 230))
                     file_row_index += 1
     
