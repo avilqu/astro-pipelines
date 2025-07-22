@@ -94,15 +94,15 @@ if __name__ == "__main__":
         """Launch the PyQt6 GUI viewer"""
         try:
             from PyQt6.QtWidgets import QApplication
-            from lib.gui_pyqt import FITSImageViewer
+            from gui.main import AstroLibraryGUI
             
             app = QApplication(sys.argv)
-            window = FITSImageViewer()
+            window = AstroLibraryGUI()
             window.show()
             
-            # Load file if provided
-            if args.gui and args.gui.strip():
-                window.load_file_from_path(args.gui.strip())
+            # TODO: Load file if provided (will be implemented later)
+            # if args.gui and args.gui.strip():
+            #     window.load_file_from_path(args.gui.strip())
             
             sys.exit(app.exec())
         except ImportError as e:
@@ -112,6 +112,29 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"{Style.BRIGHT + Fore.RED}Error launching GUI: {e}{Style.RESET_ALL}")
             sys.exit(1)
+
+    # def launch_gui():
+    #     """Launch the PyQt6 GUI viewer"""
+    #     try:
+    #         from PyQt6.QtWidgets import QApplication
+    #         from lib.gui_pyqt import FITSImageViewer
+            
+    #         app = QApplication(sys.argv)
+    #         window = FITSImageViewer()
+    #         window.show()
+            
+    #         # Load file if provided
+    #         if args.gui and args.gui.strip():
+    #             window.load_file_from_path(args.gui.strip())
+            
+    #         sys.exit(app.exec())
+    #     except ImportError as e:
+    #         print(f"{Style.BRIGHT + Fore.RED}Error: PyQt6 is required for GUI functionality.{Style.RESET_ALL}")
+    #         print(f"Install with: pip install PyQt6")
+    #         sys.exit(1)
+    #     except Exception as e:
+    #         print(f"{Style.BRIGHT + Fore.RED}Error launching GUI: {e}{Style.RESET_ALL}")
+    #         sys.exit(1)
 
     if args.gui is not None:
         launch_gui()

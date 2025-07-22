@@ -58,3 +58,4 @@ watchdog==4.0.0
 webencodings==0.5.1
 zarr==3.0.8
 zipp==3.22.0
+sqlalchemy==2.0.27
