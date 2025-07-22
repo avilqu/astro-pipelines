@@ -127,22 +127,26 @@ class FitsFileScanner:
         header_dict = get_fits_header_as_json(str(fits_file))
         
         # Extract key information from header
+        def get_val(key):
+            v = header_dict.get(key)
+            return v[0] if isinstance(v, tuple) else v
+
         fits_data = {
             'path': str(fits_file),
             'target': target_name,  # Use directory name as target
             'filter_name': filter_name,  # Use directory name as filter
-            'date_obs': self._parse_date_obs(header_dict.get('DATE-OBS')),
-            'exptime': header_dict.get('EXPTIME'),
-            'gain': header_dict.get('GAIN'),
-            'offset': header_dict.get('OFFSET'),
-            'ccd_temp': header_dict.get('CCD-TEMP'),
-            'binning': self._format_binning(header_dict.get('XBINNING'), header_dict.get('YBINNING')),
-            'size_x': header_dict.get('NAXIS1'),
-            'size_y': header_dict.get('NAXIS2'),
-            'image_scale': header_dict.get('SCALE'),  # arcsec/pixel (was PIXSCALE)
-            'ra_center': header_dict.get('CRVAL1'),  # Right Ascension of center
-            'dec_center': header_dict.get('CRVAL2'),  # Declination of center
-            'wcs_type': header_dict.get('CTYPE1'),  # WCS solution type
+            'date_obs': self._parse_date_obs(get_val('DATE-OBS')),
+            'exptime': get_val('EXPTIME'),
+            'gain': get_val('GAIN'),
+            'offset': get_val('OFFSET'),
+            'ccd_temp': get_val('CCD-TEMP'),
+            'binning': self._format_binning(get_val('XBINNING'), get_val('YBINNING')),
+            'size_x': get_val('NAXIS1'),
+            'size_y': get_val('NAXIS2'),
+            'image_scale': get_val('SCALE'),  # arcsec/pixel (was PIXSCALE)
+            'ra_center': get_val('CRVAL1'),  # Right Ascension of center
+            'dec_center': get_val('CRVAL2'),  # Declination of center
+            'wcs_type': get_val('CTYPE1'),  # WCS solution type
             'header_json': json.dumps(header_dict),  # Full header as JSON
             'simbad_objects': '[]'  # Empty array for now
         }

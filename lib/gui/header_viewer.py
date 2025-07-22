@@ -1,31 +1,47 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit
+from PyQt6.QtGui import QFont
 
 class HeaderViewer(QDialog):
     def __init__(self, header_dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("FITS Header")
-        self.resize(600, 500)
+        self.setGeometry(200, 200, 600, 600)
         layout = QVBoxLayout(self)
-        self.table = QTableWidget(self)
-        self.table.setColumnCount(2)
-        self.table.setHorizontalHeaderLabels(["Key", "Value"])
-        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setShowGrid(True)
-        self.table.setAlternatingRowColors(True)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.table)
+        self.text_area = QTextEdit()
+        self.text_area.setReadOnly(True)
+        self.text_area.setFont(QFont("Courier New", 10))
+        self.text_area.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        layout.addWidget(self.text_area)
         self.setLayout(layout)
-        self.populate(header_dict)
+        self.display_header(header_dict)
 
-    def populate(self, header_dict):
-        self.table.setRowCount(len(header_dict))
+    def display_header(self, header_dict):
+        header_html = """
+        <table style="font-family: 'Courier New', monospace; font-size: 10pt; border-collapse: collapse; width: 100%;">
+        <tr style="background-color: #333333;">
+            <th style="color: #0066CC; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;">Keyword</th>
+            <th style="color: #FFFFFF; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;">Value</th>
+            <th style="color: #AAAAAA; text-align: left; padding: 2px 5px; border-bottom: 1px solid #555555;">Comment</th>
+        </tr>
+        """
         for i, (key, value) in enumerate(header_dict.items()):
-            key_item = QTableWidgetItem(str(key))
-            key_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            value_item = QTableWidgetItem(str(value))
-            value_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-            self.table.setItem(i, 0, key_item)
-            self.table.setItem(i, 1, value_item) 
+            # value may be (value, comment) tuple or just value
+            comment = ""
+            if isinstance(value, tuple) and len(value) == 2:
+                value, comment = value
+            # Format value
+            if value is not None:
+                value_str = str(value)
+            else:
+                value_str = ""
+            comment_str = comment if comment else ""
+            row_color = "#222222" if i % 2 == 0 else "#2A2A2A"
+            header_html += f"""
+            <tr style="background-color: {row_color};">
+                <td style="color: #0066CC; font-weight: bold; padding: 2px 5px; border-right: 1px solid #555555; word-break: break-all;">{key}</td>
+                <td style="color: #FFFFFF; padding: 2px 5px; border-right: 1px solid #555555; word-break: break-all;">{value_str}</td>
+                <td style="color: #AAAAAA; padding: 2px 5px; word-break: break-all;">{comment_str}</td>
+            </tr>
+            """
+        header_html += "</table>"
+        self.text_area.setHtml(header_html) 

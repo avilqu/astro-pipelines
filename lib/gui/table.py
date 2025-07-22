@@ -13,6 +13,7 @@ from .context import build_single_file_menu, build_multi_file_menu, build_empty_
 import json
 from astropy.io import fits
 from .header_viewer import HeaderViewer
+from lib.fits.header import get_fits_header_as_json
 
 
 class RunSummaryWidget(QWidget):
@@ -229,10 +230,9 @@ class FitsTableWidget(QTableWidget):
             self._add_run_summary_row(row, run_files)
         self._apply_striping()
         
-        # Expand all runs by default
-        # (Expanding from last to first to keep indices correct)
-        for run_index in reversed(range(len(self.run_groups))):
-            self._expand_run(run_index)
+        # Collapse all runs by default, expand only the most recent (first) run
+        if self.run_groups:
+            self._expand_run(0)
 
     def _add_run_summary_row(self, row, run_files):
         """Add a run summary row to the table."""
@@ -602,10 +602,9 @@ class FitsTableWidget(QTableWidget):
         if len(selected_files) == 1:
             def show_header():
                 fits_file = selected_files[0]
-                # Load header from file
+                # Load header using the shared utility
                 try:
-                    with fits.open(fits_file.path) as hdul:
-                        header = dict(hdul[0].header)
+                    header = get_fits_header_as_json(fits_file.path)
                 except Exception as e:
                     header = {"Error": str(e)}
                 dlg = HeaderViewer(header, self)

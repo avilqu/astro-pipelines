@@ -10,33 +10,21 @@ from typing import Dict, Any
 def get_fits_header_as_json(fits_file_path: str) -> Dict[str, Any]:
     """
     Read a FITS file and return its header as a JSON-serializable dictionary.
-    
-    Args:
-        fits_file_path: Path to the FITS file
-        
-    Returns:
-        Dictionary containing all header cards and their values
-        
-    Raises:
-        FileNotFoundError: If the FITS file doesn't exist
-        OSError: If the file can't be opened as a FITS file
+    Each key maps to a (value, comment) tuple.
     """
     try:
         with fits.open(fits_file_path) as hdul:
-            # Get the primary header (first HDU)
             header = hdul[0].header
-            
-            # Convert header to dictionary, handling non-serializable objects
             header_dict = {}
-            for key, value in header.items():
+            for card in header.cards:
+                key = card.keyword
+                value = card.value
+                comment = card.comment
                 # Convert special FITS objects to strings
                 if hasattr(value, '__str__'):
-                    header_dict[key] = str(value)
-                else:
-                    header_dict[key] = value
-            
+                    value = str(value)
+                header_dict[key] = (value, comment)
             return header_dict
-            
     except FileNotFoundError:
         raise FileNotFoundError(f"FITS file not found: {fits_file_path}")
     except OSError as e:
