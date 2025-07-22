@@ -22,6 +22,11 @@ class MasterDarksTableWidget(MainFitsTableWidget):
         self.setSortingEnabled(True)
         self.setShowGrid(True)
         self.setGridStyle(self.gridStyle())
+        # Set correct column count and headers for Darks
+        self.setColumnCount(10)
+        self.setHorizontalHeaderLabels([
+            "Filename", "Date", "Age", "Exposure", "Bin", "Gain", "Offset", "CCD temp", "Size", "Count"
+        ])
         header = self.horizontalHeader()
         for i in range(self.columnCount()):
             header.setSectionResizeMode(i, self.horizontalHeader().ResizeMode.Interactive)
@@ -29,13 +34,12 @@ class MasterDarksTableWidget(MainFitsTableWidget):
         self.setColumnWidth(1, 120)   # Date
         self.setColumnWidth(2, 60)    # Age
         self.setColumnWidth(3, 80)    # Exposure
-        self.setColumnWidth(4, 60)    # Binning
+        self.setColumnWidth(4, 60)    # Bin
         self.setColumnWidth(5, 60)    # Gain
         self.setColumnWidth(6, 60)    # Offset
         self.setColumnWidth(7, 80)    # CCD temp
-        self.setColumnWidth(8, 100)   # Focus
-        self.setColumnWidth(9, 80)    # Size
-        self.setColumnWidth(10, 100)  # Count
+        self.setColumnWidth(8, 80)    # Size
+        self.setColumnWidth(9, 80)    # Count
         self.itemSelectionChanged.connect(self._on_selection_changed)
 
     def _on_selection_changed(self):
@@ -52,22 +56,17 @@ class MasterDarksTableWidget(MainFitsTableWidget):
 
     def get_selected_calibration_files(self):
         selected_rows = self.selectionModel().selectedRows()
-        print(f"[DEBUG] Selected rows: {[row.row() for row in selected_rows]}")
         selected_files = []
         for row in selected_rows:
             item = self.item(row.row(), 0)
             if item:
                 data = item.data(Qt.ItemDataRole.UserRole)
-                print(f"[DEBUG] Row {row.row()} data: {data}")
                 if data and 'is_calibration' in data and 'calibration' in data:
                     selected_files.append(data['calibration'])
-        print(f"[DEBUG] Selected calibration files: {selected_files}")
         return selected_files
 
     def _show_context_menu(self, pos):
-        print("[DEBUG] Context menu triggered")
         selected_files = self.get_selected_calibration_files()
-        print(f"[DEBUG] Files for context menu (selection): {selected_files}")
         if len(selected_files) == 1:
             cal = selected_files[0]
             def show_header():
@@ -80,7 +79,6 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     header = {"Error": str(e)}
                 dlg = HeaderViewer(header, self)
                 dlg.exec()
-            print("[DEBUG] Showing calibration single file menu (by selection)")
             menu = build_calibration_single_file_menu(self, show_header_callback=show_header)
             menu.exec(self.viewport().mapToGlobal(pos))
             return
@@ -89,7 +87,6 @@ class MasterDarksTableWidget(MainFitsTableWidget):
         if index.isValid():
             item = self.item(index.row(), 0)
             data = item.data(Qt.ItemDataRole.UserRole) if item else None
-            print(f"[DEBUG] Right-clicked row {index.row()} data: {data}")
             if data and 'is_calibration' in data and 'calibration' in data:
                 cal = data['calibration']
                 def show_header():
@@ -102,11 +99,9 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                         header = {"Error": str(e)}
                     dlg = HeaderViewer(header, self)
                     dlg.exec()
-                print("[DEBUG] Showing calibration single file menu (by cursor row)")
                 menu = build_calibration_single_file_menu(self, show_header_callback=show_header)
                 menu.exec(self.viewport().mapToGlobal(pos))
                 return
-        print("[DEBUG] Showing empty menu (none)")
         menu = build_empty_menu(self)
         menu.exec(self.viewport().mapToGlobal(pos))
 
@@ -149,7 +144,6 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 QTableWidgetItem(f"{gain:.1f}" if isinstance(gain, (float, int)) else (str(gain) if gain not in (None, '', 'None') else '-')),
                 QTableWidgetItem(f"{offset:.1f}" if isinstance(offset, (float, int)) else (str(offset) if offset not in (None, '', 'None') else '-')),
                 QTableWidgetItem(f"{ccd_temp:.1f}" if isinstance(ccd_temp, (float, int)) else (str(ccd_temp) if ccd_temp not in (None, '', 'None') else '-')),
-                QTableWidgetItem(str(int(focus)) if isinstance(focus, (float, int)) and focus not in (None, '', 'None') else (str(focus) if focus not in (None, '', 'None') else '-')),
                 QTableWidgetItem(str(size)),
                 QTableWidgetItem(str(integration_count)),
             ]
@@ -172,14 +166,18 @@ class MasterBiasTableWidget(MainFitsTableWidget):
         self.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
-        self.itemSelectionChanged.connect(self._on_selection_changed)
+        # Set correct column count and headers for Bias
+        self.setColumnCount(9)
+        self.setHorizontalHeaderLabels([
+            "Filename", "Date", "Age", "Bin", "Gain", "Offset", "CCD temp", "Size", "Count"
+        ])
         header = self.horizontalHeader()
         for i in range(self.columnCount()):
             header.setSectionResizeMode(i, self.horizontalHeader().ResizeMode.Interactive)
         self.setColumnWidth(0, 200)   # Filename
         self.setColumnWidth(1, 120)   # Date
         self.setColumnWidth(2, 60)    # Age
-        self.setColumnWidth(3, 60)    # Binning
+        self.setColumnWidth(3, 60)    # Bin
         self.setColumnWidth(4, 60)    # Gain
         self.setColumnWidth(5, 60)    # Offset
         self.setColumnWidth(6, 80)    # CCD temp
@@ -296,7 +294,11 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
         self.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
-        self.itemSelectionChanged.connect(self._on_selection_changed)
+        # Set correct column count and headers for Flats
+        self.setColumnCount(12)
+        self.setHorizontalHeaderLabels([
+            "Filename", "Date", "Age", "Filter", "Exposure", "Bin", "Gain", "Offset", "CCD temp", "Focus", "Size", "Count"
+        ])
         header = self.horizontalHeader()
         for i in range(self.columnCount()):
             header.setSectionResizeMode(i, self.horizontalHeader().ResizeMode.Interactive)
@@ -305,7 +307,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
         self.setColumnWidth(2, 60)    # Age
         self.setColumnWidth(3, 80)    # Filter
         self.setColumnWidth(4, 80)    # Exposure
-        self.setColumnWidth(5, 60)    # Binning
+        self.setColumnWidth(5, 60)    # Bin
         self.setColumnWidth(6, 60)    # Gain
         self.setColumnWidth(7, 60)    # Offset
         self.setColumnWidth(8, 80)    # CCD temp
