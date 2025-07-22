@@ -31,7 +31,7 @@ class LeftPanel(QWidget):
         db = get_db_manager()
         for target in db.get_unique_targets():
             QTreeWidgetItem(self.targets_item, [target])
-        for date in db.get_unique_dates():
+        for date in reversed(db.get_unique_dates()):
             QTreeWidgetItem(self.dates_item, [date])
 
         # Expand both Targets and Dates by default
