@@ -5,7 +5,7 @@ class HeaderViewer(QDialog):
     def __init__(self, header_dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("FITS Header")
-        self.setGeometry(200, 200, 600, 600)
+        self.setGeometry(200, 200, 700, 600)
         layout = QVBoxLayout(self)
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
