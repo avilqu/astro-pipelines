@@ -99,14 +99,29 @@ class SIMBADSearchDialog(QDialog):
             self.search_button.setText("Search")
 
 
-def create_image_object(image_data: np.ndarray, display_min=None, display_max=None):
-    """Convert numpy array to QPixmap for display - optimized version"""
-    # Use provided display range or calculate from histogram
+def create_image_object(image_data: np.ndarray, display_min=None, display_max=None, clipping=False):
+    """Convert numpy array to QPixmap for display - optimized version. NaNs are replaced with the minimum finite value. If clipping is True, use 3-sigma clipping for display range."""
+    # Replace NaNs with the minimum finite value
+    if np.isnan(image_data).any():
+        finite_vals = image_data[np.isfinite(image_data)]
+        fill_value = np.min(finite_vals) if finite_vals.size > 0 else 0
+        image_data = np.nan_to_num(image_data, nan=fill_value)
+    # Use provided display range or calculate from histogram or sigma clipping
     if display_min is None or display_max is None:
-        histo = np.histogram(image_data, 60, None, True)
-        display_min = histo[1][0]
-        display_max = histo[1][-1]
-    
+        if clipping:
+            finite_vals = image_data[np.isfinite(image_data)]
+            if finite_vals.size > 0:
+                mean = np.mean(finite_vals)
+                std = np.std(finite_vals)
+                display_min = mean - 3 * std
+                display_max = mean + 3 * std
+            else:
+                display_min = np.min(image_data)
+                display_max = np.max(image_data)
+        else:
+            histo = np.histogram(image_data, 60, None, True)
+            display_min = histo[1][0]
+            display_max = histo[1][-1]
     # Apply histogram stretching
     if display_max > display_min:
         clipped_data = np.clip(image_data, display_min, display_max)
@@ -115,15 +130,12 @@ def create_image_object(image_data: np.ndarray, display_min=None, display_max=No
         normalized_data = image_data - image_data.min()
         if normalized_data.max() > 0:
             normalized_data = normalized_data / normalized_data.max()
-    
     # Convert to 8-bit for display
     display_data = (normalized_data * 255).astype(np.uint8)
-    
     # Create QImage from numpy array
     height, width = display_data.shape
     display_data = np.ascontiguousarray(display_data)
     q_image = QImage(display_data.data, width, height, width, QImage.Format.Format_Grayscale8)
     q_image = q_image.copy()
-    
     # Convert to pixmap
     return QPixmap.fromImage(q_image)

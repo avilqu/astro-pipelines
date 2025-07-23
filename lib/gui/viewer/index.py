@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 import numpy as np
 from astropy.io import fits
 from PyQt6.QtWidgets import QApplication, QMainWindow, QScrollArea, QToolBar, QFileDialog, QDialog, QWidget, QVBoxLayout, QPushButton, QHBoxLayout
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QIcon, QAction
 from lib.gui.viewer.overlay import ImageLabel
 from lib.gui.viewer.display import create_image_object
@@ -13,13 +13,37 @@ from lib.gui.viewer.navigation import NavigationMixin
 from lib.gui.common.header_window import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
 from lib.fits.catalogs import AstrometryCatalog
-from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel
+from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel, QMessageBox, QProgressDialog
 import config
+from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, compute_padded_reference_wcs, reproject_images_to_common_wcs
 
 class NoWheelScrollArea(QScrollArea):
     def wheelEvent(self, event):
         # Ignore wheel events so they are not used for scrolling
         event.ignore()
+
+class AlignmentWorker(QObject):
+    progress = pyqtSignal(float)
+    finished = pyqtSignal(list, object, int, int, list)  # aligned_datas, common_wcs, new_nx, new_ny, headers
+    error = pyqtSignal(str)
+
+    def __init__(self, image_datas, headers, pad_x, pad_y):
+        super().__init__()
+        self.image_datas = image_datas
+        self.headers = headers
+        self.pad_x = pad_x
+        self.pad_y = pad_y
+
+    def run(self):
+        try:
+            from lib.fits.align import compute_padded_reference_wcs, reproject_images_to_common_wcs
+            common_wcs, (new_nx, new_ny) = compute_padded_reference_wcs(self.headers, paddings=(self.pad_x, self.pad_y))
+            aligned_datas = reproject_images_to_common_wcs(
+                self.image_datas, self.headers, common_wcs, (new_ny, new_nx), progress_callback=self.progress.emit
+            )
+            self.finished.emit(aligned_datas, common_wcs, new_nx, new_ny, self.headers)
+        except Exception as e:
+            self.error.emit(str(e))
 
 class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def __init__(self, fits_path=None):
@@ -147,6 +171,21 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.overlay_toggle_action.setVisible(False)
         self.overlay_toggle_action.triggered.connect(self.toggle_overlay_visibility)
         self.toolbar.addAction(self.overlay_toggle_action)
+        # Add Align button (only visible if >1 image loaded)
+        self.align_action = QAction("Align", self)
+        self.align_action.setToolTip("Align all images using WCS")
+        self.align_action.setVisible(False)
+        self.align_action.triggered.connect(self.align_images)
+        self.toolbar.addAction(self.align_action)
+        self.toolbar.widgetForAction(self.align_action).setFixedSize(70, 32)
+        # Add Clipping button
+        self.clipping_action = QAction("Clipping", self)
+        self.clipping_action.setCheckable(True)
+        self.clipping_action.setChecked(False) # Default to off
+        self.clipping_action.setToolTip("Toggle sigma clipping for display stretch")
+        self.clipping_action.triggered.connect(self.toggle_clipping)
+        self.toolbar.addAction(self.clipping_action)
+        self.toolbar.widgetForAction(self.clipping_action).setFixedSize(80, 32)
 
         # Add a spacer to push nav_widget to the right
         spacer = QWidget(self)
@@ -171,10 +210,12 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._overlay_visible = True
         self._zoom = 1.0  # Track current zoom level
         self._last_center = None  # Track last center (in image coordinates)
+        self.clipping_enabled = False
         if fits_path:
             self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
         self.update_navigation_buttons()
+        self.update_align_button_visibility()
         # Status bar: coordinates (left), pixel value (right)
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -240,6 +281,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.load_fits(fits_path, restore_view=True)
         self.update_navigation_buttons()
         self.update_image_count_label()
+        self.update_align_button_visibility()
 
     def _preload_fits_file(self, fits_path):
         if fits_path in self._preloaded_fits:
@@ -276,6 +318,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.load_fits(self.loaded_files[self.current_file_index], restore_view=True)
         self.update_navigation_buttons()
         self.update_image_count_label()
+        self.update_align_button_visibility()
 
     def show_next_file(self):
         # Save zoom and center before switching
@@ -296,6 +339,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.load_fits(self.loaded_files[self.current_file_index], restore_view=True)
         self.update_navigation_buttons()
         self.update_image_count_label()
+        self.update_align_button_visibility()
 
     def update_navigation_buttons(self):
         n = len(self.loaded_files)
@@ -325,6 +369,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
+    def toggle_clipping(self):
+        self.clipping_enabled = not self.clipping_enabled
+        self.clipping_action.setChecked(self.clipping_enabled)
+        self.update_image_display(keep_zoom=True)
+
     def update_image_display(self, keep_zoom=False):
         if self.image_data is None:
             return
@@ -348,12 +397,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         else:
             rel_cx = rel_cy = 0.5
         if self.stretch_mode == 'linear':
-            orig_pixmap = create_image_object(self.image_data)
+            orig_pixmap = create_image_object(self.image_data, clipping=self.clipping_enabled)
         else:
-            # Logarithmic stretch: scale data, then use create_image_object
             data = self.image_data.astype(float)
             data = np.where(data > 0, np.log10(data), 0)
-            orig_pixmap = create_image_object(data)
+            orig_pixmap = create_image_object(data, clipping=self.clipping_enabled)
         self._orig_pixmap = orig_pixmap  # Always set to the unscaled pixmap
         # Set the display pixmap according to current zoom
         new_width = int(orig_pixmap.width() * self._zoom)
@@ -424,9 +472,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                         self._zoom = 1.0
                     self._pending_zoom_to_fit = False
                     self.update_image_display(keep_zoom=True)
-                    # Restore center if available
-                    if restore_view and hasattr(self, '_last_center') and self._last_center:
-                        QTimer.singleShot(0, lambda: self._set_viewport_center(*self._last_center))
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
@@ -496,6 +541,70 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def _blink_next_image(self):
         if len(self.loaded_files) > 1:
             self.show_next_file()
+
+    def update_align_button_visibility(self):
+        self.align_action.setVisible(len(self.loaded_files) > 1)
+
+    def align_images(self):
+        # Remove overlays before aligning
+        self._simbad_overlay = None
+        self._overlay_visible = True
+        self.update_overlay_button_visibility()
+        # Gather image data and headers
+        image_datas = []
+        headers = []
+        for path in self.loaded_files:
+            img, hdr, wcs = self._preloaded_fits.get(path, (None, None, None))
+            if img is None or hdr is None:
+                QMessageBox.critical(self, "Alignment Error", f"Could not load image or header for {path}")
+                return
+            image_datas.append(img)
+            headers.append(hdr)
+        # Check all have WCS
+        if not check_all_have_wcs(headers):
+            QMessageBox.critical(self, "Alignment Error", "One or more images is not platesolved (missing WCS). Alignment aborted.")
+            return
+        # Check pixel scales match
+        if not check_pixel_scales_match(headers):
+            QMessageBox.critical(self, "Alignment Error", "Pixel scales do not match between images. Alignment aborted.")
+            return
+        pad_x, pad_y = 100, 100
+        # Progress dialog
+        progress = QProgressDialog("Aligning images...", None, 0, len(image_datas), self)
+        progress.setWindowTitle("Aligning")
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        # Start worker thread
+        self._align_thread = QThread()
+        self._align_worker = AlignmentWorker(image_datas, headers, pad_x, pad_y)
+        self._align_worker.moveToThread(self._align_thread)
+        self._align_thread.started.connect(self._align_worker.run)
+        self._align_worker.progress.connect(lambda frac: (progress.setValue(int(frac * len(image_datas))), QApplication.processEvents()))
+        def on_finished(aligned_datas, common_wcs, new_nx, new_ny, headers):
+            progress.close()
+            for i, path in enumerate(self.loaded_files):
+                new_header = headers[0].copy()
+                new_header['NAXIS1'] = new_nx
+                new_header['NAXIS2'] = new_ny
+                self._preloaded_fits[path] = (aligned_datas[i], new_header, common_wcs)
+            self.current_file_index = 0
+            self.load_fits(self.loaded_files[0], restore_view=False)
+            self.update_navigation_buttons()
+            self.update_image_count_label()
+            self.update_align_button_visibility()
+            self._align_thread.quit()
+            self._align_thread.wait()
+        self._align_worker.finished.connect(on_finished)
+        def on_error(msg):
+            progress.close()
+            QMessageBox.critical(self, "Alignment Error", f"Error during alignment: {msg}")
+            self._align_thread.quit()
+            self._align_thread.wait()
+        self._align_worker.error.connect(on_error)
+        self._align_thread.start()
 
 def main():
     fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []
