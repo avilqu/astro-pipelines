@@ -134,9 +134,9 @@ class FitsTableWidget(QTableWidget):
         
         # Set default column widths
         self.setColumnWidth(0, 200)   # Filename
-        self.setColumnWidth(1, 120)   # Date obs (new column)
+        self.setColumnWidth(1, 125)   # Date obs (new column)
         self.setColumnWidth(2, 100)   # Target
-        self.setColumnWidth(3, 80)    # Filter
+        self.setColumnWidth(3, 50)    # Filter
         self.setColumnWidth(4, 80)    # Exposure
         self.setColumnWidth(5, 60)    # Bin
         self.setColumnWidth(6, 60)    # Gain

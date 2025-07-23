@@ -44,7 +44,7 @@ class MainFitsTableWidget(QTableWidget):
         self.setColumnWidth(0, 200)   # Filename
         self.setColumnWidth(1, 140)   # Date obs
         self.setColumnWidth(2, 100)   # Target
-        self.setColumnWidth(3, 80)    # Filter
+        self.setColumnWidth(3, 50)    # Filter
         self.setColumnWidth(4, 80)    # Exposure
         self.setColumnWidth(5, 60)    # Bin
         self.setColumnWidth(6, 60)    # Gain
