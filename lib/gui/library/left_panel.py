@@ -1,49 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
-from PyQt6.QtCore import pyqtSignal, Qt, QRect
-from PyQt6.QtGui import QPainter, QFont, QColor
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTreeWidget, QTreeWidgetItem
+from PyQt6.QtCore import pyqtSignal, Qt
 from lib.db import get_db_manager
-
-class CountStyledDelegate(QStyledItemDelegate):
-    """Custom delegate to render counts with different styling."""
-    
-    def paint(self, painter, option, index):
-        text = index.data()
-        
-        # Check if text contains a count (format: "Name (count)")
-        if " (" in text and text.endswith(")"):
-            # Split the text into name and count
-            parts = text.split(" (")
-            name = parts[0]
-            count = parts[1].rstrip(")")
-            
-            # Set up the main text style
-            painter.save()
-            painter.setFont(option.font)
-            painter.setPen(QColor("#cccccc"))  # Light grey for main text
-            
-            # Draw the main text
-            painter.drawText(option.rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
-            
-            # Set up the count text style (smaller and different color)
-            count_font = option.font
-            count_font.setPointSize(option.font.pointSize() - 2)  # Smaller font
-            painter.setFont(count_font)
-            painter.setPen(QColor("#888888"))  # Darker grey for count
-            
-            # Calculate position for count text
-            name_width = painter.fontMetrics().horizontalAdvance(name)
-            count_text = f" ({count})"
-            count_x = option.rect.x() + name_width
-            
-            # Draw the count text
-            count_rect = QRect(count_x, option.rect.y(), 
-                             option.rect.width() - name_width, option.rect.height())
-            painter.drawText(count_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, count_text)
-            
-            painter.restore()
-        else:
-            # For items without counts, use default painting
-            super().paint(painter, option, index)
 
 class LeftPanel(QWidget):
     menu_selection_changed = pyqtSignal(str, str)  # (category, value)
@@ -67,9 +24,6 @@ class LeftPanel(QWidget):
             }
     
         """)
-        
-        # Apply custom delegate for styled count display
-        self.menu_tree.setItemDelegate(CountStyledDelegate())
 
         # Initialize database connection
         db = get_db_manager()
