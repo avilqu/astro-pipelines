@@ -29,11 +29,40 @@ class DatabaseScannerThread(QThread):
     """Thread for scanning FITS files to avoid blocking the GUI."""
     scan_completed = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
-    
+    output_received = pyqtSignal(str)  # New signal for real-time output
+
     def run(self):
+        import sys
+        import io
+        from contextlib import redirect_stdout
         try:
             from lib.db import scan_fits_library
-            results = scan_fits_library()
+            class SignalStringIO(io.StringIO):
+                def __init__(self, signal, buffer_size=100):
+                    super().__init__()
+                    self.signal = signal
+                    self.buffer = []
+                    self.buffer_size = buffer_size
+                def write(self, text):
+                    lines = text.splitlines(keepends=True)
+                    for line in lines:
+                        self.buffer.append(line)
+                        if len(self.buffer) >= self.buffer_size:
+                            self._emit_buffer()
+                def flush(self):
+                    self._emit_buffer()
+                    super().flush()
+                def close(self):
+                    self._emit_buffer()
+                    super().close()
+                def _emit_buffer(self):
+                    if self.buffer:
+                        self.signal.emit(''.join(self.buffer))
+                        self.buffer.clear()
+            sio = SignalStringIO(self.output_received, buffer_size=100)
+            with redirect_stdout(sio):
+                results = scan_fits_library()
+            sio.flush()  # Ensure any remaining output is emitted
             self.scan_completed.emit(results)
         except Exception as e:
             self.error_occurred.emit(str(e))

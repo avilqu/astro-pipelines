@@ -14,7 +14,7 @@ def create_menu_bar(parent, on_exit, on_scan):
 
     # Create Database menu
     db_menu = menubar.addMenu("Database")
-    scan_action = QAction("Scan for New Files", parent)
+    scan_action = QAction("Scan for new files", parent)
     scan_action.triggered.connect(on_scan)
     db_menu.addAction(scan_action)
 

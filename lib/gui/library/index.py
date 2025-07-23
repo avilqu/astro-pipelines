@@ -21,6 +21,7 @@ from .calibration_tables import MasterDarksTableWidget, MasterBiasTableWidget, M
 from lib.db import get_db_manager
 from lib.db.models import CalibrationMaster
 from lib.gui.library.menu_bar import create_menu_bar
+from lib.gui.common.console_window import ConsoleOutputWindow
 
 
 class AstroLibraryGUI(QMainWindow):
@@ -32,6 +33,7 @@ class AstroLibraryGUI(QMainWindow):
         self.fits_files = []
         self.last_menu_category = None
         self.last_menu_value = None
+        self.console_window = None  # For scan output
         self.init_ui()
         self.connect_signals()
         self.load_database()
@@ -179,21 +181,30 @@ class AstroLibraryGUI(QMainWindow):
     
     def scan_for_files(self):
         """Scan for new FITS files."""
+        # Show console window for scan output
+        if self.console_window is not None:
+            self.console_window.close()
+        self.console_window = ConsoleOutputWindow(title="Database Scan Output", parent=self)
+        self.console_window.clear_output()
+        self.console_window.show_and_raise()
+        # Optionally, connect cancel button to stop scan (not implemented yet)
+        # self.console_window.cancel_requested.connect(self.cancel_scan)
+        # Start scan in thread
         self.status_label.setText("Scanning for new files...")
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, 0)
-        
-        # Run scan in thread to avoid blocking GUI
+        # Hide progress bar
+        self.progress_bar.setVisible(False)
         self.scanner_thread = DatabaseScannerThread()
+        self.scanner_thread.output_received.connect(self.console_window.append_text)
         self.scanner_thread.scan_completed.connect(self.on_scan_completed)
         self.scanner_thread.error_occurred.connect(self.on_scan_error)
         self.scanner_thread.start()
     
     def on_scan_completed(self, results):
         """Handle scan completion."""
-        self.progress_bar.setVisible(False)
         self.status_label.setText("Scan completed")
-        
+        if self.console_window:
+            self.console_window.append_text("\nScan completed successfully!\n")
+            self.console_window.close_button.setEnabled(True)
         QMessageBox.information(
             self, "Scan Complete",
             f"Scan completed successfully!\n\n"
@@ -205,8 +216,10 @@ class AstroLibraryGUI(QMainWindow):
     
     def on_scan_error(self, error_message):
         """Handle scan errors."""
-        self.progress_bar.setVisible(False)
         self.status_label.setText("Scan failed")
+        if self.console_window:
+            self.console_window.append_text(f"\nScan failed: {error_message}\n")
+            self.console_window.close_button.setEnabled(True)
         QMessageBox.critical(self, "Scan Error", f"Error during scan: {error_message}")
 
 
