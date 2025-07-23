@@ -7,7 +7,7 @@ A PyQt6-based interface for managing a library of FITS files.
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, 
-    QMenuBar, QMessageBox, QProgressBar, QStatusBar, QSplitter, QStackedWidget, QDialog, QPushButton, QRadioButton, QHBoxLayout, QSpinBox, QGroupBox, QFileDialog, QLineEdit
+    QMenuBar, QMessageBox, QProgressBar, QStatusBar, QSplitter, QStackedWidget, QDialog, QPushButton, QRadioButton, QHBoxLayout, QSpinBox, QGroupBox, QFileDialog, QLineEdit, QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -172,6 +172,8 @@ class AstroLibraryGUI(QMainWindow):
         
         # Create main layout
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
+        main_layout.setSpacing(0)  # Remove spacing between widgets
         
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -204,9 +206,20 @@ class AstroLibraryGUI(QMainWindow):
         """Create the status bar."""
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_label = QLabel("Ready")
+        # Add spacing to the left of the status label
+        self.status_label = QLabel()
+        self.status_label.setText("   Ready")  # Add left padding with spaces
         self.status_bar.addWidget(self.status_label)
-        
+
+        # Add a visual separator and a label for time display mode
+        self.status_separator = QFrame()
+        self.status_separator.setFrameShape(QFrame.Shape.VLine)
+        self.status_separator.setFrameShadow(QFrame.Shadow.Sunken)
+        self.status_bar.addWidget(self.status_separator)
+
+        self.time_mode_label = QLabel()
+        self.status_bar.addWidget(self.time_mode_label)
+
         # Progress bar for operations
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -384,7 +397,8 @@ class AstroLibraryGUI(QMainWindow):
         self.load_database()
 
     def update_status_bar(self):
-        """Update the status bar to show 'Showing x / y files' for the current view."""
+        """Update the status bar to show 'Showing x / y files' for the current view and the time display mode."""
+        import config
         total = len(self.fits_files)
         current_index = self.right_stack.currentIndex()
         if current_index == 0:
@@ -400,7 +414,10 @@ class AstroLibraryGUI(QMainWindow):
             shown = self.master_flats_table.get_visible_file_count()
         else:
             shown = 0
-        self.status_label.setText(f"Showing {shown} / {total} files")
+        self.status_label.setText(f"   Showing {shown} / {total} files")  # Add left padding
+        # Update the time display mode label
+        mode = getattr(config, 'TIME_DISPLAY_MODE', 'UTC')
+        self.time_mode_label.setText(f"Time display mode: {mode}")
 
 
 def main():
