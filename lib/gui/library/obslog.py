@@ -66,7 +66,7 @@ class RunSummaryWidget(QWidget):
     
     def _build_summary_text(self):
         """Build the summary text for the run."""
-        date_str = self.run_data['date_str']
+        date_time_str = self.run_data.get('date_time_str', self.run_data.get('date_str', '-'))
         target = self.run_data['target']
         count = self.run_data['count']
         filters = self.run_data['filters']
@@ -80,7 +80,8 @@ class RunSummaryWidget(QWidget):
         # Format exposures
         exposure_str = ", ".join([f"{exp:.1f}s" for exp in sorted(set(exposures))]) if exposures else "-"
         
-        return f"{date_str} / {target} / {count} files / {binning} / {filter_str} / {exposure_str} / Total: {total_minutes}mn"
+        # Show date and time at the start
+        return f"{date_time_str} / {target} / {count} files / {binning} / {filter_str} / {exposure_str} / Total: {total_minutes}mn"
 
 
 class FitsTableWidget(QTableWidget):
@@ -212,8 +213,18 @@ class FitsTableWidget(QTableWidget):
         total_seconds = sum(exposures) if exposures else 0
         total_minutes = round(total_seconds / 60)
         binning = run_files[0].binning if run_files and hasattr(run_files[0], 'binning') else "-"
-        date_str = run_files[0].date_obs.strftime("%Y-%m-%d") if run_files and hasattr(run_files[0], 'date_obs') and run_files[0].date_obs else "-"
-        
+        # Use the oldest image (last in run_files) for date and time
+        if run_files and hasattr(run_files[-1], 'date_obs') and run_files[-1].date_obs:
+            dt = run_files[-1].date_obs
+            if isinstance(dt, str):
+                date_time_str = dt
+                date_str = dt.split()[0]
+            else:
+                date_time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                date_str = dt.strftime("%Y-%m-%d")
+        else:
+            date_time_str = "-"
+            date_str = "-"
         return {
             'count': count,
             'target': target,
@@ -222,6 +233,7 @@ class FitsTableWidget(QTableWidget):
             'total_minutes': total_minutes,
             'binning': binning,
             'date_str': date_str,
+            'date_time_str': date_time_str,
             'files': run_files
         }
     
