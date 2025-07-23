@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QThread, pyqtSignal as Signal
 from PyQt6.QtGui import QColor
 from .menu_context import build_single_file_menu, build_multi_file_menu, build_empty_menu
 from lib.gui.common.header_viewer import HeaderViewer
-from lib.gui.common.console_output import ConsoleOutputWindow
+from lib.gui.common.console_window import ConsoleOutputWindow
 from lib.fits.header import get_fits_header_as_json
 import sys
 import io

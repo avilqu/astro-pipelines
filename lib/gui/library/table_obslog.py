@@ -21,7 +21,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from lib.astrometry import solve_single_image, PlatesolvingResult
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
-from lib.gui.common.console_output import ConsoleOutputWindow, RealTimeStringIO
+from lib.gui.common.console_window import ConsoleOutputWindow, RealTimeStringIO
 import signal
 
 
