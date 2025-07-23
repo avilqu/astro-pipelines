@@ -220,6 +220,45 @@ class DatabaseManager:
             return sorted(date_strs)
         finally:
             session.close()
+
+    def get_file_count_by_target(self, target: str) -> int:
+        """Get the number of files for a specific target."""
+        session = self.get_session()
+        try:
+            return session.query(FitsFile).filter(FitsFile.target == target).count()
+        finally:
+            session.close()
+
+    def get_file_count_by_date(self, date: str) -> int:
+        """Get the number of files for a specific date."""
+        session = self.get_session()
+        try:
+            # Convert date string to datetime for comparison
+            from datetime import datetime
+            date_obj = datetime.strptime(date, '%Y-%m-%d')
+            next_date = datetime.strptime(date, '%Y-%m-%d').replace(day=date_obj.day + 1)
+            return session.query(FitsFile).filter(
+                FitsFile.date_obs >= date_obj,
+                FitsFile.date_obs < next_date
+            ).count()
+        finally:
+            session.close()
+
+    def get_total_file_count(self) -> int:
+        """Get the total number of files in the database."""
+        session = self.get_session()
+        try:
+            return session.query(FitsFile).count()
+        finally:
+            session.close()
+
+    def get_calibration_file_count(self, frame_type: str) -> int:
+        """Get the number of calibration files of a specific type."""
+        session = self.get_session()
+        try:
+            return session.query(CalibrationMaster).filter(CalibrationMaster.frame == frame_type).count()
+        finally:
+            session.close()
     
     def add_calibration_master(self, master_data: dict) -> CalibrationMaster:
         """Add a new CalibrationMaster to the database.

@@ -25,6 +25,9 @@ class LeftPanel(QWidget):
     
         """)
 
+        # Initialize database connection
+        db = get_db_manager()
+        
         # Top-level items
         self.obslog_item = QTreeWidgetItem(["Obs log"])
         self.targets_item = QTreeWidgetItem(["Targets"])
@@ -35,9 +38,12 @@ class LeftPanel(QWidget):
 
         # Calibration section
         self.calibration_item = QTreeWidgetItem(["Calibration"])
-        self.bias_item = QTreeWidgetItem(["Bias"])
-        self.darks_item = QTreeWidgetItem(["Darks"])
-        self.flats_item = QTreeWidgetItem(["Flats"])
+        bias_count = db.get_calibration_file_count("Bias")
+        darks_count = db.get_calibration_file_count("Dark")
+        flats_count = db.get_calibration_file_count("Flat")
+        self.bias_item = QTreeWidgetItem([f"Bias ({bias_count})"])
+        self.darks_item = QTreeWidgetItem([f"Darks ({darks_count})"])
+        self.flats_item = QTreeWidgetItem([f"Flats ({flats_count})"])
         self.calibration_item.addChild(self.bias_item)
         self.calibration_item.addChild(self.darks_item)
         self.calibration_item.addChild(self.flats_item)
@@ -45,11 +51,12 @@ class LeftPanel(QWidget):
         self.menu_tree.expandItem(self.calibration_item)
 
         # Populate targets and dates immediately
-        db = get_db_manager()
         for target in db.get_unique_targets():
-            QTreeWidgetItem(self.targets_item, [target])
+            count = db.get_file_count_by_target(target)
+            QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
         for date in reversed(db.get_unique_dates()):
-            QTreeWidgetItem(self.dates_item, [date])
+            count = db.get_file_count_by_date(date)
+            QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
 
         # Expand both Targets and Dates by default
         self.menu_tree.expandItem(self.targets_item)
@@ -68,9 +75,15 @@ class LeftPanel(QWidget):
         elif current is self.dates_item:
             self.menu_selection_changed.emit("dates", "")
         elif current.parent() is self.targets_item:
-            self.menu_selection_changed.emit("target", current.text(0))
+            # Extract target name from "Target (count)" format
+            target_text = current.text(0)
+            target_name = target_text.split(" (")[0]
+            self.menu_selection_changed.emit("target", target_name)
         elif current.parent() is self.dates_item:
-            self.menu_selection_changed.emit("date", current.text(0))
+            # Extract date from "Date (count)" format
+            date_text = current.text(0)
+            date_name = date_text.split(" (")[0]
+            self.menu_selection_changed.emit("date", date_name)
         elif current is self.darks_item:
             self.menu_selection_changed.emit("darks", "")
         elif current is self.bias_item:
@@ -82,4 +95,30 @@ class LeftPanel(QWidget):
 
     def set_menu_index(self, index):
         item = [self.obslog_item, self.targets_item, self.dates_item][index]
-        self.menu_tree.setCurrentItem(item) 
+        self.menu_tree.setCurrentItem(item)
+
+    def refresh_counts(self):
+        """Refresh the file counts for all items in the tree."""
+        db = get_db_manager()
+        
+        # Refresh target counts
+        for i in range(self.targets_item.childCount()):
+            child = self.targets_item.child(i)
+            target_name = child.text(0).split(" (")[0]
+            count = db.get_file_count_by_target(target_name)
+            child.setText(0, f"{target_name} ({count})")
+        
+        # Refresh date counts
+        for i in range(self.dates_item.childCount()):
+            child = self.dates_item.child(i)
+            date_name = child.text(0).split(" (")[0]
+            count = db.get_file_count_by_date(date_name)
+            child.setText(0, f"{date_name} ({count})")
+        
+        # Refresh calibration counts
+        bias_count = db.get_calibration_file_count("Bias")
+        darks_count = db.get_calibration_file_count("Dark")
+        flats_count = db.get_calibration_file_count("Flat")
+        self.bias_item.setText(0, f"Bias ({bias_count})")
+        self.darks_item.setText(0, f"Darks ({darks_count})")
+        self.flats_item.setText(0, f"Flats ({flats_count})") 
