@@ -352,7 +352,9 @@ class MainFitsTableWidget(QTableWidget):
             from .context_dropdown import platesolve_multiple_files
             def load_in_viewer():
                 import sys, subprocess
-                fits_paths = [f.path for f in selected_files]
+                # Sort selected_files by date_obs (oldest to newest)
+                sorted_files = sorted(selected_files, key=lambda f: f.date_obs or '')
+                fits_paths = [f.path for f in sorted_files]
                 subprocess.Popen([
                     sys.executable,
                     'lib/gui/viewer/index.py',
