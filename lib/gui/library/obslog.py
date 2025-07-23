@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import QMessageBox
 from lib.gui.common.console_window import ConsoleOutputWindow, RealTimeStringIO
 import signal
 from .platesolving_thread import PlatesolvingThread
+from config import to_display_time
 
 
 class RunSummaryWidget(QWidget):
@@ -220,8 +221,9 @@ class FitsTableWidget(QTableWidget):
                 date_time_str = dt
                 date_str = dt.split()[0]
             else:
-                date_time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                date_str = dt.strftime("%Y-%m-%d")
+                dt_disp = to_display_time(dt)
+                date_time_str = dt_disp.strftime("%Y-%m-%d %H:%M:%S") if dt_disp else "-"
+                date_str = dt_disp.strftime("%Y-%m-%d") if dt_disp else "-"
         else:
             date_time_str = "-"
             date_str = "-"
@@ -367,7 +369,8 @@ class FitsTableWidget(QTableWidget):
             if isinstance(fits_file.date_obs, str):
                 date_obs_str = fits_file.date_obs
             else:
-                date_obs_str = fits_file.date_obs.strftime("%Y-%m-%d %H:%M:%S")
+                dt_disp = to_display_time(fits_file.date_obs)
+                date_obs_str = dt_disp.strftime("%Y-%m-%d %H:%M:%S") if dt_disp else "-"
         else:
             date_obs_str = "-"
         date_obs_item = QTableWidgetItem(date_obs_str)
@@ -655,6 +658,17 @@ class FitsTableWidget(QTableWidget):
         """Refresh the table display."""
         if self.fits_files:
             self.populate_table(self.fits_files) 
+
+    def get_visible_file_count(self):
+        """Return the number of file rows currently visible (not run summary rows)."""
+        count = 0
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item:
+                data = item.data(Qt.ItemDataRole.UserRole)
+                if data and 'is_file' in data:
+                    count += 1
+        return count
 
     def _format_platesolving_result(self, result):
         """Format platesolving result into a user-friendly message."""

@@ -4,6 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from .models import Base, FitsFile, Source, CalibrationMaster
+from config import to_display_time
 
 class DatabaseManager:
     """Manages database connections and operations for astro-pipelines."""
@@ -221,6 +222,20 @@ class DatabaseManager:
         finally:
             session.close()
 
+    def get_unique_local_dates(self) -> list:
+        """Get all unique observation dates (YYYY-MM-DD) in local time from the database."""
+        session = self.get_session()
+        try:
+            dates = session.query(FitsFile.date_obs).distinct().all()
+            date_strs = set()
+            for (dt,) in dates:
+                if dt:
+                    dt_disp = to_display_time(dt)
+                    date_strs.add(dt_disp.strftime('%Y-%m-%d'))
+            return sorted(date_strs)
+        finally:
+            session.close()
+
     def get_file_count_by_target(self, target: str) -> int:
         """Get the number of files for a specific target."""
         session = self.get_session()
@@ -241,6 +256,22 @@ class DatabaseManager:
                 FitsFile.date_obs >= date_obj,
                 FitsFile.date_obs < next_date
             ).count()
+        finally:
+            session.close()
+
+    def get_file_count_by_local_date(self, date: str) -> int:
+        """Get the number of files for a specific local date (YYYY-MM-DD)."""
+        session = self.get_session()
+        try:
+            from datetime import datetime, timedelta
+            files = session.query(FitsFile.date_obs).all()
+            count = 0
+            for (dt,) in files:
+                if dt:
+                    dt_disp = to_display_time(dt)
+                    if dt_disp.strftime('%Y-%m-%d') == date:
+                        count += 1
+            return count
         finally:
             session.close()
 

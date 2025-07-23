@@ -3,6 +3,7 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from lib.db import get_db_manager
 from lib.db.edit import rename_target_across_database
 from lib.gui.library.context_dropdown import build_sidebar_target_menu
+from config import TIME_DISPLAY_MODE
 
 class LeftPanel(QWidget):
     menu_selection_changed = pyqtSignal(str, str)  # (category, value)
@@ -61,9 +62,14 @@ class LeftPanel(QWidget):
         for target in db.get_unique_targets():
             count = db.get_file_count_by_target(target)
             QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
-        for date in reversed(db.get_unique_dates()):
-            count = db.get_file_count_by_date(date)
-            QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+        if TIME_DISPLAY_MODE == 'Local':
+            for date in reversed(db.get_unique_local_dates()):
+                count = db.get_file_count_by_local_date(date)
+                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+        else:
+            for date in reversed(db.get_unique_dates()):
+                count = db.get_file_count_by_date(date)
+                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
 
         # Expand both Targets and Dates by default
         self.menu_tree.expandItem(self.targets_item)
@@ -141,7 +147,10 @@ class LeftPanel(QWidget):
         for i in range(self.dates_item.childCount()):
             child = self.dates_item.child(i)
             date_name = child.text(0).split(" (")[0]
-            count = db.get_file_count_by_date(date_name)
+            if TIME_DISPLAY_MODE == 'Local':
+                count = db.get_file_count_by_local_date(date_name)
+            else:
+                count = db.get_file_count_by_date(date_name)
             child.setText(0, f"{date_name} ({count})")
         
         # Refresh calibration counts
@@ -151,3 +160,26 @@ class LeftPanel(QWidget):
         self.bias_item.setText(0, f"Bias ({bias_count})")
         self.darks_item.setText(0, f"Darks ({darks_count})")
         self.flats_item.setText(0, f"Flats ({flats_count})") 
+
+    def repopulate_targets_and_dates(self):
+        """Clear and repopulate the targets and dates lists from the database."""
+        db = get_db_manager()
+        # Remove all children from targets and dates
+        self.targets_item.takeChildren()
+        self.dates_item.takeChildren()
+        # Repopulate targets
+        for target in db.get_unique_targets():
+            count = db.get_file_count_by_target(target)
+            QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
+        # Repopulate dates
+        if TIME_DISPLAY_MODE == 'Local':
+            for date in reversed(db.get_unique_local_dates()):
+                count = db.get_file_count_by_local_date(date)
+                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+        else:
+            for date in reversed(db.get_unique_dates()):
+                count = db.get_file_count_by_date(date)
+                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+        # Expand both Targets and Dates by default
+        self.menu_tree.expandItem(self.targets_item)
+        self.menu_tree.expandItem(self.dates_item) 

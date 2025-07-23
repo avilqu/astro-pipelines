@@ -1,12 +1,17 @@
 from PyQt6.QtWidgets import QMenuBar
 from PyQt6.QtGui import QAction
 
-def create_menu_bar(parent, on_exit, on_scan):
+def create_menu_bar(parent, on_exit, on_scan, on_settings=None):
     """Create the menu bar with File and Database menus, and connect actions to callbacks."""
     menubar = parent.menuBar() if hasattr(parent, 'menuBar') else QMenuBar(parent)
 
     # Create File menu
     file_menu = menubar.addMenu("File")
+    if on_settings is not None:
+        settings_action = QAction("Settings", parent)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.triggered.connect(on_settings)
+        file_menu.addAction(settings_action)
     exit_action = QAction("Exit", parent)
     exit_action.setShortcut("Ctrl+Q")
     exit_action.triggered.connect(on_exit)

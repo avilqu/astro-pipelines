@@ -26,7 +26,7 @@ class DatabaseLoaderThread(QThread):
 
 
 class DatabaseScannerThread(QThread):
-    """Thread for scanning FITS files to avoid blocking the GUI."""
+    """Thread for scanning FITS files and calibration masters to avoid blocking the GUI."""
     scan_completed = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
     output_received = pyqtSignal(str)  # New signal for real-time output
@@ -36,7 +36,7 @@ class DatabaseScannerThread(QThread):
         import io
         from contextlib import redirect_stdout
         try:
-            from lib.db import scan_fits_library
+            from lib.db import scan_fits_library, scan_calibration_masters
             class SignalStringIO(io.StringIO):
                 def __init__(self, signal, buffer_size=100):
                     super().__init__()
@@ -61,9 +61,22 @@ class DatabaseScannerThread(QThread):
                         self.buffer.clear()
             sio = SignalStringIO(self.output_received, buffer_size=100)
             with redirect_stdout(sio):
-                results = scan_fits_library()
+                fits_results = scan_fits_library()
+                print("\n--- Calibration Masters Scan ---\n")
+                calib_results = scan_calibration_masters()
             sio.flush()  # Ensure any remaining output is emitted
-            self.scan_completed.emit(results)
+
+            # Combine results for summary
+            summary = {
+                'files_imported': fits_results.get('files_imported', 0),
+                'files_skipped': fits_results.get('files_skipped', 0),
+                'total_files_found': fits_results.get('total_files_found', 0),
+                'calib_imported': calib_results.get('files_imported', 0),
+                'calib_skipped': calib_results.get('files_skipped', 0),
+                'calib_total_found': calib_results.get('total_files_found', 0),
+                'errors': (fits_results.get('errors', []) or []) + (calib_results.get('errors', []) or [])
+            }
+            self.scan_completed.emit(summary)
         except Exception as e:
             self.error_occurred.emit(str(e))
 

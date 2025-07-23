@@ -7,6 +7,7 @@ from lib.gui.common.header_window import HeaderViewer
 from lib.gui.common.console_window import ConsoleOutputWindow
 from .context_dropdown import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
 from PyQt6.QtGui import QColor
+from config import to_display_time
 
 class MasterDarksTableWidget(MainFitsTableWidget):
     """Table widget for displaying master dark calibration files, using the same model as MainFitsTableWidget."""
@@ -152,11 +153,15 @@ class MasterDarksTableWidget(MainFitsTableWidget):
         for row, dark in enumerate(sorted_darks):
             filename = os.path.basename(getattr(dark, 'path', ''))
             date_str = getattr(dark, 'date', '-') or '-'
-            # Age calculation
+            # Convert to local if needed
             try:
-                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                dt_disp = to_display_time(dt)
+                date_str_disp = dt_disp.strftime("%Y-%m-%d") if dt_disp else date_str
+                file_date = dt_disp.date() if dt_disp else dt.date()
                 age = (date.today() - file_date).days
             except Exception:
+                date_str_disp = date_str
                 age = '-'
             exptime = getattr(dark, 'exptime', '-')
             binning = getattr(dark, 'binning', '-') or '-'
@@ -172,7 +177,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 integration_count = '-'
             items = [
                 QTableWidgetItem(str(filename)),
-                QTableWidgetItem(str(date_str)),
+                QTableWidgetItem(str(date_str_disp)),
                 QTableWidgetItem(str(age)),
                 QTableWidgetItem(f"{exptime:.1f}" if isinstance(exptime, (float, int)) else (str(exptime) if exptime not in (None, '', 'None') else '-')),
                 QTableWidgetItem(str(binning)),
@@ -208,6 +213,10 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event)
+
+    def get_visible_file_count(self):
+        """Return the number of file rows currently visible."""
+        return self.rowCount()
 
 class MasterBiasTableWidget(MainFitsTableWidget):
     """Table widget for displaying master bias calibration files."""
@@ -325,9 +334,13 @@ class MasterBiasTableWidget(MainFitsTableWidget):
             filename = os.path.basename(getattr(bias, 'path', ''))
             date_str = getattr(bias, 'date', '-') or '-'
             try:
-                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                dt_disp = to_display_time(dt)
+                date_str_disp = dt_disp.strftime("%Y-%m-%d") if dt_disp else date_str
+                file_date = dt_disp.date() if dt_disp else dt.date()
                 age = (date.today() - file_date).days
             except Exception:
+                date_str_disp = date_str
                 age = '-'
             binning = getattr(bias, 'binning', '-') or '-'
             gain = getattr(bias, 'gain', '-')
@@ -341,7 +354,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                 count = '-'
             items = [
                 QTableWidgetItem(str(filename)),
-                QTableWidgetItem(str(date_str)),
+                QTableWidgetItem(str(date_str_disp)),
                 QTableWidgetItem(str(age)),
                 QTableWidgetItem(str(binning)),
                 QTableWidgetItem(f"{gain:.1f}" if isinstance(gain, (float, int)) else (str(gain) if gain not in (None, '', 'None') else '-')),
@@ -376,6 +389,10 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event)
+
+    def get_visible_file_count(self):
+        """Return the number of file rows currently visible."""
+        return self.rowCount()
 
 class MasterFlatsTableWidget(MainFitsTableWidget):
     """Table widget for displaying master flat calibration files."""
@@ -496,9 +513,13 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
             filename = os.path.basename(getattr(flat, 'path', ''))
             date_str = getattr(flat, 'date', '-') or '-'
             try:
-                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                dt_disp = to_display_time(dt)
+                date_str_disp = dt_disp.strftime("%Y-%m-%d") if dt_disp else date_str
+                file_date = dt_disp.date() if dt_disp else dt.date()
                 age = (date.today() - file_date).days
             except Exception:
+                date_str_disp = date_str
                 age = '-'
             filter_name = getattr(flat, 'filter_name', '-') or '-'
             filter_item = QTableWidgetItem(str(filter_name))
@@ -525,7 +546,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 count = '-'
             items = [
                 QTableWidgetItem(str(filename)),
-                QTableWidgetItem(str(date_str)),
+                QTableWidgetItem(str(date_str_disp)),
                 QTableWidgetItem(str(age)),
                 filter_item,
                 QTableWidgetItem(f"{exptime:.1f}" if isinstance(exptime, (float, int)) else (str(exptime) if exptime not in (None, '', 'None') else '-')),
@@ -563,3 +584,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event) 
+
+    def get_visible_file_count(self):
+        """Return the number of file rows currently visible."""
+        return self.rowCount() 

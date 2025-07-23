@@ -21,6 +21,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from lib.fits.astrometry import solve_single_image, PlatesolvingResult
 import signal
 from .platesolving_thread import PlatesolvingThread
+from config import to_display_time
 
 class MainFitsTableWidget(QTableWidget):
     """Table widget for displaying FITS files in a flat, sortable table."""
@@ -95,7 +96,8 @@ class MainFitsTableWidget(QTableWidget):
         self.setItem(row, 0, filename_item)
         # Date obs
         if fits_file.date_obs:
-            date_str = fits_file.date_obs.strftime('%Y-%m-%d %H:%M:%S')
+            dt_disp = to_display_time(fits_file.date_obs)
+            date_str = dt_disp.strftime('%Y-%m-%d %H:%M:%S') if dt_disp else "-"
         else:
             date_str = "-"
         date_item = QTableWidgetItem(date_str)
@@ -276,6 +278,17 @@ class MainFitsTableWidget(QTableWidget):
     def refresh_table(self):
         if self.fits_files:
             self.populate_table(self.fits_files)
+
+    def get_visible_file_count(self):
+        """Return the number of file rows currently visible."""
+        count = 0
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if item:
+                data = item.data(Qt.ItemDataRole.UserRole)
+                if data and 'is_file' in data:
+                    count += 1
+        return count
 
     def _format_platesolving_result(self, result):
         """Format platesolving result into a user-friendly message."""

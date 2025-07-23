@@ -2,6 +2,19 @@
     @author: Adrien Vilquin Barrajon <avilqu@gmail.com>
 '''
 
+import tzlocal
+from datetime import timezone
+
+def to_display_time(dt_utc):
+    """Convert a UTC datetime to local time if TIME_DISPLAY_MODE is 'Local', else return as UTC."""
+    if dt_utc is None:
+        return None
+    if TIME_DISPLAY_MODE == 'Local':
+        local_tz = tzlocal.get_localzone()
+        return dt_utc.replace(tzinfo=timezone.utc).astimezone(local_tz)
+    else:
+        return dt_utc.replace(tzinfo=timezone.utc)
+
 # astro-pipelines will write calibration masters
 # (and expect them to stay) in CALIBRATION_PATH.
 CALIBRATION_PATH = '/home/tan/Astro/calibration'
@@ -77,3 +90,7 @@ TESTED_FITS_CARDS = [
     #     'tolerance': 0,
     # },
 ]
+
+# --- User Settings ---
+TIME_DISPLAY_MODE = 'Local'
+BLINK_PERIOD_MS = 1000

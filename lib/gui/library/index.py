@@ -7,9 +7,9 @@ A PyQt6-based interface for managing a library of FITS files.
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, 
-    QMenuBar, QMessageBox, QProgressBar, QStatusBar, QSplitter, QStackedWidget
+    QMenuBar, QMessageBox, QProgressBar, QStatusBar, QSplitter, QStackedWidget, QDialog, QPushButton, QRadioButton, QHBoxLayout, QSpinBox, QGroupBox, QFileDialog, QLineEdit
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 
 # Import our modular components
@@ -22,6 +22,125 @@ from lib.db import get_db_manager
 from lib.db.models import CalibrationMaster
 from lib.gui.library.menu_bar import create_menu_bar
 from lib.gui.common.console_window import ConsoleOutputWindow
+import config
+import importlib
+
+
+class SettingsDialog(QDialog):
+    settings_changed = pyqtSignal()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setMinimumSize(320, 260)
+        layout = QVBoxLayout(self)
+
+        # Data path selection
+        data_path_layout = QHBoxLayout()
+        data_path_label = QLabel("Data Path:")
+        self.data_path_edit = QLineEdit()
+        self.data_path_edit.setReadOnly(True)
+        data_path_browse = QPushButton("Browse")
+        data_path_browse.clicked.connect(self.browse_data_path)
+        data_path_layout.addWidget(data_path_label)
+        data_path_layout.addWidget(self.data_path_edit)
+        data_path_layout.addWidget(data_path_browse)
+        layout.addLayout(data_path_layout)
+
+        # Calibration path selection
+        calib_path_layout = QHBoxLayout()
+        calib_path_label = QLabel("Calibration Path:")
+        self.calib_path_edit = QLineEdit()
+        self.calib_path_edit.setReadOnly(True)
+        calib_path_browse = QPushButton("Browse")
+        calib_path_browse.clicked.connect(self.browse_calib_path)
+        calib_path_layout.addWidget(calib_path_label)
+        calib_path_layout.addWidget(self.calib_path_edit)
+        calib_path_layout.addWidget(calib_path_browse)
+        layout.addLayout(calib_path_layout)
+
+        # Time mode radio buttons
+        time_row = QHBoxLayout()
+        time_label = QLabel("Time Display Mode:")
+        self.utc_radio = QRadioButton("UTC time")
+        self.local_radio = QRadioButton("Local time")
+        time_row.addWidget(time_label)
+        time_row.addWidget(self.utc_radio)
+        time_row.addWidget(self.local_radio)
+        time_row.addStretch()
+        layout.addLayout(time_row)
+
+        # Blink period input
+        blink_layout = QHBoxLayout()
+        blink_label = QLabel("Blink period (ms):")
+        self.blink_spin = QSpinBox()
+        self.blink_spin.setRange(10, 10000)
+        self.blink_spin.setSingleStep(10)
+        self.blink_spin.setValue(500)
+        blink_layout.addWidget(blink_label)
+        blink_layout.addWidget(self.blink_spin)
+        layout.addLayout(blink_layout)
+
+        # Save button
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.save_settings)
+        layout.addWidget(save_btn)
+
+        self.load_settings()
+
+    def browse_data_path(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Data Path", self.data_path_edit.text() or "~")
+        if path:
+            self.data_path_edit.setText(path)
+
+    def browse_calib_path(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Calibration Path", self.calib_path_edit.text() or "~")
+        if path:
+            self.calib_path_edit.setText(path)
+
+    def load_settings(self):
+        # Force reload config to get latest values
+        importlib.reload(config)
+        # Set data and calibration paths
+        self.data_path_edit.setText(getattr(config, 'DATA_PATH', ''))
+        self.calib_path_edit.setText(getattr(config, 'CALIBRATION_PATH', ''))
+        # Set radio buttons
+        if getattr(config, 'TIME_DISPLAY_MODE', 'UTC') == 'UTC':
+            self.utc_radio.setChecked(True)
+        else:
+            self.local_radio.setChecked(True)
+        # Set blink period
+        self.blink_spin.setValue(getattr(config, 'BLINK_PERIOD_MS', 750))
+
+    def save_settings(self):
+        # Update config.py file with new values
+        mode = 'UTC' if self.utc_radio.isChecked() else 'Local'
+        blink = self.blink_spin.value()
+        data_path = self.data_path_edit.text()
+        calib_path = self.calib_path_edit.text()
+        self.update_config_file(mode, blink, data_path, calib_path)
+        self.settings_changed.emit()
+        self.accept()
+
+    def update_config_file(self, mode, blink, data_path, calib_path):
+        import re
+        import os
+        config_path = os.path.join(os.path.dirname(__file__), '../../../config.py')
+        with open(config_path, 'r') as f:
+            lines = f.readlines()
+        def replace_or_append(lines, key, value):
+            pat = re.compile(rf'^{key}\s*=')
+            for i, line in enumerate(lines):
+                if pat.match(line):
+                    lines[i] = f"{key} = {repr(value)}\n"
+                    return lines
+            lines.append(f"{key} = {repr(value)}\n")
+            return lines
+        lines = replace_or_append(lines, 'TIME_DISPLAY_MODE', mode)
+        lines = replace_or_append(lines, 'BLINK_PERIOD_MS', blink)
+        lines = replace_or_append(lines, 'DATA_PATH', data_path)
+        lines = replace_or_append(lines, 'CALIBRATION_PATH', calib_path)
+        with open(config_path, 'w') as f:
+            f.writelines(lines)
 
 
 class AstroLibraryGUI(QMainWindow):
@@ -45,7 +164,7 @@ class AstroLibraryGUI(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
         
         # Create menu bar using the new function
-        create_menu_bar(self, self.close, self.scan_for_files)
+        create_menu_bar(self, self.close, self.scan_for_files, self.open_settings_dialog)
         
         # Create central widget
         central_widget = QWidget()
@@ -125,9 +244,19 @@ class AstroLibraryGUI(QMainWindow):
                 filtered = [f for f in self.fits_files if f.target == self.last_menu_value]
                 self.main_table_widget.populate_table(filtered)
             elif self.last_menu_category == "date":
-                filtered = [f for f in self.fits_files if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == self.last_menu_value]
+                from config import TIME_DISPLAY_MODE, to_display_time
+                if TIME_DISPLAY_MODE == 'Local':
+                    filtered = [
+                        f for f in self.fits_files
+                        if f.date_obs and to_display_time(f.date_obs).strftime('%Y-%m-%d') == self.last_menu_value
+                    ]
+                else:
+                    filtered = [
+                        f for f in self.fits_files
+                        if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == self.last_menu_value
+                    ]
                 self.main_table_widget.populate_table(filtered)
-        self.status_label.setText(f"Loaded {len(fits_files)} FITS files")
+        self.update_status_bar()
         self.progress_bar.setVisible(False)
     
     def on_database_error(self, error_message):
@@ -153,7 +282,17 @@ class AstroLibraryGUI(QMainWindow):
             self.main_table_widget.populate_table(filtered)
             self.right_stack.setCurrentIndex(1)
         elif category == "date":
-            filtered = [f for f in self.fits_files if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == value]
+            from config import TIME_DISPLAY_MODE, to_display_time
+            if TIME_DISPLAY_MODE == 'Local':
+                filtered = [
+                    f for f in self.fits_files
+                    if f.date_obs and to_display_time(f.date_obs).strftime('%Y-%m-%d') == value
+                ]
+            else:
+                filtered = [
+                    f for f in self.fits_files
+                    if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == value
+                ]
             self.main_table_widget.populate_table(filtered)
             self.right_stack.setCurrentIndex(1)
         elif category == "darks":
@@ -178,6 +317,7 @@ class AstroLibraryGUI(QMainWindow):
             self.master_flats_table.populate(flats)
             self.right_stack.setCurrentIndex(4)
         # Do nothing for 'targets', 'dates', or other parent nodes
+        self.update_status_bar()
     
     def scan_for_files(self):
         """Scan for new FITS files."""
@@ -205,13 +345,23 @@ class AstroLibraryGUI(QMainWindow):
         if self.console_window:
             self.console_window.append_text("\nScan completed successfully!\n")
             self.console_window.close_button.setEnabled(True)
-        QMessageBox.information(
-            self, "Scan Complete",
-            f"Scan completed successfully!\n\n"
-            f"Files imported: {results['files_imported']}\n"
-            f"Files skipped: {results['files_skipped']}\n"
-            f"Total found: {results['total_files_found']}"
+        # Compose a single summary message
+        msg = (
+            "Scan completed successfully!\n\n"
+            f"Files imported: {results.get('files_imported', 0)}\n"
+            f"Files skipped: {results.get('files_skipped', 0)}\n"
+            f"Total files found: {results.get('total_files_found', 0)}\n\n"
+            f"Calibration masters imported: {results.get('calib_imported', 0)}\n"
+            f"Calibration masters skipped: {results.get('calib_skipped', 0)}\n"
+            f"Total calibration masters found: {results.get('calib_total_found', 0)}"
         )
+        errors = results.get('errors', [])
+        if errors:
+            msg += f"\n\nErrors: {len(errors)}"
+            if len(errors) > 0:
+                msg += f"\nFirst error: {errors[0]}"
+        QMessageBox.information(self, "Scan Complete", msg)
+        self.left_panel.repopulate_targets_and_dates()
         self.load_database()  # Refresh the table
     
     def on_scan_error(self, error_message):
@@ -221,6 +371,36 @@ class AstroLibraryGUI(QMainWindow):
             self.console_window.append_text(f"\nScan failed: {error_message}\n")
             self.console_window.close_button.setEnabled(True)
         QMessageBox.critical(self, "Scan Error", f"Error during scan: {error_message}")
+
+    def open_settings_dialog(self):
+        dlg = SettingsDialog(self)
+        dlg.settings_changed.connect(self.on_settings_changed)
+        dlg.exec()
+
+    def on_settings_changed(self):
+        import importlib
+        importlib.reload(config)
+        self.left_panel.repopulate_targets_and_dates()
+        self.load_database()
+
+    def update_status_bar(self):
+        """Update the status bar to show 'Showing x / y files' for the current view."""
+        total = len(self.fits_files)
+        current_index = self.right_stack.currentIndex()
+        if current_index == 0:
+            # Obs log
+            shown = self.table_widget.get_visible_file_count()
+        elif current_index == 1:
+            shown = self.main_table_widget.get_visible_file_count()
+        elif current_index == 2:
+            shown = self.master_darks_table.get_visible_file_count()
+        elif current_index == 3:
+            shown = self.master_bias_table.get_visible_file_count()
+        elif current_index == 4:
+            shown = self.master_flats_table.get_visible_file_count()
+        else:
+            shown = 0
+        self.status_label.setText(f"Showing {shown} / {total} files")
 
 
 def main():

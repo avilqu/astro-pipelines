@@ -14,6 +14,7 @@ from lib.gui.common.header_window import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
 from lib.fits.catalogs import AstrometryCatalog
 from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel
+import config
 
 class NoWheelScrollArea(QScrollArea):
     def wheelEvent(self, event):
@@ -76,7 +77,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Play/Pause button
         self.playing = False
         self.blink_timer = QTimer(self)
-        self.blink_timer.setInterval(750)  # 0.75 seconds
+        self.blink_timer.setInterval(config.BLINK_PERIOD_MS)  # Use config value
         self.blink_timer.timeout.connect(self._blink_next_image)
         self.play_pause_button = QToolButton(self)
         self.play_icon = QIcon.fromTheme("media-playback-start")
