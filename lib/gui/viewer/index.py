@@ -29,6 +29,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # --- Multi-file support ---
         self.loaded_files = []  # List of file paths
         self.current_file_index = -1  # Index of currently displayed file
+        self._preloaded_fits = {}  # path -> (image_data, header, wcs)
 
         self.astrometry_catalog = AstrometryCatalog()
         self.pixmap = None  # For ImageLabel compatibility
@@ -71,11 +72,29 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Image count label (fixed width for e.g. '100 / 100')
         self.image_count_label.setFixedWidth(60)
         nav_layout.addWidget(self.image_count_label, 0, 1, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
-        # Next button
+        
+        # Play/Pause button
+        self.playing = False
+        self.blink_timer = QTimer(self)
+        self.blink_timer.setInterval(750)  # 0.75 seconds
+        self.blink_timer.timeout.connect(self._blink_next_image)
+        self.play_pause_button = QToolButton(self)
+        self.play_icon = QIcon.fromTheme("media-playback-start")
+        self.pause_icon = QIcon.fromTheme("media-playback-pause")
+        if self.play_icon.isNull():
+            self.play_icon = QIcon.fromTheme("play")
+        if self.pause_icon.isNull():
+            self.pause_icon = QIcon.fromTheme("pause")
+        self.play_pause_button.setIcon(self.play_icon)
+        self.play_pause_button.setToolTip("Play slideshow")
+        self.play_pause_button.setFixedSize(32, 32)
+        self.play_pause_button.clicked.connect(self.toggle_play_pause)
+        nav_layout.addWidget(self.play_pause_button, 0, 2)
+        # Next button (move to col 3)
         self.next_button = QToolButton(self)
         self.next_button.setDefaultAction(self.next_action)
         self.next_button.setFixedSize(32, 32)
-        nav_layout.addWidget(self.next_button, 0, 2)
+        nav_layout.addWidget(self.next_button, 0, 3)
         nav_widget.setLayout(nav_layout)
 
         # --- Existing toolbar buttons (left side) ---
@@ -176,30 +195,61 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         else:
             self.loaded_files.append(fits_path)
             self.current_file_index = len(self.loaded_files) - 1
+            self._preload_fits_file(fits_path)
             self.load_fits(fits_path)
         self.update_navigation_buttons()
         self.update_image_count_label()
 
+    def _preload_fits_file(self, fits_path):
+        if fits_path in self._preloaded_fits:
+            return
+        try:
+            from astropy.wcs import WCS
+            with fits.open(fits_path) as hdul:
+                image_data = hdul[0].data
+                header = hdul[0].header
+                try:
+                    wcs = WCS(header)
+                except Exception:
+                    wcs = None
+                self._preloaded_fits[fits_path] = (image_data, header, wcs)
+        except Exception:
+            self._preloaded_fits[fits_path] = (None, None, None)
+
     def show_previous_file(self):
+        n = len(self.loaded_files)
+        if n == 0:
+            return
+        # Loop around to the last file if at the first
         if self.current_file_index > 0:
             self.current_file_index -= 1
-            self.load_fits(self.loaded_files[self.current_file_index])
-            self.update_navigation_buttons()
-            self.update_image_count_label()
+        else:
+            self.current_file_index = n - 1
+        self.load_fits(self.loaded_files[self.current_file_index])
+        self.update_navigation_buttons()
+        self.update_image_count_label()
 
     def show_next_file(self):
-        if self.current_file_index < len(self.loaded_files) - 1:
+        n = len(self.loaded_files)
+        if n == 0:
+            return
+        # Loop around to the first file if at the last
+        if self.current_file_index < n - 1:
             self.current_file_index += 1
-            self.load_fits(self.loaded_files[self.current_file_index])
-            self.update_navigation_buttons()
-            self.update_image_count_label()
+        else:
+            self.current_file_index = 0
+        self.load_fits(self.loaded_files[self.current_file_index])
+        self.update_navigation_buttons()
+        self.update_image_count_label()
 
     def update_navigation_buttons(self):
         n = len(self.loaded_files)
-        self.prev_action.setEnabled(n > 1 and self.current_file_index > 0)
-        self.next_action.setEnabled(n > 1 and self.current_file_index < n - 1)
-        self.prev_button.setEnabled(self.prev_action.isEnabled())
-        self.next_button.setEnabled(self.next_action.isEnabled())
+        # Always enable navigation if more than one file (for looping)
+        enable = n > 1
+        self.prev_action.setEnabled(enable)
+        self.next_action.setEnabled(enable)
+        self.prev_button.setEnabled(enable)
+        self.next_button.setEnabled(enable)
         self.update_image_count_label()
 
     def update_image_count_label(self):
@@ -294,35 +344,37 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
     def load_fits(self, fits_path):
         try:
-            from astropy.wcs import WCS
-            with fits.open(fits_path) as hdul:
-                image_data = hdul[0].data
-                header = hdul[0].header
-                # Use get_fits_header_as_json to get (value, comment) tuples
-                self._current_header = get_fits_header_as_json(fits_path)
-                # Try to construct WCS from header
-                try:
-                    self.wcs = WCS(header)
-                except Exception:
-                    self.wcs = None
-                if image_data is not None:
-                    # Only display 2D images
-                    if image_data.ndim == 2:
-                        self.image_data = image_data
-                        self._pending_zoom_to_fit = True
-                        self.update_image_display(keep_zoom=False)
-                        self.image_label.setText("")
-                        self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
-                        self.header_button.setEnabled(True)
-                    else:
-                        self.image_label.setText("FITS file is not a 2D image.")
-                        self.image_data = None
-                        self.header_button.setEnabled(False)
+            # Use preloaded data if available
+            if fits_path in self._preloaded_fits:
+                image_data, header, wcs = self._preloaded_fits[fits_path]
+            else:
+                from astropy.wcs import WCS
+                with fits.open(fits_path) as hdul:
+                    image_data = hdul[0].data
+                    header = hdul[0].header
+                    try:
+                        wcs = WCS(header)
+                    except Exception:
+                        wcs = None
+                    self._preloaded_fits[fits_path] = (image_data, header, wcs)
+            self._current_header = get_fits_header_as_json(fits_path)
+            self.wcs = wcs
+            if image_data is not None:
+                if image_data.ndim == 2:
+                    self.image_data = image_data
+                    self._pending_zoom_to_fit = True
+                    self.update_image_display(keep_zoom=False)
+                    self.image_label.setText("")
+                    self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
+                    self.header_button.setEnabled(True)
                 else:
-                    self.image_label.setText("No image data in FITS file.")
+                    self.image_label.setText("FITS file is not a 2D image.")
                     self.image_data = None
                     self.header_button.setEnabled(False)
-            # Clear overlay when loading a new file
+            else:
+                self.image_label.setText("No image data in FITS file.")
+                self.image_data = None
+                self.header_button.setEnabled(False)
             self._simbad_overlay = None
             self._overlay_visible = True
             self.update_overlay_button_visibility()
@@ -353,7 +405,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.overlay_toggle_action.setChecked(self._overlay_visible)
 
     def open_simbad_search_dialog(self):
-        from lib.gui_widgets import SIMBADSearchDialog
+        from lib.gui.viewer.display import SIMBADSearchDialog
         dlg = SIMBADSearchDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result:
             simbad_object, pixel_coords = dlg.result
@@ -364,6 +416,23 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.image_label.update()  # Trigger repaint
         else:
             self.update_overlay_button_visibility()
+
+    def toggle_play_pause(self):
+        if not self.playing:
+            if len(self.loaded_files) > 1:
+                self.playing = True
+                self.play_pause_button.setIcon(self.pause_icon)
+                self.play_pause_button.setToolTip("Pause slideshow")
+                self.blink_timer.start()
+        else:
+            self.playing = False
+            self.play_pause_button.setIcon(self.play_icon)
+            self.play_pause_button.setToolTip("Play slideshow")
+            self.blink_timer.stop()
+
+    def _blink_next_image(self):
+        if len(self.loaded_files) > 1:
+            self.show_next_file()
 
 def main():
     fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []

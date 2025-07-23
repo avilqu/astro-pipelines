@@ -56,7 +56,7 @@ def build_multi_file_menu(parent=None, load_in_viewer_callback=None, platesolve_
         load_action.triggered.connect(load_in_viewer_callback)
         menu.addAction(load_action)
     if platesolve_all_callback:
-        platesolve_action = QAction("Platesolve all files", menu)
+        platesolve_action = QAction("Platesolve all images", menu)
         platesolve_action.triggered.connect(platesolve_all_callback)
         menu.addAction(platesolve_action)
     if not load_in_viewer_callback and not platesolve_all_callback:
