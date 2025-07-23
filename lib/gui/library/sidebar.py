@@ -1,9 +1,12 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTreeWidget, QTreeWidgetItem
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTreeWidget, QTreeWidgetItem, QInputDialog, QMessageBox
 from PyQt6.QtCore import pyqtSignal, Qt
 from lib.db import get_db_manager
+from lib.db.edit import rename_target_across_database
+from lib.gui.library.context_dropdown import build_sidebar_target_menu
 
 class LeftPanel(QWidget):
     menu_selection_changed = pyqtSignal(str, str)  # (category, value)
+    target_renamed = pyqtSignal(str, str)  # (old_name, new_name)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -15,6 +18,10 @@ class LeftPanel(QWidget):
         self.menu_tree.setMinimumWidth(200)
         self.menu_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.menu_tree.setColumnCount(1)
+
+        # Set up context menu for targets
+        self.menu_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.menu_tree.customContextMenuRequested.connect(self._show_context_menu)
 
         # Set light grey text color, bigger font, and padding
         self.menu_tree.setStyleSheet("""
@@ -92,6 +99,28 @@ class LeftPanel(QWidget):
             self.menu_selection_changed.emit("flats", "")
         else:
             self.menu_selection_changed.emit("unknown", current.text(0))
+
+    def _show_context_menu(self, pos):
+        item = self.menu_tree.itemAt(pos)
+        if item and item.parent() is self.targets_item:
+            # This is a target item
+            target_text = item.text(0)
+            target_name = target_text.split(" (")[0]
+            def show_info():
+                # Placeholder: show info for the target
+                print(f"Show info for target: {target_name}")
+            def rename_target():
+                new_name, ok = QInputDialog.getText(self, "Rename Target", f"Enter new name for target '{target_name}':")
+                if ok and new_name and new_name.strip() and new_name.strip() != target_name:
+                    result = rename_target_across_database(target_name, new_name.strip())
+                    msg = f"Updated {result['files_updated']} files."
+                    if result['errors']:
+                        msg += f"\nErrors:\n" + '\n'.join(f"{e['path']}: {e['error']}" for e in result['errors'])
+                    QMessageBox.information(self, "Rename Target", msg)
+                    self.refresh_counts()
+                    self.target_renamed.emit(target_name, new_name.strip())
+            menu = build_sidebar_target_menu(self.menu_tree, target_name=target_name, show_info_callback=show_info, rename_target_callback=rename_target)
+            menu.exec(self.menu_tree.viewport().mapToGlobal(pos))
 
     def set_menu_index(self, index):
         item = [self.obslog_item, self.targets_item, self.dates_item][index]

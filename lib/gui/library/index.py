@@ -99,6 +99,7 @@ class AstroLibraryGUI(QMainWindow):
         self.main_table_widget.platesolving_completed.connect(self.load_database)
         # Menu selection
         self.left_panel.menu_selection_changed.connect(self.on_menu_selection_changed)
+        self.left_panel.target_renamed.connect(lambda old, new: self.load_database())
     
     def load_database(self):
         """Load FITS files from the database."""

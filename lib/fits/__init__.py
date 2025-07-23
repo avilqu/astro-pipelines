@@ -2,7 +2,7 @@
 FITS file utilities for astro-pipelines.
 """
 
-from .header import get_fits_header_as_json, get_fits_header_json_string
+from .header import get_fits_header_as_json, get_fits_header_json_string, set_fits_header_value
 from .wcs import (
     extract_wcs_from_file,
     extract_wcs_from_astrometry_net,
@@ -23,6 +23,7 @@ from .wcs import (
 __all__ = [
     'get_fits_header_as_json', 
     'get_fits_header_json_string',
+    'set_fits_header_value',
     'extract_wcs_from_file',
     'extract_wcs_from_astrometry_net',
     'validate_wcs_solution',

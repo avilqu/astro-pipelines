@@ -52,3 +52,29 @@ def get_fits_header_json_string(fits_file_path: str) -> str:
         return json.dumps(header_dict)
     except (TypeError, ValueError) as e:
         raise ValueError(f"Error serializing header to JSON: {e}") 
+
+
+def set_fits_header_value(fits_file_path: str, key: str, value: str, comment: str = None) -> None:
+    """
+    Update a FITS header card (e.g., OBJECT) in-place.
+    Args:
+        fits_file_path: Path to the FITS file
+        key: Header keyword to update (e.g., 'OBJECT')
+        value: New value for the header card
+        comment: Optional comment for the header card
+    Raises:
+        FileNotFoundError: If the FITS file doesn't exist
+        OSError: If the file can't be opened for update
+    """
+    try:
+        with fits.open(fits_file_path, mode='update') as hdul:
+            header = hdul[0].header
+            if comment is not None:
+                header[key] = (value, comment)
+            else:
+                header[key] = value
+            hdul.flush()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"FITS file not found: {fits_file_path}")
+    except OSError as e:
+        raise OSError(f"Error updating FITS file {fits_file_path}: {e}") 

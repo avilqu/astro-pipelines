@@ -1,1 +1,0 @@
-# The library GUI code has been moved to lib.gui.library 
