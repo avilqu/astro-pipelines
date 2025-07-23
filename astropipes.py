@@ -42,6 +42,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--scan-all", action="store_true", help="scan and import both image and calibration FITS files into database"
     )
+    parser.add_argument(
+        "-S", "--solve", metavar="FITS_FILE", 
+        help="solve a single FITS file using astrometry.net"
+    )
     
     args = parser.parse_args()
 
@@ -133,6 +137,55 @@ if __name__ == "__main__":
         scan_calibration()
         print(f"\n{Style.BRIGHT + Fore.CYAN}Full scan completed!{Style.RESET_ALL}")
 
+    def solve_image():
+        """Solve a single FITS image using astrometry.net"""
+        try:
+            from lib.astrometry import solve_single_image
+            import os
+            import logging
+            
+            fits_file = args.solve
+            
+            # Check if file exists
+            if not os.path.exists(fits_file):
+                print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Check if file has .fits extension
+            if not fits_file.lower().endswith(('.fits', '.fit')):
+                print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension){Style.RESET_ALL}")
+                sys.exit(1)
+            
+            print(f"{Style.BRIGHT + Fore.BLUE}Starting platesolving for: {fits_file}{Style.RESET_ALL}")
+            
+            # Temporarily enable logging for platesolving
+            logging.disable(logging.NOTSET)
+            
+            # Run the platesolving pipeline
+            result = solve_single_image(
+                fits_file_path=fits_file,
+                solve_field_path="solve-field",
+                output_dir="/tmp/astropipes-solved",
+                timeout=300,
+                apply_solution=True
+            )
+            
+            # Disable logging again after platesolving
+            logging.disable(sys.maxsize)
+            
+            # The solve_single_image function already handles console output
+            # We just need to check the result for exit code
+            if not result.success:
+                sys.exit(1)
+                
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: Required modules not found.{Style.RESET_ALL}")
+            print(f"Error details: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error during platesolving: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
     # Handle arguments
     if args.gui is not None:
         launch_gui()
@@ -144,6 +197,8 @@ if __name__ == "__main__":
         scan_calibration()
     elif args.scan_all:
         scan_all()
+    elif args.solve:
+        solve_image()
     else:
         # Default behavior: show help
         parser.print_help()

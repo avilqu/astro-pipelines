@@ -5,13 +5,68 @@ from astropy.time import Time
 from astropy import units as u
 from astropy.wcs import WCS
 import xml.etree.ElementTree as ET
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 import logging
+import os
+import time
+from pathlib import Path
+from subprocess import run, TimeoutExpired
+import shutil
+from colorama import Style, Fore
+
 from astroquery.simbad import Simbad
+
+# Import our FITS utilities
+from .fits.wcs import (
+    validate_fits_file, 
+    ImageValidationResult, 
+    get_platesolving_constraints,
+    extract_wcs_from_file,
+    apply_wcs_to_fits,
+    WCSExtractionError,
+    WCSApplicationError
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Disable all logging to avoid INFO: output
+logging.disable(logging.CRITICAL)
+
+
+class PlatesolvingError(Exception):
+    """Exception raised when platesolving fails."""
+    pass
+
+
+class PlatesolvingResult:
+    """Result of a platesolving operation."""
+    
+    def __init__(self, success: bool, message: str = "", 
+                 wcs_file_path: Optional[str] = None,
+                 ra_center: Optional[float] = None,
+                 dec_center: Optional[float] = None,
+                 pixel_scale: Optional[float] = None,
+                 orientation: Optional[float] = None,
+                 radius: Optional[float] = None,
+                 objects_in_field: Optional[int] = None):
+        self.success = success
+        self.message = message
+        self.wcs_file_path = wcs_file_path
+        self.ra_center = ra_center
+        self.dec_center = dec_center
+        self.pixel_scale = pixel_scale
+        self.orientation = orientation
+        self.radius = radius
+        self.objects_in_field = objects_in_field
+    
+    def __str__(self):
+        status = "SUCCESS" if self.success else "FAILED"
+        result = f"{status}: {self.message}"
+        if self.success and self.ra_center and self.dec_center:
+            result += f" (RA={self.ra_center:.4f}°, Dec={self.dec_center:.4f}°)"
+        return result
 
 
 class SolarSystemObject:
@@ -380,3 +435,322 @@ class AstrometryCatalog:
                 continue
         
         return pixel_coords 
+
+
+class AstrometryEngine:
+    """Interface to the astrometry.net solve-field engine."""
+    
+    def __init__(self, solve_field_path: str = "solve-field", 
+                 output_dir: str = "/tmp/astropipes-solved", timeout: int = 300):
+        """
+        Initialize the astrometry engine interface.
+        
+        Parameters:
+        -----------
+        solve_field_path : str
+            Path to the solve-field executable
+        output_dir : str
+            Directory for temporary output files
+        timeout : int
+            Timeout in seconds for solve-field execution
+        """
+        self.solve_field_path = solve_field_path
+        self.output_dir = output_dir
+        self.timeout = timeout
+        
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+    
+    def solve_image(self, fits_file_path: str, constraints: Dict[str, Union[float, bool]]) -> PlatesolvingResult:
+        """
+        Solve a single image using the astrometry.net engine.
+        
+        Parameters:
+        -----------
+        fits_file_path : str
+            Path to the FITS file to solve
+        constraints : Dict[str, Union[float, bool]]
+            Solving constraints from get_platesolving_constraints()
+            
+        Returns:
+        --------
+        PlatesolvingResult
+            Result of the solving operation
+        """
+        try:
+            # Generate output filenames
+            base_name = Path(fits_file_path).stem
+            new_filename = os.path.join(self.output_dir, f"{base_name}.new")
+            
+            # Build solve-field command
+            cmd = [
+                self.solve_field_path,
+                "--dir", self.output_dir,
+                "--no-plots",
+                "--no-verify",
+                "--overwrite",
+                "--downsample", "2",
+                "--new-fits", new_filename,
+                fits_file_path
+            ]
+            
+            # Add constraints if not blind solving
+            if not constraints.get('blind', True):
+                if constraints.get('ra') is not None:
+                    cmd.extend(["--ra", str(constraints['ra'])])
+                if constraints.get('dec') is not None:
+                    cmd.extend(["--dec", str(constraints['dec'])])
+                if constraints.get('radius') is not None:
+                    cmd.extend(["--radius", str(constraints['radius'])])
+                # Note: solve-field doesn't use scale constraints for offline solving
+                # Scale constraints are only used for online astrometry.net
+            else:
+                # Blind solving - add guess-scale option
+                cmd.append("--guess-scale")
+            
+            # Debug: Show the exact command being executed
+            print(f"   Command: {' '.join(cmd)}")
+            
+            # Run solve-field with live output
+            start_time = time.time()
+            print(f"{Style.BRIGHT + Fore.BLUE}Running solve-field...{Style.RESET_ALL}")
+            result = run(cmd, check=True, timeout=self.timeout, text=True)
+            solve_time = time.time() - start_time
+            
+            # Check if .new file was created
+            if os.path.exists(new_filename):
+                print(f"   Solution file generated: {new_filename}")
+                
+                # Extract solution information
+                solution_info = self._extract_solution_info(new_filename, fits_file_path)
+                
+                # Don't clean up yet - the file is needed for WCS application
+                # Cleanup will be done after WCS application in solve_single_image
+                
+                return PlatesolvingResult(
+                    success=True,
+                    message="Image successfully solved",
+                    wcs_file_path=new_filename,
+                    ra_center=solution_info.get('ra_center'),
+                    dec_center=solution_info.get('dec_center'),
+                    pixel_scale=solution_info.get('pixel_scale'),
+                    orientation=solution_info.get('orientation'),
+                    radius=solution_info.get('radius'),
+                    objects_in_field=solution_info.get('objects_in_field')
+                )
+            else:
+                print(f"   No solution file generated by solve-field")
+                self._cleanup_temp_files(base_name)
+                return PlatesolvingResult(
+                    success=False,
+                    message="No WCS solution generated"
+                )
+                
+        except TimeoutExpired:
+            logger.error(f"solve-field timed out after {self.timeout}s")
+            self._cleanup_temp_files(Path(fits_file_path).stem)
+            return PlatesolvingResult(
+                success=False,
+                message=f"solve-field timed out after {self.timeout}s"
+            )
+        except Exception as e:
+            logger.error(f"Error running solve-field: {e}")
+            self._cleanup_temp_files(Path(fits_file_path).stem)
+            return PlatesolvingResult(
+                success=False,
+                message=f"Error running solve-field: {e}"
+            )
+    
+    def _extract_solution_info(self, solution_file_path: str, original_file_path: str) -> Dict[str, Union[float, int]]:
+        """
+        Extract solution information from the solution file.
+        
+        Parameters:
+        -----------
+        solution_file_path : str
+            Path to the generated solution file (.new)
+        original_file_path : str
+            Path to the original FITS file
+            
+        Returns:
+        --------
+        Dict[str, Union[float, int]]
+            Dictionary containing solution information
+        """
+        try:
+            # Import fits here to avoid import issues
+            from astropy.io import fits
+            
+            # Extract WCS data from the solution file
+            wcs_data = extract_wcs_from_file(solution_file_path)
+            
+            # Create WCS object for calculations
+            wcs = WCS(solution_file_path)
+            
+            # Get image dimensions from original file
+            with fits.open(original_file_path) as hdul:
+                image_shape = hdul[0].data.shape
+            
+            # Calculate center coordinates
+            center_x = image_shape[1] / 2
+            center_y = image_shape[0] / 2
+            center_coords = wcs.pixel_to_world(center_x, center_y)
+            
+            # Calculate pixel scale
+            pixel_scale = None
+            if 'CDELT1' in wcs_data:
+                pixel_scale = abs(float(wcs_data['CDELT1'])) * 3600.0  # Convert to arcsec
+            
+            # Calculate orientation
+            orientation = None
+            if 'CROTA2' in wcs_data:
+                orientation = float(wcs_data['CROTA2'])
+            
+            # Calculate field radius
+            corners = wcs.calc_footprint()
+            radius = None
+            if corners is not None:
+                ra_center = center_coords.ra.deg
+                dec_center = center_coords.dec.deg
+                max_radius = 0
+                for corner_ra, corner_dec in corners:
+                    dra = (corner_ra - ra_center) * np.cos(np.radians(dec_center))
+                    ddec = corner_dec - dec_center
+                    corner_radius = np.sqrt(dra**2 + ddec**2)
+                    max_radius = max(max_radius, corner_radius)
+                radius = max_radius
+            
+            return {
+                'ra_center': center_coords.ra.deg,
+                'dec_center': center_coords.dec.deg,
+                'pixel_scale': pixel_scale,
+                'orientation': orientation,
+                'radius': radius,
+                'objects_in_field': None  # Not available from solve-field output
+            }
+            
+        except Exception as e:
+            print(f"   Error extracting solution info: {e}")
+            return {}
+    
+    def _cleanup_temp_files(self, base_name: str):
+        """
+        Clean up temporary files generated by solve-field.
+        
+        Parameters:
+        -----------
+        base_name : str
+            Base name of the input file (without extension)
+        """
+        temp_extensions = ['.xyls', '.axy', '.corr', '.match', '.rdls', '.solved', '.new']
+        
+        for ext in temp_extensions:
+            temp_file = os.path.join(self.output_dir, f"{base_name}{ext}")
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                    logger.debug(f"Cleaned up: {temp_file}")
+                except Exception as e:
+                    logger.warning(f"Could not remove {temp_file}: {e}")
+
+
+def solve_single_image(fits_file_path: str, 
+                      solve_field_path: str = "solve-field",
+                      output_dir: str = "/tmp/astropipes-solved",
+                      timeout: int = 300,
+                      apply_solution: bool = True) -> PlatesolvingResult:
+    """
+    Solve a single FITS image using the complete platesolving pipeline.
+    
+    This function performs the complete platesolving workflow:
+    1. Validate the FITS file
+    2. Extract existing WCS information
+    3. Generate solving constraints
+    4. Run astrometry.net engine
+    5. Apply solution to original file (if requested)
+    
+    Parameters:
+    -----------
+    fits_file_path : str
+        Path to the FITS file to solve
+    solve_field_path : str
+        Path to the solve-field executable
+    output_dir : str
+        Directory for temporary output files
+    timeout : int
+        Timeout in seconds for solve-field execution
+    apply_solution : bool
+        Whether to apply the solution to the original FITS file
+        
+    Returns:
+    --------
+    PlatesolvingResult
+        Result of the platesolving operation
+    """
+    try:
+        # Step 1: Validate the FITS file
+        print(f"{Style.BRIGHT + Fore.BLUE}Validating FITS file...{Style.RESET_ALL}")
+        validation_result = validate_fits_file(fits_file_path)
+        
+        if not validation_result.is_valid:
+            # Print error message in bold red
+            print(f"{Style.BRIGHT + Fore.RED}Image validation failed: {validation_result.reason}{Style.RESET_ALL}")
+            return PlatesolvingResult(
+                success=False,
+                message=f"Image validation failed: {validation_result.reason}"
+            )
+        
+        print(f"{Style.BRIGHT + Fore.GREEN}Image validation passed{Style.RESET_ALL}")
+        
+        # Step 2: Extract existing WCS information and generate constraints
+        print(f"{Style.BRIGHT + Fore.BLUE}Generating solving constraints...{Style.RESET_ALL}")
+        constraints = get_platesolving_constraints(validation_result)
+        
+        # Step 3: Run astrometry.net engine
+        print(f"{Style.BRIGHT + Fore.BLUE}Running astrometry.net engine...{Style.RESET_ALL}")
+        engine = AstrometryEngine(solve_field_path, output_dir, timeout)
+        solve_result = engine.solve_image(fits_file_path, constraints)
+        
+        if not solve_result.success:
+            # Print error message in bold red
+            print(f"{Style.BRIGHT + Fore.RED}Could not solve {fits_file_path}{Style.RESET_ALL}")
+            return solve_result
+        
+        # Step 4: Apply solution to original file (if requested)
+        if apply_solution and solve_result.wcs_file_path:
+            print(f"{Style.BRIGHT + Fore.BLUE}Applying solution to original file...{Style.RESET_ALL}")
+            try:
+                wcs_data = extract_wcs_from_file(solve_result.wcs_file_path)
+                apply_wcs_to_fits(fits_file_path, wcs_data, backup_original=False)
+                print(f"   Successfully applied WCS solution to {fits_file_path}")
+                
+                # Clean up the solution file after applying
+                os.remove(solve_result.wcs_file_path)
+                solve_result.wcs_file_path = None
+                
+            except (WCSExtractionError, WCSApplicationError) as e:
+                print(f"{Style.BRIGHT + Fore.RED}Error applying WCS solution: {e}{Style.RESET_ALL}")
+                return PlatesolvingResult(
+                    success=False,
+                    message=f"Error applying WCS solution: {e}"
+                )
+        
+        # Clean up any remaining temporary files
+        base_name = Path(fits_file_path).stem
+        engine._cleanup_temp_files(base_name)
+        
+        # Print success message in bold green
+        print(f"{Style.BRIGHT + Fore.GREEN}Successfully solved {fits_file_path}{Style.RESET_ALL}")
+        if solve_result.ra_center and solve_result.dec_center:
+            print(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={solve_result.ra_center:.4f}°, Dec={solve_result.dec_center:.4f}°{Style.RESET_ALL}")
+        if solve_result.pixel_scale:
+            print(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {solve_result.pixel_scale:.3f} arcsec/pixel{Style.RESET_ALL}")
+        
+        return solve_result
+        
+    except Exception as e:
+        print(f"{Style.BRIGHT + Fore.RED}Error in platesolving pipeline: {e}{Style.RESET_ALL}")
+        return PlatesolvingResult(
+            success=False,
+            message=f"Error in platesolving pipeline: {e}"
+        ) 
