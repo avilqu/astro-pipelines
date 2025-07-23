@@ -99,8 +99,8 @@ class SIMBADSearchDialog(QDialog):
             self.search_button.setText("Search")
 
 
-def create_image_object(image_data: np.ndarray, display_min=None, display_max=None, clipping=False):
-    """Convert numpy array to QPixmap for display - optimized version. NaNs are replaced with the minimum finite value. If clipping is True, use 3-sigma clipping for display range."""
+def create_image_object(image_data: np.ndarray, display_min=None, display_max=None, clipping=False, sigma_clip=3):
+    """Convert numpy array to QPixmap for display - optimized version. NaNs are replaced with the minimum finite value. If clipping is True, use sigma_clip-sigma clipping for display range."""
     # Replace NaNs with the minimum finite value
     if np.isnan(image_data).any():
         finite_vals = image_data[np.isfinite(image_data)]
@@ -113,8 +113,8 @@ def create_image_object(image_data: np.ndarray, display_min=None, display_max=No
             if finite_vals.size > 0:
                 mean = np.mean(finite_vals)
                 std = np.std(finite_vals)
-                display_min = mean - 3 * std
-                display_max = mean + 3 * std
+                display_min = mean - sigma_clip * std
+                display_max = mean + sigma_clip * std
             else:
                 display_min = np.min(image_data)
                 display_max = np.max(image_data)

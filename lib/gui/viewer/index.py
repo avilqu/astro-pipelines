@@ -16,6 +16,14 @@ from lib.fits.catalogs import AstrometryCatalog
 from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel, QMessageBox, QProgressDialog
 import config
 from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, compute_padded_reference_wcs, reproject_images_to_common_wcs
+from PyQt6.QtWidgets import QFrame
+
+def make_toolbar_separator(parent):
+    sep = QFrame(parent)
+    sep.setFixedWidth(8)  # Give it a little width for margin
+    sep.setFixedHeight(32)  # Match your toolbar height
+    sep.setStyleSheet("QFrame { border-left: 1px solid #777777; background: transparent; }")
+    return sep
 
 class NoWheelScrollArea(QScrollArea):
     def wheelEvent(self, event):
@@ -64,6 +72,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar = QToolBar("Main Toolbar")
         self.toolbar.setMovable(False)  # Disable moving the toolbar
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)  # Remove handle visual
+        self.toolbar.setStyleSheet("QToolBar { background: #222222; }")
         self.addToolBar(self.toolbar)
 
         # --- Navigation buttons grouped at right end ---
@@ -131,39 +140,73 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         load_action.triggered.connect(self.open_file_dialog)
         self.toolbar.addAction(load_action)
         self.toolbar.widgetForAction(load_action).setFixedSize(32, 32)
-        reset_zoom_action = QAction("reset zoom", self)
+
+        self.toolbar.addWidget(make_toolbar_separator(self))
+
+        reset_zoom_action = QAction(QIcon.fromTheme("zoom-original"), "", self)
         reset_zoom_action.setToolTip("Reset zoom to 1:1")
         reset_zoom_action.triggered.connect(self.reset_zoom)
         self.toolbar.addAction(reset_zoom_action)
-        self.toolbar.widgetForAction(reset_zoom_action).setFixedSize(80, 32)
-        zoom_to_fit_action = QAction("zoom to fit", self)
+        self.toolbar.widgetForAction(reset_zoom_action).setFixedSize(32, 32)
+        zoom_to_fit_action = QAction(QIcon.fromTheme("zoom-fit-width"), "", self)
         zoom_to_fit_action.setToolTip("Zoom to fit image in viewport")
         zoom_to_fit_action.triggered.connect(self.zoom_to_fit)
         self.toolbar.addAction(zoom_to_fit_action)
-        self.toolbar.widgetForAction(zoom_to_fit_action).setFixedSize(90, 32)
-        linear_action = QAction("0", self)
+        self.toolbar.widgetForAction(zoom_to_fit_action).setFixedSize(32, 32)
+        
+        self.toolbar.addWidget(make_toolbar_separator(self))
+
+        linear_action = QAction(QIcon.fromTheme("view-object-histogram-linear-symbolic"), "", self)
         linear_action.setToolTip("Linear histogram stretch")
         linear_action.triggered.connect(self.set_linear_stretch)
         self.toolbar.addAction(linear_action)
         self.toolbar.widgetForAction(linear_action).setFixedSize(32, 32)
-        log_action = QAction("+", self)
+        log_action = QAction(QIcon.fromTheme("view-object-histogram-logarithmic"), "", self)
         log_action.setToolTip("Logarithmic histogram stretch")
         log_action.triggered.connect(self.set_log_stretch)
         self.toolbar.addAction(log_action)
         self.toolbar.widgetForAction(log_action).setFixedSize(32, 32)
-        self.header_button = QAction("FITS header", self)
+
+        # Add brightness -/+ buttons (not related to sigma clipping)
+        from PyQt6.QtWidgets import QToolButton
+        self.brightness_minus_button = QToolButton(self)
+        self.brightness_minus_button.setText("-")
+        self.brightness_minus_button.setToolTip("Darken image")
+        self.brightness_minus_button.setFixedSize(32, 32)
+        self.brightness_minus_button.clicked.connect(self.increase_display_min)
+        self.toolbar.addWidget(self.brightness_minus_button)
+        self.brightness_plus_button = QToolButton(self)
+        self.brightness_plus_button.setText("+")
+        self.brightness_plus_button.setToolTip("Brighten image")
+        self.brightness_plus_button.setFixedSize(32, 32)
+        self.brightness_plus_button.clicked.connect(self.decrease_display_min)
+        self.toolbar.addWidget(self.brightness_plus_button)
+
+        # Add Clipping button
+        self.clipping_action =  QAction(QIcon.fromTheme("arrow-up-double"), "", self)
+        self.clipping_action.setCheckable(True)
+        self.clipping_action.setChecked(False) # Default to off
+        self.clipping_action.setToolTip(f"Toggle sigma clipping for display stretch (sigma={3.0})")
+        self.clipping_action.triggered.connect(self.toggle_clipping)
+        self.toolbar.addAction(self.clipping_action)
+        self.toolbar.widgetForAction(self.clipping_action).setFixedSize(32, 32)
+        
+        self.toolbar.addWidget(make_toolbar_separator(self))
+        
+        self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self)
         self.header_button.setToolTip("Show FITS header")
         self.header_button.setEnabled(False)
         self.header_button.triggered.connect(self.show_header_dialog)
         self.toolbar.addAction(self.header_button)
-        self.toolbar.widgetForAction(self.header_button).setFixedSize(90, 32)
+        self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
+
         # Add SIMBAD search button
-        self.simbad_button = QAction("SIMBAD search", self)
+        self.simbad_button = QAction(QIcon.fromTheme("file-search-symbolic"), "", self)
         self.simbad_button.setToolTip("Search for an object in SIMBAD and overlay on image")
         self.simbad_button.setEnabled(True)
         self.simbad_button.triggered.connect(self.open_simbad_search_dialog)
         self.toolbar.addAction(self.simbad_button)
-        self.toolbar.widgetForAction(self.simbad_button).setFixedSize(120, 32)
+        self.toolbar.widgetForAction(self.simbad_button).setFixedSize(32, 32)
         # Overlay toggle action (toolbar)
         self.overlay_toggle_action = QAction("Toggle Overlay", self)
         self.overlay_toggle_action.setCheckable(True)
@@ -178,14 +221,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.align_action.triggered.connect(self.align_images)
         self.toolbar.addAction(self.align_action)
         self.toolbar.widgetForAction(self.align_action).setFixedSize(70, 32)
-        # Add Clipping button
-        self.clipping_action = QAction("Clipping", self)
-        self.clipping_action.setCheckable(True)
-        self.clipping_action.setChecked(False) # Default to off
-        self.clipping_action.setToolTip("Toggle sigma clipping for display stretch")
-        self.clipping_action.triggered.connect(self.toggle_clipping)
-        self.toolbar.addAction(self.clipping_action)
-        self.toolbar.widgetForAction(self.clipping_action).setFixedSize(80, 32)
 
         # Add a spacer to push nav_widget to the right
         spacer = QWidget(self)
@@ -211,11 +246,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._zoom = 1.0  # Track current zoom level
         self._last_center = None  # Track last center (in image coordinates)
         self.clipping_enabled = False
+        self.display_min = None
+        self.display_max = None
+        self.sigma_clip = 3.0
         if fits_path:
             self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
         self.update_navigation_buttons()
         self.update_align_button_visibility()
+        self.update_display_minmax_tooltips() # Initialize tooltips
         # Status bar: coordinates (left), pixel value (right)
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -359,13 +398,77 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             # Displayed as 1-based index
             self.image_count_label.setText(f"{self.current_file_index + 1} / {n}")
 
+    def increase_display_min(self):
+        # Make image darker by increasing display_min
+        if self.display_min is None or self.display_max is None:
+            auto_min, auto_max = self._get_auto_display_minmax()
+            self.display_min = auto_min
+            self.display_max = auto_max
+        self.display_min += self._get_display_min_step()
+        self.update_image_display(keep_zoom=True)
+        self.update_display_minmax_tooltips()
+
+    def decrease_display_min(self):
+        # Make image brighter by decreasing display_min
+        if self.display_min is None or self.display_max is None:
+            auto_min, auto_max = self._get_auto_display_minmax()
+            self.display_min = auto_min
+            self.display_max = auto_max
+        self.display_min -= self._get_display_min_step()
+        self.update_image_display(keep_zoom=True)
+        self.update_display_minmax_tooltips()
+
+    def _get_auto_display_minmax(self):
+        # Compute the default min/max as would be used by create_image_object
+        if self.stretch_mode == 'log':
+            data = self.image_data.astype(float)
+            data = np.where(data > 0, np.log10(data), 0)
+        else:
+            data = self.image_data
+        if self.clipping_enabled:
+            finite_vals = data[np.isfinite(data)]
+            if finite_vals.size > 0:
+                mean = float(np.mean(finite_vals))
+                std = float(np.std(finite_vals))
+                return mean - self.sigma_clip * std, mean + self.sigma_clip * std
+            else:
+                return float(np.min(data)), float(np.max(data))
+        else:
+            finite_vals = data[np.isfinite(data)]
+            if finite_vals.size > 0:
+                histo = np.histogram(finite_vals, 60, None, True)
+                return float(histo[1][0]), float(histo[1][-1])
+            else:
+                return float(np.min(data)), float(np.max(data))
+
+    def _get_display_min_step(self):
+        # Use a step based on the image stddev
+        if self.stretch_mode == 'log':
+            data = self.image_data.astype(float)
+            data = np.where(data > 0, np.log10(data), 0)
+        else:
+            data = self.image_data
+        if data is not None:
+            finite_vals = data[np.isfinite(data)]
+            if finite_vals.size > 0:
+                return float(np.std(finite_vals)) * 0.4  # 4x bigger than before
+        return 4.0
+
+    def update_display_minmax_tooltips(self):
+        self.brightness_minus_button.setToolTip(f"Darken image (min: {self.display_min})")
+        self.brightness_plus_button.setToolTip(f"Brighten image (min: {self.display_min})")
+
     def set_linear_stretch(self):
         self.stretch_mode = 'linear'
+        self.display_min = None
+        self.display_max = None
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
     def set_log_stretch(self):
         self.stretch_mode = 'log'
+        self.display_min = None
+        self.display_max = None
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
@@ -397,11 +500,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         else:
             rel_cx = rel_cy = 0.5
         if self.stretch_mode == 'linear':
-            orig_pixmap = create_image_object(self.image_data, clipping=self.clipping_enabled)
+            orig_pixmap = create_image_object(self.image_data, display_min=self.display_min, display_max=self.display_max, clipping=self.clipping_enabled, sigma_clip=self.sigma_clip)
         else:
             data = self.image_data.astype(float)
             data = np.where(data > 0, np.log10(data), 0)
-            orig_pixmap = create_image_object(data, clipping=self.clipping_enabled)
+            orig_pixmap = create_image_object(data, display_min=self.display_min, display_max=self.display_max, clipping=self.clipping_enabled, sigma_clip=self.sigma_clip)
         self._orig_pixmap = orig_pixmap  # Always set to the unscaled pixmap
         # Set the display pixmap according to current zoom
         new_width = int(orig_pixmap.width() * self._zoom)
@@ -475,6 +578,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
+                    self.display_min = None
+                    self.display_max = None
                 else:
                     self.image_label.setText("FITS file is not a 2D image.")
                     self.image_data = None
