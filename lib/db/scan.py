@@ -134,7 +134,7 @@ class FitsFileScanner:
 
         fits_data = {
             'path': str(fits_file),
-            'target': target_name,  # Use directory name as target
+            'target': normalize_object_name(get_val('OBJECT')),  # Normalized OBJECT from header as target
             'filter_name': filter_name,  # Use directory name as filter
             'date_obs': self._parse_date_obs(get_val('DATE-OBS')),
             'exptime': get_val('EXPTIME'),
@@ -509,7 +509,7 @@ def rescan_single_file(file_path: str) -> Dict[str, Any]:
             
             # Extract header values with defaults
             date_obs_str = header.get('DATE-OBS', '')
-            target = header.get('OBJECT', '')
+            target = normalize_object_name(header.get('OBJECT', ''))
             filter_name = header.get('FILTER', '')
             exptime = header.get('EXPTIME', 0.0)
             gain = header.get('GAIN', 0.0)
@@ -670,3 +670,11 @@ def rescan_single_file(file_path: str) -> Dict[str, Any]:
             'message': f"Error re-scanning file: {e}",
             'file_updated': False
         } 
+
+def normalize_object_name(obj):
+    """
+    Normalize object name by replacing underscores with spaces and stripping whitespace.
+    """
+    if obj is None:
+        return None
+    return str(obj).replace('_', ' ').strip() 

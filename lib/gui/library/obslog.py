@@ -7,7 +7,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel
+from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel, QThread, pyqtSignal as Signal
 from PyQt6.QtGui import QFont, QPalette, QColor
 from .context_dropdown import build_single_file_menu, build_multi_file_menu, build_empty_menu
 import json
@@ -118,6 +118,7 @@ class FitsTableWidget(QTableWidget):
     
     # Custom signals
     selection_changed = pyqtSignal(list)  # Emits list of selected fits_file_ids
+    platesolving_completed = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -693,8 +694,8 @@ class FitsTableWidget(QTableWidget):
         """Handle platesolving completion."""
         if result.success:
             QMessageBox.information(self, "Platesolving Success", self._format_platesolving_result(result))
-            # Refresh the table to show updated WCS information
-            self.refresh_table()
+            # Emit signal to reload database
+            self.platesolving_completed.emit()
         else:
             QMessageBox.warning(self, "Platesolving Failed", self._format_platesolving_result(result))
 

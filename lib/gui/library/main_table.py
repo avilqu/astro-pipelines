@@ -54,6 +54,7 @@ class PlatesolvingThread(QThread):
 class MainFitsTableWidget(QTableWidget):
     """Table widget for displaying FITS files in a flat, sortable table."""
     selection_changed = pyqtSignal(list)  # Emits list of selected fits_file_ids
+    platesolving_completed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -325,8 +326,8 @@ class MainFitsTableWidget(QTableWidget):
         """Handle platesolving completion."""
         if result.success:
             QMessageBox.information(self, "Platesolving Success", self._format_platesolving_result(result))
-            # Refresh the table to show updated WCS information
-            self.refresh_table()
+            # Emit signal to reload database
+            self.platesolving_completed.emit()
         else:
             QMessageBox.warning(self, "Platesolving Failed", self._format_platesolving_result(result))
 

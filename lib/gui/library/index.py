@@ -30,6 +30,8 @@ class AstroLibraryGUI(QMainWindow):
         super().__init__()
         self.db_manager = DatabaseManager()
         self.fits_files = []
+        self.last_menu_category = None
+        self.last_menu_value = None
         self.init_ui()
         self.connect_signals()
         self.load_database()
@@ -93,6 +95,8 @@ class AstroLibraryGUI(QMainWindow):
         """Connect all the signals and slots."""
         # Table connections
         self.table_widget.selection_changed.connect(self.on_table_selection_changed)
+        self.table_widget.platesolving_completed.connect(self.load_database)
+        self.main_table_widget.platesolving_completed.connect(self.load_database)
         # Menu selection
         self.left_panel.menu_selection_changed.connect(self.on_menu_selection_changed)
     
@@ -112,6 +116,14 @@ class AstroLibraryGUI(QMainWindow):
         """Handle loaded database data."""
         self.fits_files = fits_files
         self.table_widget.populate_table(fits_files)
+        # If main_table_widget is visible, repopulate it with the correct filter
+        if self.right_stack.currentIndex() == 1:
+            if self.last_menu_category == "target":
+                filtered = [f for f in self.fits_files if f.target == self.last_menu_value]
+                self.main_table_widget.populate_table(filtered)
+            elif self.last_menu_category == "date":
+                filtered = [f for f in self.fits_files if f.date_obs and f.date_obs.strftime('%Y-%m-%d') == self.last_menu_value]
+                self.main_table_widget.populate_table(filtered)
         self.status_label.setText(f"Loaded {len(fits_files)} FITS files")
         self.progress_bar.setVisible(False)
     
@@ -129,6 +141,8 @@ class AstroLibraryGUI(QMainWindow):
     
     def on_menu_selection_changed(self, category, value):
         """Switch right panel content based on menu selection."""
+        self.last_menu_category = category
+        self.last_menu_value = value
         if category == "obslog":
             self.right_stack.setCurrentIndex(0)
         elif category == "target":
