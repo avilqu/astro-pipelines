@@ -169,6 +169,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.coord_label = QLabel("", self)
         self.coord_label.setVisible(False)
         self._overlay_visible = True
+        self._zoom = 1.0  # Track current zoom level
+        self._last_center = None  # Track last center (in image coordinates)
         if fits_path:
             self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
@@ -188,16 +190,54 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         if file_path:
             self.open_and_add_file(file_path)
 
+    def _get_viewport_center(self):
+        # Returns the center of the viewport in image coordinates (x, y)
+        hbar = self.scroll_area.horizontalScrollBar()
+        vbar = self.scroll_area.verticalScrollBar()
+        viewport_w = self.scroll_area.viewport().width()
+        viewport_h = self.scroll_area.viewport().height()
+        img_w = self.image_label.width()
+        img_h = self.image_label.height()
+        if img_w > 0 and img_h > 0:
+            center_x = hbar.value() + viewport_w // 2
+            center_y = vbar.value() + viewport_h // 2
+            # Convert to image coordinates
+            img_cx = int(center_x / self._zoom)
+            img_cy = int(center_y / self._zoom)
+            return (img_cx, img_cy)
+        return None
+
+    def _set_viewport_center(self, img_cx, img_cy):
+        # Centers the viewport on (img_cx, img_cy) in image coordinates
+        new_width = self.image_label.width()
+        new_height = self.image_label.height()
+        viewport_w = self.scroll_area.viewport().width()
+        viewport_h = self.scroll_area.viewport().height()
+        if new_width > 0 and new_height > 0:
+            center_x = int(img_cx * self._zoom)
+            center_y = int(img_cy * self._zoom)
+            hbar = self.scroll_area.horizontalScrollBar()
+            vbar = self.scroll_area.verticalScrollBar()
+            hbar.setValue(max(0, center_x - viewport_w // 2))
+            vbar.setValue(max(0, center_y - viewport_h // 2))
+
     def open_and_add_file(self, fits_path):
+        # Save zoom and center before switching
+        if self.image_data is not None:
+            self._last_zoom = self._zoom
+            self._last_center = self._get_viewport_center()
+        else:
+            self._last_zoom = 1.0
+            self._last_center = None
         # If already loaded, just switch to it
         if fits_path in self.loaded_files:
             self.current_file_index = self.loaded_files.index(fits_path)
-            self.load_fits(fits_path)
+            self.load_fits(fits_path, restore_view=True)
         else:
             self.loaded_files.append(fits_path)
             self.current_file_index = len(self.loaded_files) - 1
             self._preload_fits_file(fits_path)
-            self.load_fits(fits_path)
+            self.load_fits(fits_path, restore_view=True)
         self.update_navigation_buttons()
         self.update_image_count_label()
 
@@ -218,6 +258,13 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._preloaded_fits[fits_path] = (None, None, None)
 
     def show_previous_file(self):
+        # Save zoom and center before switching
+        if self.image_data is not None:
+            self._last_zoom = self._zoom
+            self._last_center = self._get_viewport_center()
+        else:
+            self._last_zoom = 1.0
+            self._last_center = None
         n = len(self.loaded_files)
         if n == 0:
             return
@@ -226,11 +273,18 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.current_file_index -= 1
         else:
             self.current_file_index = n - 1
-        self.load_fits(self.loaded_files[self.current_file_index])
+        self.load_fits(self.loaded_files[self.current_file_index], restore_view=True)
         self.update_navigation_buttons()
         self.update_image_count_label()
 
     def show_next_file(self):
+        # Save zoom and center before switching
+        if self.image_data is not None:
+            self._last_zoom = self._zoom
+            self._last_center = self._get_viewport_center()
+        else:
+            self._last_zoom = 1.0
+            self._last_center = None
         n = len(self.loaded_files)
         if n == 0:
             return
@@ -239,7 +293,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.current_file_index += 1
         else:
             self.current_file_index = 0
-        self.load_fits(self.loaded_files[self.current_file_index])
+        self.load_fits(self.loaded_files[self.current_file_index], restore_view=True)
         self.update_navigation_buttons()
         self.update_image_count_label()
 
@@ -343,7 +397,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.image_label.setFixedSize(new_width, new_height)
         self.image_label.setPixmap(self._orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-    def load_fits(self, fits_path):
+    def load_fits(self, fits_path, restore_view=False):
         try:
             # Use preloaded data if available
             if fits_path in self._preloaded_fits:
@@ -363,8 +417,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             if image_data is not None:
                 if image_data.ndim == 2:
                     self.image_data = image_data
-                    self._pending_zoom_to_fit = True
-                    self.update_image_display(keep_zoom=False)
+                    # Restore zoom and center if requested
+                    if restore_view and hasattr(self, '_last_zoom') and self._last_zoom:
+                        self._zoom = self._last_zoom
+                    else:
+                        self._zoom = 1.0
+                    self._pending_zoom_to_fit = False
+                    self.update_image_display(keep_zoom=True)
+                    # Restore center if available
+                    if restore_view and hasattr(self, '_last_center') and self._last_center:
+                        QTimer.singleShot(0, lambda: self._set_viewport_center(*self._last_center))
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
