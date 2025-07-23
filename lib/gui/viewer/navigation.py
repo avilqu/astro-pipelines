@@ -67,7 +67,7 @@ class NavigationMixin:
         if event.button() == Qt.MouseButton.LeftButton:
             self._panning = False
             self._last_pan_pos = None
-            self.image_label.setCursor(Qt.CursorShape.ArrowCursor)
+            # self.image_label.setCursor(Qt.CursorShape.ArrowCursor)  # Remove this line to allow custom cursor
             event.accept()
         else:
             super().mouseReleaseEvent(event) 

@@ -5,7 +5,7 @@ from astropy.wcs import WCS
 from astropy.time import Time
 from PyQt6.QtWidgets import QLabel, QScrollArea, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QMessageBox
 from PyQt6.QtCore import Qt, QPoint, QTimer, QPointF
-from PyQt6.QtGui import QPixmap, QPainter, QMouseEvent, QKeyEvent, QFont, QPen, QColor
+from PyQt6.QtGui import QPixmap, QPainter, QMouseEvent, QKeyEvent, QFont, QPen, QColor, QCursor
 
 class ImageLabel(QLabel):
     """Custom QLabel that handles mouse events for panning and zooming, and supports overlays"""
@@ -26,6 +26,34 @@ class ImageLabel(QLabel):
         self.pan_timer.timeout.connect(self._update_pan)
         self.pan_timer.setInterval(16)
         self.target_scroll_pos = QPoint()
+        self._custom_cross_cursor = self._create_cross_cursor()
+
+    def _create_cross_cursor(self):
+        # Create a 24x24 pixmap with a 1px thick white cross
+        size = 24
+        thickness = 1
+        pm = QPixmap(size, size)
+        pm.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pm)
+        pen = QPen(QColor(255, 255, 255), thickness)
+        painter.setPen(pen)
+        # Draw vertical line
+        painter.drawLine(size // 2, 0, size // 2, size - 1)
+        # Draw horizontal line
+        painter.drawLine(0, size // 2, size - 1, size // 2)
+        painter.end()
+        # Hotspot at center
+        return QCursor(pm, size // 2, size // 2)
+
+    def enterEvent(self, event):
+        if not self.panning:
+            self.setCursor(self._custom_cross_cursor)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if not self.panning:
+            self.unsetCursor()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
@@ -36,7 +64,6 @@ class ImageLabel(QLabel):
                 scroll_area.horizontalScrollBar().value(),
                 scroll_area.verticalScrollBar().value()
             )
-            self.original_cursor = self.cursor()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.setCursor(Qt.CursorShape.BlankCursor)
             self.pan_timer.start()
@@ -140,9 +167,8 @@ class ImageLabel(QLabel):
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
             self.panning = False
             self.pan_timer.stop()
-            if self.original_cursor:
-                self.setCursor(self.original_cursor)
-                self.original_cursor = None
+            # Always restore the custom cross cursor after panning
+            self.setCursor(self._custom_cross_cursor)
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent):

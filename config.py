@@ -92,5 +92,5 @@ TESTED_FITS_CARDS = [
 ]
 
 # --- User Settings ---
-TIME_DISPLAY_MODE = 'UTC'
+TIME_DISPLAY_MODE = 'Local'
 BLINK_PERIOD_MS = 1000
