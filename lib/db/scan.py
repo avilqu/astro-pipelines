@@ -353,3 +353,320 @@ def scan_calibration_masters(calibration_path: Optional[str] = None, verbose: bo
     """
     scanner = CalibrationMasterScanner(calibration_path)
     return scanner.scan_directory(verbose) 
+
+def is_file_in_database(file_path: str) -> bool:
+    """
+    Check if a file is present in the database by its full path.
+    
+    Parameters:
+    -----------
+    file_path : str
+        Full path to the FITS file to check
+        
+    Returns:
+    --------
+    bool
+        True if the file exists in the database, False otherwise
+    """
+    from lib.db.main import get_db_manager
+    from lib.db.models import FitsFile, CalibrationMaster
+    
+    db_manager = get_db_manager()
+    
+    try:
+        session = db_manager.get_session()
+        
+        # Check in FitsFile table
+        fits_file = session.query(FitsFile).filter(FitsFile.path == file_path).first()
+        if fits_file:
+            session.close()
+            return True
+            
+        # Check in CalibrationMaster table
+        calib_file = session.query(CalibrationMaster).filter(CalibrationMaster.path == file_path).first()
+        if calib_file:
+            session.close()
+            return True
+            
+        session.close()
+        return False
+        
+    except Exception as e:
+        print(f"Error checking database for file {file_path}: {e}")
+        return False
+
+
+def get_file_database_info(file_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Get database information for a file if it exists in the database.
+    
+    Parameters:
+    -----------
+    file_path : str
+        Full path to the FITS file to check
+        
+    Returns:
+    --------
+    Optional[Dict[str, Any]]
+        Dictionary with database info if file exists, None otherwise
+    """
+    from lib.db.main import get_db_manager
+    from lib.db.models import FitsFile, CalibrationMaster
+    
+    db_manager = get_db_manager()
+    
+    try:
+        session = db_manager.get_session()
+        
+        # Check in FitsFile table
+        fits_file = session.query(FitsFile).filter(FitsFile.path == file_path).first()
+        if fits_file:
+            result = {
+                'table': 'FitsFile',
+                'id': fits_file.id,
+                'path': fits_file.path,
+                'target': fits_file.target,
+                'date_obs': fits_file.date_obs,
+                'exptime': fits_file.exptime,
+                'filter_name': fits_file.filter_name,
+                'binning': fits_file.binning,
+                'size_x': fits_file.size_x,
+                'size_y': fits_file.size_y
+            }
+            session.close()
+            return result
+            
+        # Check in CalibrationMaster table
+        calib_file = session.query(CalibrationMaster).filter(CalibrationMaster.path == file_path).first()
+        if calib_file:
+            result = {
+                'table': 'CalibrationMaster',
+                'id': calib_file.id,
+                'path': calib_file.path,
+                'frame': calib_file.frame,
+                'date': calib_file.date
+            }
+            session.close()
+            return result
+            
+        session.close()
+        return None
+        
+    except Exception as e:
+        print(f"Error getting database info for file {file_path}: {e}")
+        return None 
+
+def rescan_single_file(file_path: str) -> Dict[str, Any]:
+    """
+    Re-scan a single FITS file and update its database entry.
+    
+    Parameters:
+    -----------
+    file_path : str
+        Full path to the FITS file to re-scan
+        
+    Returns:
+    --------
+    Dict[str, Any]
+        Dictionary with scan results including success status and updated fields
+    """
+    from lib.db.main import get_db_manager
+    from lib.db.models import FitsFile, CalibrationMaster
+    from astropy.io import fits
+    from astropy.wcs import WCS
+    from astropy.wcs.utils import proj_plane_pixel_scales
+    from datetime import datetime
+    import os
+    
+    db_manager = get_db_manager()
+    
+    try:
+        # Check if file exists in filesystem
+        if not os.path.exists(file_path):
+            return {
+                'success': False,
+                'message': f"File not found: {file_path}",
+                'file_updated': False
+            }
+        
+        # Get current database info
+        db_info = get_file_database_info(file_path)
+        if not db_info:
+            return {
+                'success': False,
+                'message': f"File not found in database: {file_path}",
+                'file_updated': False
+            }
+        
+        # Read FITS header
+        with fits.open(file_path) as hdu:
+            header = hdu[0].header
+            data = hdu[0].data
+            
+            # Get basic file info
+            file_size = os.path.getsize(file_path)
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+            
+            # Extract header values with defaults
+            date_obs_str = header.get('DATE-OBS', '')
+            target = header.get('OBJECT', '')
+            filter_name = header.get('FILTER', '')
+            exptime = header.get('EXPTIME', 0.0)
+            gain = header.get('GAIN', 0.0)
+            offset = header.get('OFFSET', 0.0)
+            focus_position = header.get('FOCUSPOS', 0)
+            ccd_temp = header.get('CCD-TEMP', 0.0)
+            
+            # Handle binning - convert to strings first
+            xbin = str(header.get('XBINNING', 1))
+            ybin = str(header.get('YBINNING', 1))
+            binning = f"{xbin}x{ybin}"
+            
+            # Image dimensions
+            size_x = header.get('NAXIS1', 0)
+            size_y = header.get('NAXIS2', 0)
+            
+            # WCS information
+            wcs_type = 'none'
+            image_scale = None
+            ra_center = None
+            dec_center = None
+            
+            try:
+                wcs = WCS(header)
+                if wcs.is_celestial:
+                    wcs_type = 'celestial'
+                    # Calculate pixel scale
+                    pixel_scales = proj_plane_pixel_scales(wcs)
+                    image_scale = pixel_scales[0] * 3600  # Convert to arcsec/pixel
+                    
+                    # Get center coordinates
+                    center_x = size_x / 2
+                    center_y = size_y / 2
+                    ra_center, dec_center = wcs.all_pix2world(center_x, center_y, 0)
+            except:
+                pass
+            
+            # Parse date
+            date_obs = None
+            if date_obs_str:
+                try:
+                    # Try different date formats
+                    for fmt in ['%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%d %H:%M:%S']:
+                        try:
+                            date_obs = datetime.strptime(date_obs_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                except:
+                    pass
+        
+        session = db_manager.get_session()
+        
+        try:
+            if db_info['table'] == 'FitsFile':
+                # Update FitsFile entry
+                fits_file = session.query(FitsFile).filter(FitsFile.id == db_info['id']).first()
+                if fits_file:
+                    # Update all fields
+                    fits_file.date_obs = date_obs
+                    fits_file.target = target
+                    fits_file.filter_name = filter_name
+                    fits_file.exptime = exptime
+                    fits_file.gain = gain
+                    fits_file.offset = offset
+                    fits_file.focus_position = focus_position
+                    fits_file.ccd_temp = ccd_temp
+                    fits_file.binning = binning
+                    fits_file.size_x = size_x
+                    fits_file.size_y = size_y
+                    fits_file.image_scale = image_scale
+                    fits_file.ra_center = ra_center
+                    fits_file.dec_center = dec_center
+                    fits_file.wcs_type = wcs_type
+                    
+                    session.commit()
+                    
+                    return {
+                        'success': True,
+                        'message': f"Successfully updated FitsFile entry (ID: {fits_file.id})",
+                        'file_updated': True,
+                        'table': 'FitsFile',
+                        'id': fits_file.id,
+                        'updated_fields': {
+                            'date_obs': date_obs,
+                            'target': target,
+                            'filter_name': filter_name,
+                            'exptime': exptime,
+                            'wcs_type': wcs_type,
+                            'image_scale': image_scale,
+                            'ra_center': ra_center,
+                            'dec_center': dec_center
+                        }
+                    }
+                else:
+                    session.rollback()
+                    return {
+                        'success': False,
+                        'message': f"FitsFile entry not found in database (ID: {db_info['id']})",
+                        'file_updated': False
+                    }
+                    
+            elif db_info['table'] == 'CalibrationMaster':
+                # Update CalibrationMaster entry
+                calib_file = session.query(CalibrationMaster).filter(CalibrationMaster.id == db_info['id']).first()
+                if calib_file:
+                    # Update all fields
+                    calib_file.date = date_obs.strftime('%Y-%m-%d') if date_obs else ''
+                    calib_file.filter_name = filter_name
+                    calib_file.exptime = exptime
+                    calib_file.gain = gain
+                    calib_file.offset = offset
+                    calib_file.focus_position = focus_position
+                    calib_file.ccd_temp = ccd_temp
+                    calib_file.binning = binning
+                    calib_file.size_x = size_x
+                    calib_file.size_y = size_y
+                    
+                    session.commit()
+                    
+                    return {
+                        'success': True,
+                        'message': f"Successfully updated CalibrationMaster entry (ID: {calib_file.id})",
+                        'file_updated': True,
+                        'table': 'CalibrationMaster',
+                        'id': calib_file.id,
+                        'updated_fields': {
+                            'date': calib_file.date,
+                            'filter_name': filter_name,
+                            'exptime': exptime,
+                            'frame': calib_file.frame
+                        }
+                    }
+                else:
+                    session.rollback()
+                    return {
+                        'success': False,
+                        'message': f"CalibrationMaster entry not found in database (ID: {db_info['id']})",
+                        'file_updated': False
+                    }
+            else:
+                session.rollback()
+                return {
+                    'success': False,
+                    'message': f"Unknown table type: {db_info['table']}",
+                    'file_updated': False
+                }
+                
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+            
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f"Error re-scanning file: {e}",
+            'file_updated': False
+        } 

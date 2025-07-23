@@ -746,6 +746,40 @@ def solve_single_image(fits_file_path: str,
         if solve_result.pixel_scale:
             print(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {solve_result.pixel_scale:.3f} arcsec/pixel{Style.RESET_ALL}")
         
+        # Check if file is in database and update if needed
+        print(f"{Style.BRIGHT + Fore.BLUE}Checking database status...{Style.RESET_ALL}")
+        try:
+            from lib.db.scan import is_file_in_database, get_file_database_info, rescan_single_file
+            
+            if is_file_in_database(fits_file_path):
+                db_info = get_file_database_info(fits_file_path)
+                if db_info:
+                    print(f"{Style.BRIGHT + Fore.BLUE}   File is present in database ({db_info['table']} table, ID: {db_info['id']}){Style.RESET_ALL}")
+                    
+                    # Re-scan the file to update database with new WCS information
+                    print(f"{Style.BRIGHT + Fore.BLUE}Updating database entry...{Style.RESET_ALL}")
+                    rescan_result = rescan_single_file(fits_file_path)
+                    
+                    if rescan_result['success']:
+                        print(f"{Style.BRIGHT + Fore.GREEN}   Successfully updated database entry{Style.RESET_ALL}")
+                        if rescan_result.get('updated_fields'):
+                            updated_fields = rescan_result['updated_fields']
+                            if 'wcs_type' in updated_fields and updated_fields['wcs_type'] == 'celestial':
+                                print(f"{Style.BRIGHT + Fore.GREEN}   WCS type: {updated_fields['wcs_type']}{Style.RESET_ALL}")
+                            if 'image_scale' in updated_fields and updated_fields['image_scale']:
+                                print(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {updated_fields['image_scale']:.3f} arcsec/pixel{Style.RESET_ALL}")
+                            if 'ra_center' in updated_fields and updated_fields['ra_center']:
+                                print(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={updated_fields['ra_center']:.4f}°, Dec={updated_fields['dec_center']:.4f}°{Style.RESET_ALL}")
+                    else:
+                        print(f"{Style.BRIGHT + Fore.RED}   Error updating database: {rescan_result['message']}{Style.RESET_ALL}")
+                else:
+                    print(f"{Style.BRIGHT + Fore.YELLOW}   File is not present in database{Style.RESET_ALL}")
+            else:
+                print(f"{Style.BRIGHT + Fore.YELLOW}   File is not present in database{Style.RESET_ALL}")
+                
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}   Error checking/updating database: {e}{Style.RESET_ALL}")
+        
         return solve_result
         
     except Exception as e:
