@@ -369,7 +369,15 @@ class MainFitsTableWidget(QTableWidget):
             
             menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
         elif len(selected_files) > 1:
-            menu = build_multi_file_menu(self)
+            def load_in_viewer():
+                import sys, subprocess
+                fits_paths = [f.path for f in selected_files]
+                subprocess.Popen([
+                    sys.executable,
+                    'lib/gui/viewer/index.py',
+                    *fits_paths
+                ])
+            menu = build_multi_file_menu(self, load_in_viewer_callback=load_in_viewer)
         else:
             menu = build_empty_menu(self)
         menu.exec(self.viewport().mapToGlobal(pos))

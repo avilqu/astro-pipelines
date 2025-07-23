@@ -44,9 +44,17 @@ def build_calibration_single_file_menu(parent=None, show_header_callback=None, s
     menu.addAction(show_header_action)
     return menu
 
-def build_multi_file_menu(parent=None):
+def build_multi_file_menu(parent=None, load_in_viewer_callback=None):
     menu = QMenu(parent)
-    menu.addAction("No actions available (multiple files)")
+    if load_in_viewer_callback:
+        load_action = QAction("Load files in FITS viewer", menu)
+        font = load_action.font()
+        font.setBold(True)
+        load_action.setFont(font)
+        load_action.triggered.connect(load_in_viewer_callback)
+        menu.addAction(load_action)
+    else:
+        menu.addAction("No actions available (multiple files)")
     return menu
 
 def build_empty_menu(parent=None):

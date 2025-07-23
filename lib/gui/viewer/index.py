@@ -26,6 +26,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.setWindowTitle("Astropipes FITS Viewer")
         self.setGeometry(100, 100, 1000, 800)
 
+        # --- Multi-file support ---
+        self.loaded_files = []  # List of file paths
+        self.current_file_index = -1  # Index of currently displayed file
+
         self.astrometry_catalog = AstrometryCatalog()
         self.pixmap = None  # For ImageLabel compatibility
         self.wcs = None    # For ImageLabel compatibility
@@ -35,6 +39,46 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.setMovable(False)  # Disable moving the toolbar
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)  # Remove handle visual
         self.addToolBar(self.toolbar)
+
+        # --- Navigation buttons grouped at right end ---
+        from PyQt6.QtGui import QIcon
+        from PyQt6.QtWidgets import QLabel as QtLabel, QWidget, QHBoxLayout, QSpacerItem, QSizePolicy, QToolButton
+        left_icon = QIcon.fromTheme("go-previous")
+        if left_icon.isNull():
+            left_icon = QIcon.fromTheme("arrow-left")
+        self.prev_action = QAction(left_icon, "Previous", self)
+        self.prev_action.setToolTip("Show previous FITS file")
+        self.prev_action.triggered.connect(self.show_previous_file)
+        right_icon = QIcon.fromTheme("go-next")
+        if right_icon.isNull():
+            right_icon = QIcon.fromTheme("arrow-right")
+        self.next_action = QAction(right_icon, "Next", self)
+        self.next_action.setToolTip("Show next FITS file")
+        self.next_action.triggered.connect(self.show_next_file)
+        self.image_count_label = QtLabel("- / -", self)
+        self.image_count_label.setMinimumWidth(50)
+        # Create a QWidget with QHBoxLayout to hold the navigation controls
+        nav_widget = QWidget(self)
+        from PyQt6.QtWidgets import QGridLayout
+        nav_layout = QGridLayout()
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setHorizontalSpacing(4)
+        # Previous button
+        self.prev_button = QToolButton(self)
+        self.prev_button.setDefaultAction(self.prev_action)
+        self.prev_button.setFixedSize(32, 32)
+        nav_layout.addWidget(self.prev_button, 0, 0)
+        # Image count label (fixed width for e.g. '100 / 100')
+        self.image_count_label.setFixedWidth(60)
+        nav_layout.addWidget(self.image_count_label, 0, 1, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
+        # Next button
+        self.next_button = QToolButton(self)
+        self.next_button.setDefaultAction(self.next_action)
+        self.next_button.setFixedSize(32, 32)
+        nav_layout.addWidget(self.next_button, 0, 2)
+        nav_widget.setLayout(nav_layout)
+
+        # --- Existing toolbar buttons (left side) ---
         open_icon = QIcon.fromTheme("document-open")
         if open_icon.isNull():
             open_icon = QIcon.fromTheme("folder-open")
@@ -83,6 +127,12 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.overlay_toggle_action.setVisible(False)
         self.overlay_toggle_action.triggered.connect(self.toggle_overlay_visibility)
         self.toolbar.addAction(self.overlay_toggle_action)
+
+        # Add a spacer to push nav_widget to the right
+        spacer = QWidget(self)
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.toolbar.addWidget(spacer)
+        self.toolbar.addWidget(nav_widget)
         # Remove sidebar and use only scroll_area as central widget
         self.scroll_area = NoWheelScrollArea()
         self.scroll_area.setWidgetResizable(False)
@@ -100,9 +150,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.coord_label.setVisible(False)
         self._overlay_visible = True
         if fits_path:
-            self._pending_zoom_to_fit = True
-            self.load_fits(fits_path)
+            self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
+        self.update_navigation_buttons()
         # Status bar: coordinates (left), pixel value (right)
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -116,7 +166,49 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def open_file_dialog(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open FITS file", "", "FITS files (*.fits *.fit *.fts);;All files (*)")
         if file_path:
-            self.load_fits(file_path)
+            self.open_and_add_file(file_path)
+
+    def open_and_add_file(self, fits_path):
+        # If already loaded, just switch to it
+        if fits_path in self.loaded_files:
+            self.current_file_index = self.loaded_files.index(fits_path)
+            self.load_fits(fits_path)
+        else:
+            self.loaded_files.append(fits_path)
+            self.current_file_index = len(self.loaded_files) - 1
+            self.load_fits(fits_path)
+        self.update_navigation_buttons()
+        self.update_image_count_label()
+
+    def show_previous_file(self):
+        if self.current_file_index > 0:
+            self.current_file_index -= 1
+            self.load_fits(self.loaded_files[self.current_file_index])
+            self.update_navigation_buttons()
+            self.update_image_count_label()
+
+    def show_next_file(self):
+        if self.current_file_index < len(self.loaded_files) - 1:
+            self.current_file_index += 1
+            self.load_fits(self.loaded_files[self.current_file_index])
+            self.update_navigation_buttons()
+            self.update_image_count_label()
+
+    def update_navigation_buttons(self):
+        n = len(self.loaded_files)
+        self.prev_action.setEnabled(n > 1 and self.current_file_index > 0)
+        self.next_action.setEnabled(n > 1 and self.current_file_index < n - 1)
+        self.prev_button.setEnabled(self.prev_action.isEnabled())
+        self.next_button.setEnabled(self.next_action.isEnabled())
+        self.update_image_count_label()
+
+    def update_image_count_label(self):
+        n = len(self.loaded_files)
+        if n == 0:
+            self.image_count_label.setText("- / -")
+        else:
+            # Displayed as 1-based index
+            self.image_count_label.setText(f"{self.current_file_index + 1} / {n}")
 
     def set_linear_stretch(self):
         self.stretch_mode = 'linear'
@@ -241,6 +333,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._simbad_overlay = None
             self._overlay_visible = True
             self.update_overlay_button_visibility()
+        self.update_navigation_buttons()
+        self.update_image_count_label()
 
     def show_header_dialog(self):
         if hasattr(self, '_current_header') and self._current_header:
@@ -272,9 +366,17 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.update_overlay_button_visibility()
 
 def main():
-    fits_path = sys.argv[1] if len(sys.argv) > 1 else None
+    fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []
     app = QApplication(sys.argv)
-    viewer = SimpleFITSViewer(fits_path)
+    viewer = SimpleFITSViewer()
+    if fits_paths:
+        for i, path in enumerate(fits_paths):
+            viewer.open_and_add_file(path)
+        # Show the first file
+        if viewer.loaded_files:
+            viewer.current_file_index = 0
+            viewer.load_fits(viewer.loaded_files[0])
+            viewer.update_navigation_buttons()
     viewer.show()
     # Ensure zoom to fit is called after the window is visible
     QTimer.singleShot(0, viewer.zoom_to_fit)
