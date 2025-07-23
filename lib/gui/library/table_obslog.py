@@ -14,6 +14,46 @@ import json
 from astropy.io import fits
 from lib.gui.common.header_viewer import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
+import sys
+import io
+import threading
+from contextlib import redirect_stdout, redirect_stderr
+from lib.astrometry import solve_single_image, PlatesolvingResult
+from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import QMessageBox
+from lib.gui.common.console_output import ConsoleOutputWindow, RealTimeStringIO
+import signal
+
+
+class PlatesolvingThread(QThread):
+    output = pyqtSignal(str)
+    finished = pyqtSignal(object)  # Emits PlatesolvingResult
+
+    def __init__(self, fits_file_path):
+        super().__init__()
+        self.fits_file_path = fits_file_path
+        self._process = None
+        self._should_stop = False
+
+    def set_process(self, process):
+        self._process = process
+
+    def stop(self):
+        self._should_stop = True
+        if self._process is not None:
+            try:
+                self.output.emit("\nCancelling platesolving...\n")
+                self._process.send_signal(signal.SIGINT)
+            except Exception as e:
+                self.output.emit(f"\nError sending cancel signal: {e}\n")
+
+    def run(self):
+        def output_callback(line):
+            self.output.emit(line)
+        def process_callback(process):
+            self.set_process(process)
+        result = solve_single_image(self.fits_file_path, output_callback=output_callback, process_callback=process_callback)
+        self.finished.emit(result)
 
 
 class RunSummaryWidget(QWidget):
@@ -633,6 +673,31 @@ class FitsTableWidget(QTableWidget):
         if self.fits_files:
             self.populate_table(self.fits_files) 
 
+    def _format_platesolving_result(self, result):
+        """Format platesolving result into a user-friendly message."""
+        if result.success:
+            success_msg = "Image successfully solved!\n\n"
+            if result.ra_center is not None and result.dec_center is not None:
+                success_msg += f"Center: RA={result.ra_center:.4f}°, Dec={result.dec_center:.4f}°\n"
+            else:
+                success_msg += "Center: Unknown\n"
+            if result.pixel_scale is not None:
+                success_msg += f"Pixel scale: {result.pixel_scale:.3f} arcsec/pixel\n"
+            else:
+                success_msg += "Pixel scale: Unknown\n"
+            return success_msg
+        else:
+            return f"Could not solve image: {result.message}"
+
+    def _on_platesolving_finished(self, result):
+        """Handle platesolving completion."""
+        if result.success:
+            QMessageBox.information(self, "Platesolving Success", self._format_platesolving_result(result))
+            # Refresh the table to show updated WCS information
+            self.refresh_table()
+        else:
+            QMessageBox.warning(self, "Platesolving Failed", self._format_platesolving_result(result))
+
     def _show_context_menu(self, pos):
         """Show a context menu depending on the selection."""
         selected_files = self.get_selected_fits_files()
@@ -655,7 +720,23 @@ class FitsTableWidget(QTableWidget):
                     'lib/gui/viewer/main_viewer.py',
                     fits_path
                 ])
-            menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
+            def solve_image():
+                fits_file = selected_files[0]
+                fits_path = fits_file.path
+                
+                # Create console output window
+                self.console_window = ConsoleOutputWindow("Platesolving Console", self)
+                self.console_window.show_and_raise()
+                
+                # Create and start the platesolving thread
+                self.platesolving_thread = PlatesolvingThread(fits_path)
+                self.platesolving_thread.output.connect(self.console_window.append_text)
+                self.platesolving_thread.finished.connect(self._on_platesolving_finished)
+                # Connect cancel button
+                self.console_window.cancel_requested.connect(self.platesolving_thread.stop)
+                
+                self.platesolving_thread.start()
+            menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
         elif len(selected_files) > 1:
             menu = build_multi_file_menu(self)
         else:

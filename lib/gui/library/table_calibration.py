@@ -4,6 +4,7 @@ from PyQt6.QtCore import Qt
 import os
 from datetime import datetime, date
 from lib.gui.common.header_viewer import HeaderViewer
+from lib.gui.common.console_output import ConsoleOutputWindow
 from .menu_context import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
 from PyQt6.QtGui import QColor
 
@@ -90,7 +91,21 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                         'lib/gui/viewer/main_viewer.py',
                         fits_path
                     ])
-            menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
+            def solve_image():
+                fits_path = getattr(cal, 'path', None)
+                if fits_path:
+                    # Create console output window
+                    self.console_window = ConsoleOutputWindow("Platesolving Console", self)
+                    self.console_window.show_and_raise()
+                    
+                    # Create and start the platesolving thread
+                    from .table_main import PlatesolvingThread
+                    self.platesolving_thread = PlatesolvingThread(fits_path)
+                    self.platesolving_thread.output.connect(self.console_window.append_text)
+                    self.platesolving_thread.finished.connect(self._on_platesolving_finished)
+                    
+                    self.platesolving_thread.start()
+            menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
             menu.exec(self.viewport().mapToGlobal(pos))
             return
         # Fallback: use row under cursor
@@ -274,7 +289,21 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                         'lib/gui/viewer/main_viewer.py',
                         fits_path
                     ])
-            menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
+            def solve_image():
+                fits_path = getattr(cal, 'path', None)
+                if fits_path:
+                    # Create console output window
+                    self.console_window = ConsoleOutputWindow("Platesolving Console", self)
+                    self.console_window.show_and_raise()
+                    
+                    # Create and start the platesolving thread
+                    from .table_main import PlatesolvingThread
+                    self.platesolving_thread = PlatesolvingThread(fits_path)
+                    self.platesolving_thread.output.connect(self.console_window.append_text)
+                    self.platesolving_thread.finished.connect(self._on_platesolving_finished)
+                    
+                    self.platesolving_thread.start()
+            menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
             menu.exec(self.viewport().mapToGlobal(pos))
         elif len(selected_files) > 1:
             menu = build_empty_menu(self)
@@ -422,8 +451,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                     header = {"Error": str(e)}
                 dlg = HeaderViewer(header, self)
                 dlg.exec()
-            def show_image(menu):
-                menu.close()
+            def show_image():
                 import sys, subprocess
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
@@ -432,7 +460,21 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                         'lib/gui/viewer/main_viewer.py',
                         fits_path
                     ])
-            menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=lambda: show_image(menu))
+            def solve_image():
+                fits_path = getattr(cal, 'path', None)
+                if fits_path:
+                    # Create console output window
+                    self.console_window = ConsoleOutputWindow("Platesolving Console", self)
+                    self.console_window.show_and_raise()
+                    
+                    # Create and start the platesolving thread
+                    from .table_main import PlatesolvingThread
+                    self.platesolving_thread = PlatesolvingThread(fits_path)
+                    self.platesolving_thread.output.connect(self.console_window.append_text)
+                    self.platesolving_thread.finished.connect(self._on_platesolving_finished)
+                    
+                    self.platesolving_thread.start()
+            menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
             menu.exec(self.viewport().mapToGlobal(pos))
         elif len(selected_files) > 1:
             menu = build_empty_menu(self)
