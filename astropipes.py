@@ -14,6 +14,7 @@ if __name__ == "__main__":
     from colorama import Fore, Style
     import warnings
     import logging
+    import traceback
 
     # Silencing warning and info messages
     from astropy import wcs
@@ -53,7 +54,7 @@ if __name__ == "__main__":
         """Launch the PyQt6 GUI viewer"""
         try:
             from PyQt6.QtWidgets import QApplication
-            from lib.gui.library.main import AstroLibraryGUI
+            from lib.gui.library.index import AstroLibraryGUI
             
             app = QApplication(sys.argv)
             window = AstroLibraryGUI()
@@ -68,9 +69,11 @@ if __name__ == "__main__":
             print(f"{Style.BRIGHT + Fore.RED}Error: PyQt6 is required for GUI functionality.{Style.RESET_ALL}")
             print(f"Install with: pip install PyQt6")
             print(f"ImportError details: {e}")
+            traceback.print_exc()
             sys.exit(1)
         except Exception as e:
             print(f"{Style.BRIGHT + Fore.RED}Error launching GUI: {e}{Style.RESET_ALL}")
+            traceback.print_exc()
             sys.exit(1)
 
     def show_config():
@@ -140,7 +143,7 @@ if __name__ == "__main__":
     def solve_image():
         """Solve a single FITS image using astrometry.net"""
         try:
-            from lib.astrometry import solve_single_image
+            from lib.fits.astrometry import solve_single_image
             import os
             import logging
             

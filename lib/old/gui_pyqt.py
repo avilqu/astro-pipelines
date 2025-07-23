@@ -18,7 +18,7 @@ from .gui_widgets import ImageLabel, HeaderDialog, SolarSystemObjectsDialog, SIM
 from .gui_image_processing import (create_image_object, add_object_markers, get_cached_zoom,
                                   calculate_bit_depth, apply_auto_stretch, apply_no_stretch)
 from .gui_control_panel import create_control_panel, update_image_info, set_solve_button_solving, set_sso_button_searching
-from .astrometry import AstrometryCatalog
+from lib.fits.catalogs import AstrometryCatalog
 from .solver import solve_offline
 from .helpers import (extract_coordinates_from_header, calculate_field_radius, 
                      validate_wcs_solution, create_solver_options)

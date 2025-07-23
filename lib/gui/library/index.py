@@ -13,11 +13,11 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
 # Import our modular components
-from .database import DatabaseLoaderThread, DatabaseScannerThread, DatabaseManager
-from .table_obslog import FitsTableWidget
-from .table_main import MainFitsTableWidget
-from .left_panel import LeftPanel
-from .table_calibration import MasterDarksTableWidget, MasterBiasTableWidget, MasterFlatsTableWidget
+from .db_access import DatabaseLoaderThread, DatabaseScannerThread, DatabaseManager
+from .obslog import FitsTableWidget
+from .main_table import MainFitsTableWidget
+from .sidebar import LeftPanel
+from .calibration_tables import MasterDarksTableWidget, MasterBiasTableWidget, MasterFlatsTableWidget
 from lib.db import get_db_manager
 from lib.db.models import CalibrationMaster
 from lib.gui.library.menu_bar import create_menu_bar

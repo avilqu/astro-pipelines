@@ -10,15 +10,15 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, pyqtSignal as Signal
 from PyQt6.QtGui import QColor
-from .menu_context import build_single_file_menu, build_multi_file_menu, build_empty_menu
-from lib.gui.common.header_viewer import HeaderViewer
+from .context_dropdown import build_single_file_menu, build_multi_file_menu, build_empty_menu
+from lib.gui.common.header_window import HeaderViewer
 from lib.gui.common.console_window import ConsoleOutputWindow
 from lib.fits.header import get_fits_header_as_json
 import sys
 import io
 import threading
 from contextlib import redirect_stdout, redirect_stderr
-from lib.astrometry import solve_single_image, PlatesolvingResult
+from lib.fits.astrometry import solve_single_image, PlatesolvingResult
 import signal
 
 class PlatesolvingThread(QThread):
@@ -346,7 +346,7 @@ class MainFitsTableWidget(QTableWidget):
                 fits_path = fits_file.path
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/main_viewer.py',
+                    'lib/gui/viewer/index.py',
                     fits_path
                 ])
             def solve_image():
@@ -383,7 +383,7 @@ class MainFitsTableWidget(QTableWidget):
                 # Launch the simple FITS viewer as a subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/main_viewer.py',
+                    'lib/gui/viewer/index.py',
                     fits_path
                 ])
         super().mouseDoubleClickEvent(event) 

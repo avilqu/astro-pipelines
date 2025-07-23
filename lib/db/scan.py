@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from .main import get_db_manager
+from .manager import get_db_manager
 from ..fits import get_fits_header_as_json
 import config
 
@@ -368,7 +368,7 @@ def is_file_in_database(file_path: str) -> bool:
     bool
         True if the file exists in the database, False otherwise
     """
-    from lib.db.main import get_db_manager
+    from lib.db.manager import get_db_manager
     from lib.db.models import FitsFile, CalibrationMaster
     
     db_manager = get_db_manager()
@@ -410,7 +410,7 @@ def get_file_database_info(file_path: str) -> Optional[Dict[str, Any]]:
     Optional[Dict[str, Any]]
         Dictionary with database info if file exists, None otherwise
     """
-    from lib.db.main import get_db_manager
+    from lib.db.manager import get_db_manager
     from lib.db.models import FitsFile, CalibrationMaster
     
     db_manager = get_db_manager()
@@ -470,7 +470,7 @@ def rescan_single_file(file_path: str) -> Dict[str, Any]:
     Dict[str, Any]
         Dictionary with scan results including success status and updated fields
     """
-    from lib.db.main import get_db_manager
+    from lib.db.manager import get_db_manager
     from lib.db.models import FitsFile, CalibrationMaster
     from astropy.io import fits
     from astropy.wcs import WCS

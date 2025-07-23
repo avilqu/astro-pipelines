@@ -8,11 +8,11 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QScrollArea, QToolBar, QF
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction
 from lib.gui.viewer.overlay import ImageLabel
-from lib.gui_image_processing import create_image_object
+from lib.gui.viewer.display import create_image_object
 from lib.gui.viewer.navigation import NavigationMixin
-from lib.gui.common.header_viewer import HeaderViewer
+from lib.gui.common.header_window import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
-from lib.astrometry import AstrometryCatalog
+from lib.fits.catalogs import AstrometryCatalog
 from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel
 
 class NoWheelScrollArea(QScrollArea):

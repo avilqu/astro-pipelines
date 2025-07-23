@@ -9,16 +9,16 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel
 from PyQt6.QtGui import QFont, QPalette, QColor
-from .menu_context import build_single_file_menu, build_multi_file_menu, build_empty_menu
+from .context_dropdown import build_single_file_menu, build_multi_file_menu, build_empty_menu
 import json
 from astropy.io import fits
-from lib.gui.common.header_viewer import HeaderViewer
+from lib.gui.common.header_window import HeaderViewer
 from lib.fits.header import get_fits_header_as_json
 import sys
 import io
 import threading
 from contextlib import redirect_stdout, redirect_stderr
-from lib.astrometry import solve_single_image, PlatesolvingResult
+from lib.fits.astrometry import solve_single_image, PlatesolvingResult
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
 from lib.gui.common.console_window import ConsoleOutputWindow, RealTimeStringIO
@@ -717,7 +717,7 @@ class FitsTableWidget(QTableWidget):
                 fits_path = fits_file.path
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/main_viewer.py',
+                    'lib/gui/viewer/index.py',
                     fits_path
                 ])
             def solve_image():
@@ -753,7 +753,7 @@ class FitsTableWidget(QTableWidget):
                 import sys, subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/main_viewer.py',
+                    'lib/gui/viewer/index.py',
                     fits_path
                 ])
         super().mouseDoubleClickEvent(event) 

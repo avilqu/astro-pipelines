@@ -1,11 +1,11 @@
-from .table_main import MainFitsTableWidget
+from .main_table import MainFitsTableWidget
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import Qt
 import os
 from datetime import datetime, date
-from lib.gui.common.header_viewer import HeaderViewer
+from lib.gui.common.header_window import HeaderViewer
 from lib.gui.common.console_window import ConsoleOutputWindow
-from .menu_context import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
+from .context_dropdown import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
 from PyQt6.QtGui import QColor
 
 class MasterDarksTableWidget(MainFitsTableWidget):
@@ -88,7 +88,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/main_viewer.py',
+                        'lib/gui/viewer/index.py',
                         fits_path
                     ])
             def solve_image():
@@ -99,7 +99,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     self.console_window.show_and_raise()
                     
                     # Create and start the platesolving thread
-                    from .table_main import PlatesolvingThread
+                    from .main_table import PlatesolvingThread
                     self.platesolving_thread = PlatesolvingThread(fits_path)
                     self.platesolving_thread.output.connect(self.console_window.append_text)
                     self.platesolving_thread.finished.connect(self._on_platesolving_finished)
@@ -131,7 +131,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     if fits_path:
                         subprocess.Popen([
                             sys.executable,
-                            'lib/gui/viewer/main_viewer.py',
+                            'lib/gui/viewer/index.py',
                             fits_path
                         ])
                 menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -204,7 +204,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/main_viewer.py',
+                        'lib/gui/viewer/index.py',
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event)
@@ -286,7 +286,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/main_viewer.py',
+                        'lib/gui/viewer/index.py',
                         fits_path
                     ])
             def solve_image():
@@ -297,7 +297,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                     self.console_window.show_and_raise()
                     
                     # Create and start the platesolving thread
-                    from .table_main import PlatesolvingThread
+                    from .main_table import PlatesolvingThread
                     self.platesolving_thread = PlatesolvingThread(fits_path)
                     self.platesolving_thread.output.connect(self.console_window.append_text)
                     self.platesolving_thread.finished.connect(self._on_platesolving_finished)
@@ -372,7 +372,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                     import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/main_viewer.py',
+                        'lib/gui/viewer/index.py',
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event)
@@ -457,7 +457,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/main_viewer.py',
+                        'lib/gui/viewer/index.py',
                         fits_path
                     ])
             def solve_image():
@@ -468,7 +468,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                     self.console_window.show_and_raise()
                     
                     # Create and start the platesolving thread
-                    from .table_main import PlatesolvingThread
+                    from .main_table import PlatesolvingThread
                     self.platesolving_thread = PlatesolvingThread(fits_path)
                     self.platesolving_thread.output.connect(self.console_window.append_text)
                     self.platesolving_thread.finished.connect(self._on_platesolving_finished)
@@ -559,7 +559,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                     import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/main_viewer.py',
+                        'lib/gui/viewer/index.py',
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event) 
