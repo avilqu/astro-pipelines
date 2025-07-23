@@ -39,7 +39,7 @@ class AstroLibraryGUI(QMainWindow):
     def init_ui(self):
         """Initialize the user interface."""
         # Set window properties
-        self.setWindowTitle("Astropipes Library")
+        self.setWindowTitle("Astropipes FITS Library")
         self.setGeometry(100, 100, 1200, 800)
         
         # Create menu bar using the new function

@@ -23,37 +23,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
 from lib.gui.common.console_window import ConsoleOutputWindow, RealTimeStringIO
 import signal
-
-
-class PlatesolvingThread(QThread):
-    output = pyqtSignal(str)
-    finished = pyqtSignal(object)  # Emits PlatesolvingResult
-
-    def __init__(self, fits_file_path):
-        super().__init__()
-        self.fits_file_path = fits_file_path
-        self._process = None
-        self._should_stop = False
-
-    def set_process(self, process):
-        self._process = process
-
-    def stop(self):
-        self._should_stop = True
-        if self._process is not None:
-            try:
-                self.output.emit("\nCancelling platesolving...\n")
-                self._process.send_signal(signal.SIGINT)
-            except Exception as e:
-                self.output.emit(f"\nError sending cancel signal: {e}\n")
-
-    def run(self):
-        def output_callback(line):
-            self.output.emit(line)
-        def process_callback(process):
-            self.set_process(process)
-        result = solve_single_image(self.fits_file_path, output_callback=output_callback, process_callback=process_callback)
-        self.finished.emit(result)
+from .platesolving_thread import PlatesolvingThread
 
 
 class RunSummaryWidget(QWidget):
@@ -739,6 +709,7 @@ class FitsTableWidget(QTableWidget):
                 self.platesolving_thread.start()
             menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
         elif len(selected_files) > 1:
+            from .context_dropdown import platesolve_multiple_files
             def load_in_viewer():
                 import sys, subprocess
                 fits_paths = [f.path for f in selected_files]
@@ -747,7 +718,9 @@ class FitsTableWidget(QTableWidget):
                     'lib/gui/viewer/index.py',
                     *fits_paths
                 ])
-            menu = build_multi_file_menu(self, load_in_viewer_callback=load_in_viewer)
+            def platesolve_all():
+                platesolve_multiple_files(self, selected_files, on_all_finished=lambda results: self.platesolving_completed.emit())
+            menu = build_multi_file_menu(self, load_in_viewer_callback=load_in_viewer, platesolve_all_callback=platesolve_all)
         else:
             menu = build_empty_menu(self)
         menu.exec(self.viewport().mapToGlobal(pos)) 
