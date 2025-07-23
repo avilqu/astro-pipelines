@@ -216,7 +216,15 @@ def extract_existing_wcs_from_header(header: fits.Header) -> Optional[Dict[str, 
     for keyword in wcs_keywords:
         if keyword in header:
             existing_wcs[keyword] = header[keyword]
-    
+    # --- SIP extraction ---
+    for key in header:
+        if (
+            key.startswith("A_") or key.startswith("B_") or
+            key.startswith("AP_") or key.startswith("BP_") or
+            key.endswith("_ORDER")
+        ):
+            existing_wcs[key] = header[key]
+    # --- END SIP extraction ---
     if existing_wcs:
         print(f"   Found existing WCS with {len(existing_wcs)} keywords")
         if 'CRVAL1' in existing_wcs and 'CRVAL2' in existing_wcs:
@@ -355,7 +363,15 @@ def extract_wcs_from_file(wcs_file_path: str) -> Dict[str, Union[str, float, int
             if keyword in wcs_header:
                 extracted_wcs[keyword] = wcs_header[keyword]
                 # print(f"Extracted {keyword}: {wcs_header[keyword]}")  # Debug info removed
-        
+        # --- SIP extraction ---
+        for key in wcs_header:
+            if (
+                key.startswith("A_") or key.startswith("B_") or
+                key.startswith("AP_") or key.startswith("BP_") or
+                key.endswith("_ORDER")
+            ):
+                extracted_wcs[key] = wcs_header[key]
+        # --- END SIP extraction ---
         # Log summary of extracted WCS
         if extracted_wcs:
             print(f"   Extracted {len(extracted_wcs)} WCS keywords")

@@ -122,6 +122,7 @@ class AstrometryEngine:
                 "--no-verify",
                 "--overwrite",
                 "--downsample", "2",
+                # "-t", "3",
                 "--new-fits", new_filename,
                 fits_file_path
             ]

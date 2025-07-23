@@ -1,9 +1,4 @@
 astropipes.db
 .venv/
-notebooks/
-.ipynb_checkpoints/
 __pycache__/
-testing.ipynb
 sample/
-solved/
-calibrated/

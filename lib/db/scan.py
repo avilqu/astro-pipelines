@@ -96,7 +96,7 @@ class FitsFileScanner:
                         error_msg = f"Error processing {fits_file}: {e}"
                         results['errors'].append(error_msg)
                         if verbose:
-                            print(f"    ❌ {error_msg}")
+                            print(f"{error_msg}")
         
         # Convert sets to lists for JSON serialization
         results['targets_found'] = list(results['targets_found'])
@@ -527,19 +527,19 @@ def rescan_single_file(file_path: str) -> Dict[str, Any]:
             size_y = header.get('NAXIS2', 0)
             
             # WCS information
-            wcs_type = 'none'
+            # wcs_type = 'none'
             image_scale = None
             ra_center = None
             dec_center = None
             
+            wcs_type = header.get('CTYPE1', None)
+            
             try:
                 wcs = WCS(header)
                 if wcs.is_celestial:
-                    wcs_type = 'celestial'
                     # Calculate pixel scale
                     pixel_scales = proj_plane_pixel_scales(wcs)
                     image_scale = pixel_scales[0] * 3600  # Convert to arcsec/pixel
-                    
                     # Get center coordinates
                     center_x = size_x / 2
                     center_y = size_y / 2
