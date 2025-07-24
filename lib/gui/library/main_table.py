@@ -22,6 +22,7 @@ from lib.fits.astrometry import solve_single_image, PlatesolvingResult
 import signal
 from .platesolving_thread import PlatesolvingThread
 from config import to_display_time
+from astropipes import VIEWER_PATH
 
 class MainFitsTableWidget(QTableWidget):
     """Table widget for displaying FITS files in a flat, sortable table."""
@@ -329,9 +330,10 @@ class MainFitsTableWidget(QTableWidget):
             def show_image():
                 fits_file = selected_files[0]
                 fits_path = fits_file.path
+                import sys, subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/index.py',
+                    '-m', 'lib.gui.viewer.index',
                     fits_path
                 ])
             def solve_image():
@@ -352,20 +354,18 @@ class MainFitsTableWidget(QTableWidget):
                 fits_file = selected_files[0]
                 
                 def show_file_in_viewer(file_path):
-                    import subprocess
-                    import sys
+                    import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         file_path
                     ])
                 
                 def show_both_files_in_viewer(original_path, calibrated_path):
-                    import subprocess
-                    import sys
+                    import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         original_path,
                         calibrated_path
                     ])
@@ -382,7 +382,7 @@ class MainFitsTableWidget(QTableWidget):
                 fits_paths = [f.path for f in sorted_files]
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/index.py',
+                    '-m', 'lib.gui.viewer.index',
                     *fits_paths
                 ])
             def platesolve_all():
@@ -399,10 +399,10 @@ class MainFitsTableWidget(QTableWidget):
             if data and 'is_file' in data and 'fits_file' in data:
                 fits_file = data['fits_file']
                 fits_path = fits_file.path
-                # Launch the simple FITS viewer as a subprocess
+                import sys, subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/index.py',
+                    '-m', 'lib.gui.viewer.index',
                     fits_path
                 ])
         super().mouseDoubleClickEvent(event) 

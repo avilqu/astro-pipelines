@@ -4,10 +4,21 @@
     @author: A. Vilquin Barrajon <avilqu@gmail.com>
 """
 
+import os
+import sys
+
+# --- ADD THIS BLOCK IMMEDIATELY AFTER THE ABOVE IMPORTS ---
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+# ----------------------------------------------------------
+
 # Initialize database
 from lib.db import get_db_manager
 import config
 db_manager = get_db_manager(config.DATABASE_PATH)
+
+VIEWER_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 'lib/gui/viewer/index.py'))
 
 if __name__ == "__main__":
     import argparse

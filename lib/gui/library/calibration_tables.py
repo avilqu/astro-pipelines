@@ -89,7 +89,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         fits_path
                     ])
             def solve_image():
@@ -132,7 +132,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     if fits_path:
                         subprocess.Popen([
                             sys.executable,
-                            'lib/gui/viewer/index.py',
+                            '-m', 'lib.gui.viewer.index',
                             fits_path
                         ])
                 menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
@@ -209,7 +209,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event)
@@ -295,7 +295,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         fits_path
                     ])
             def solve_image():
@@ -385,7 +385,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                     import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event)
@@ -474,7 +474,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 if fits_path:
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         fits_path
                     ])
             def solve_image():
@@ -580,7 +580,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                     import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         fits_path
                     ])
         super().mouseDoubleClickEvent(event) 

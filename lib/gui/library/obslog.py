@@ -25,6 +25,7 @@ from lib.gui.common.console_window import ConsoleOutputWindow, RealTimeStringIO
 import signal
 from .platesolving_thread import PlatesolvingThread
 from config import to_display_time
+from astropipes import VIEWER_PATH
 
 
 class RunSummaryWidget(QWidget):
@@ -714,7 +715,7 @@ class FitsTableWidget(QTableWidget):
                 fits_path = fits_file.path
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/index.py',
+                    '-m', 'lib.gui.viewer.index',
                     fits_path
                 ])
             def solve_image():
@@ -738,20 +739,18 @@ class FitsTableWidget(QTableWidget):
                 fits_file = selected_files[0]
                 
                 def show_file_in_viewer(file_path):
-                    import subprocess
-                    import sys
+                    import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         file_path
                     ])
                 
                 def show_both_files_in_viewer(original_path, calibrated_path):
-                    import subprocess
-                    import sys
+                    import sys, subprocess
                     subprocess.Popen([
                         sys.executable,
-                        'lib/gui/viewer/index.py',
+                        '-m', 'lib.gui.viewer.index',
                         original_path,
                         calibrated_path
                     ])
@@ -768,7 +767,7 @@ class FitsTableWidget(QTableWidget):
                 fits_paths = [f.path for f in sorted_files]
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/index.py',
+                    '-m', 'lib.gui.viewer.index',
                     *fits_paths
                 ])
             def platesolve_all():
@@ -788,7 +787,7 @@ class FitsTableWidget(QTableWidget):
                 import sys, subprocess
                 subprocess.Popen([
                     sys.executable,
-                    'lib/gui/viewer/index.py',
+                    '-m', 'lib.gui.viewer.index',
                     fits_path
                 ])
         super().mouseDoubleClickEvent(event) 

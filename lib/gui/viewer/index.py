@@ -245,6 +245,26 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.widgetForAction(self.overlay_toggle_action).setFixedSize(32, 32)
 
         self.toolbar.addWidget(make_toolbar_separator(self))
+        
+        # Add Calibrate button (after platesolve)
+        from lib.gui.library.calibration_thread import CalibrationThread
+        calibrate_icon = QIcon.fromTheme("blur")
+        if calibrate_icon.isNull():
+            calibrate_icon = QIcon.fromTheme("edit-blur")
+        self.calibrate_action = QAction(calibrate_icon, "", self)
+        self.calibrate_action.setToolTip("Calibrate all loaded images")
+        self.calibrate_action.setEnabled(True)
+        self.calibrate_action.triggered.connect(self.calibrate_all_images)
+        self.toolbar.addAction(self.calibrate_action)
+        self.toolbar.widgetForAction(self.calibrate_action).setFixedSize(32, 32)
+
+        # Add Platesolve button (before FITS header button)
+        self.platesolve_action = QAction(QIcon.fromTheme("map-globe"), "", self)
+        self.platesolve_action.setToolTip("Platesolve all loaded images")
+        self.platesolve_action.setEnabled(False)
+        self.platesolve_action.triggered.connect(self.platesolve_all_images)
+        self.toolbar.addAction(self.platesolve_action)
+        self.toolbar.widgetForAction(self.platesolve_action).setFixedSize(32, 32)
 
         self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self)
         self.header_button.setToolTip("Show FITS header")
@@ -307,6 +327,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_navigation_buttons()
         self.update_align_button_visibility()
         self.update_display_minmax_tooltips() # Initialize tooltips
+        self.update_platesolve_button_visibility()
         # Status bar: coordinates (left), pixel value (right)
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -373,6 +394,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_navigation_buttons()
         self.update_image_count_label()
         self.update_align_button_visibility()
+        self.update_platesolve_button_visibility()
 
     def _preload_fits_file(self, fits_path):
         if fits_path in self._preloaded_fits:
@@ -410,6 +432,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_navigation_buttons()
         self.update_image_count_label()
         self.update_align_button_visibility()
+        self.update_platesolve_button_visibility()
 
     def show_next_file(self):
         # Save zoom and center before switching
@@ -431,6 +454,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_navigation_buttons()
         self.update_image_count_label()
         self.update_align_button_visibility()
+        self.update_platesolve_button_visibility()
 
     def update_navigation_buttons(self):
         n = len(self.loaded_files)
@@ -458,7 +482,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             auto_min, auto_max = self._get_auto_display_minmax()
             self.display_min = auto_min
             self.display_max = auto_max
-        self.display_min += self._get_display_min_step()
+        self.display_min += 5 * self._get_display_min_step()
         # Update locked parameters if stretch is locked
         if self.stretch_locked:
             self.locked_display_min = self.display_min
@@ -472,7 +496,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             auto_min, auto_max = self._get_auto_display_minmax()
             self.display_min = auto_min
             self.display_max = auto_max
-        self.display_min -= self._get_display_min_step()
+        self.display_min -= 5 * self._get_display_min_step()
         # Update locked parameters if stretch is locked
         if self.stretch_locked:
             self.locked_display_min = self.display_min
@@ -838,6 +862,141 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Update display with new parameters
         self.update_image_display(keep_zoom=True)
         self.update_display_minmax_tooltips()
+
+    def update_platesolve_button_visibility(self):
+        # Enable if at least one file is loaded
+        self.platesolve_action.setEnabled(len(self.loaded_files) > 0)
+
+    def _format_platesolving_result(self, result):
+        if hasattr(result, 'success') and result.success:
+            success_msg = "Image successfully solved!\n\n"
+            if getattr(result, 'ra_center', None) is not None and getattr(result, 'dec_center', None) is not None:
+                success_msg += f"Center: RA={result.ra_center:.4f}°, Dec={result.dec_center:.4f}°\n"
+            else:
+                success_msg += "Center: Unknown\n"
+            if getattr(result, 'pixel_scale', None) is not None:
+                success_msg += f"Pixel scale: {result.pixel_scale:.3f} arcsec/pixel\n"
+            else:
+                success_msg += "Pixel scale: Unknown\n"
+            return success_msg
+        else:
+            return f"Could not solve image: {getattr(result, 'message', str(result))}"
+
+    def platesolve_all_images(self):
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        from lib.gui.library.platesolving_thread import PlatesolvingThread
+        # Minimal wrapper for .path attribute
+        class FilePathObj:
+            def __init__(self, path):
+                self.path = path
+        files = [FilePathObj(p) for p in self.loaded_files]
+        if not files:
+            QMessageBox.warning(self, "No files", "No FITS files loaded to platesolve.")
+            return
+        console_window = ConsoleOutputWindow("Platesolving All Files", self)
+        console_window.show_and_raise()
+        queue = list(files)
+        results = []
+        cancelled = {"flag": False}
+        if not hasattr(self, '_platesolving_threads'):
+            self._platesolving_threads = []
+        def next_in_queue():
+            if cancelled["flag"]:
+                console_window.append_text("\nPlatesolving cancelled by user.\n")
+                return
+            if not queue:
+                console_window.append_text("\nAll files platesolved.\n")
+                # Reload all loaded files after platesolving
+                current_index = self.current_file_index
+                loaded_files_copy = list(self.loaded_files)
+                self._preloaded_fits.clear()
+                for path in loaded_files_copy:
+                    self._preload_fits_file(path)
+                # Try to restore the current file index
+                if loaded_files_copy:
+                    self.current_file_index = min(current_index, len(loaded_files_copy) - 1)
+                    self.load_fits(loaded_files_copy[self.current_file_index], restore_view=True)
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+                self.update_align_button_visibility()
+                self.update_platesolve_button_visibility()
+                return
+            fits_file = queue.pop(0)
+            fits_path = fits_file.path
+            console_window.append_text(f"\nPlatesolving: {fits_path}\n")
+            thread = PlatesolvingThread(fits_path)
+            self._platesolving_threads.append(thread)
+            thread.output.connect(console_window.append_text)
+            def on_finished(result):
+                results.append(result)
+                msg = self._format_platesolving_result(result)
+                console_window.append_text(f"\n{msg}\n")
+                if thread in self._platesolving_threads:
+                    self._platesolving_threads.remove(thread)
+                next_in_queue()
+            thread.finished.connect(on_finished)
+            thread.start()
+        console_window.cancel_requested.connect(lambda: cancelled.update({"flag": True}))
+        next_in_queue()
+
+    def calibrate_all_images(self):
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        from lib.gui.library.calibration_thread import CalibrationThread
+        # Minimal wrapper for .path attribute
+        class FilePathObj:
+            def __init__(self, path):
+                self.path = path
+        files = [FilePathObj(p) for p in self.loaded_files]
+        if not files:
+            QMessageBox.warning(self, "No files", "No FITS files loaded to calibrate.")
+            return
+        console_window = ConsoleOutputWindow("Calibrating All Files", self)
+        console_window.show_and_raise()
+        queue = list(files)
+        results = []
+        cancelled = {"flag": False}
+        if not hasattr(self, '_calibration_threads'):
+            self._calibration_threads = []
+        def next_in_queue():
+            if cancelled["flag"]:
+                console_window.append_text("\nCalibration cancelled by user.\n")
+                return
+            if not queue:
+                # Check for errors
+                errors = [r for r in results if not r.get('success')]
+                if errors:
+                    console_window.append_text("\nCalibration failed for one or more files. No files were replaced.\n")
+                    QMessageBox.critical(self, "Calibration Error", "Calibration failed for one or more files. No files were replaced.")
+                    return
+                # All succeeded: replace loaded files with calibrated equivalents
+                new_files = [r['calibrated_path'] for r in results]
+                self.loaded_files = new_files
+                self._preloaded_fits.clear()
+                for path in new_files:
+                    self._preload_fits_file(path)
+                self.current_file_index = 0
+                self.load_fits(self.loaded_files[0], restore_view=False)
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+                self.update_align_button_visibility()
+                self.update_platesolve_button_visibility()
+                console_window.append_text("\nAll files calibrated and loaded.\n")
+                return
+            fits_file = queue.pop(0)
+            fits_path = fits_file.path
+            console_window.append_text(f"\nCalibrating: {fits_path}\n")
+            thread = CalibrationThread(fits_path)
+            self._calibration_threads.append(thread)
+            thread.output.connect(console_window.append_text)
+            def on_finished(result):
+                results.append(result)
+                if thread in self._calibration_threads:
+                    self._calibration_threads.remove(thread)
+                next_in_queue()
+            thread.finished.connect(on_finished)
+            thread.start()
+        console_window.cancel_requested.connect(lambda: cancelled.update({"flag": True}))
+        next_in_queue()
 
 def main():
     fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []
