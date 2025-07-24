@@ -220,33 +220,27 @@ class ImageLabel(QLabel):
         # Remove info insert drawing; now handled by status bar 
 
 class SIMBADOverlay:
-    def __init__(self, name, pixel_coords, color=QColor(0, 255, 0), size=108, gap=36):
+    def __init__(self, name, pixel_coords, color=QColor(0, 255, 0), radius=12):
         self.name = name
         self.pixel_coords = pixel_coords  # (x, y)
         self.color = color
-        self.size = size  # total length of each arm from center
-        self.gap = gap    # gap at the center (no lines in this region)
+        self.radius = radius  # radius of the circle
 
     def draw(self, painter: QPainter):
         x, y = self.pixel_coords
         pen = QPen(self.color)
         pen.setWidth(3)
         painter.setPen(pen)
-        # Draw cross with gap at center
-        half = self.size // 2
-        gap = self.gap // 2
-        # Horizontal left
-        painter.drawLine(int(x - half), int(y), int(x - gap), int(y))
-        # Horizontal right
-        painter.drawLine(int(x + gap), int(y), int(x + half), int(y))
-        # Vertical top
-        painter.drawLine(int(x), int(y - half), int(x), int(y - gap))
-        # Vertical bottom
-        painter.drawLine(int(x), int(y + gap), int(x), int(y + half))
-        # Draw name text to the right of the cross
+        # Draw circle
+        painter.drawEllipse(int(x - self.radius), int(y - self.radius), 
+                           int(2 * self.radius), int(2 * self.radius))
+        # Draw name text to the right of the circle
         font = QFont()
         font.setPointSize(12)
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(self.color)
-        painter.drawText(x + self.size + 6, y + self.size // 2, self.name) 
+        # Position text to the right of the circle with some spacing
+        text_x = int(x + self.radius + 8)
+        text_y = int(y + 4)  # Slightly below center for better alignment
+        painter.drawText(text_x, text_y, self.name) 

@@ -22,7 +22,7 @@ def make_toolbar_separator(parent):
     sep = QFrame(parent)
     sep.setFixedWidth(8)  # Give it a little width for margin
     sep.setFixedHeight(32)  # Match your toolbar height
-    sep.setStyleSheet("QFrame { border-left: 1px solid #777777; background: transparent; }")
+    sep.setStyleSheet("QFrame { margin-left: 5px; border-left: 1px solid #777777; background: transparent; }")
     return sep
 
 class NoWheelScrollArea(QScrollArea):
@@ -72,7 +72,24 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar = QToolBar("Main Toolbar")
         self.toolbar.setMovable(False)  # Disable moving the toolbar
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)  # Remove handle visual
-        self.toolbar.setStyleSheet("QToolBar { background: #222222; }")
+        self.toolbar.setStyleSheet("""
+            QToolBar { background: #222222; }
+            QToolButton { 
+                border: none; 
+                background: transparent; 
+                padding: 4px;
+            }
+            QToolButton:hover { 
+                border: 1px solid #555555; 
+                background: #333333; 
+                border-radius: 4px;
+            }
+            QToolButton:pressed { 
+                border: 1px solid #777777; 
+                background: #444444; 
+                border-radius: 4px;
+            }
+        """)
         self.addToolBar(self.toolbar)
 
         # --- Navigation buttons grouped at right end ---
@@ -124,12 +141,30 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.play_pause_button.setFixedSize(32, 32)
         self.play_pause_button.clicked.connect(self.toggle_play_pause)
         nav_layout.addWidget(self.play_pause_button, 0, 2)
-        # Next button (move to col 3)
+        
+        # Next button (move back to col 3)
         self.next_button = QToolButton(self)
         self.next_button.setDefaultAction(self.next_action)
         self.next_button.setFixedSize(32, 32)
         nav_layout.addWidget(self.next_button, 0, 3)
         nav_widget.setLayout(nav_layout)
+        nav_widget.setStyleSheet("""
+            QToolButton { 
+                border: none; 
+                background: transparent; 
+                padding: 4px;
+            }
+            QToolButton:hover { 
+                border: 1px solid #555555; 
+                background: #333333; 
+                border-radius: 4px;
+            }
+            QToolButton:pressed { 
+                border: 1px solid #777777; 
+                background: #444444; 
+                border-radius: 4px;
+            }
+        """)
 
         # --- Existing toolbar buttons (left side) ---
         open_icon = QIcon.fromTheme("document-open")
@@ -193,13 +228,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         
         self.toolbar.addWidget(make_toolbar_separator(self))
         
-        self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self)
-        self.header_button.setToolTip("Show FITS header")
-        self.header_button.setEnabled(False)
-        self.header_button.triggered.connect(self.show_header_dialog)
-        self.toolbar.addAction(self.header_button)
-        self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
-
         # Add SIMBAD search button
         self.simbad_button = QAction(QIcon.fromTheme("file-search-symbolic"), "", self)
         self.simbad_button.setToolTip("Search for an object in SIMBAD and overlay on image")
@@ -208,17 +236,35 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(self.simbad_button)
         self.toolbar.widgetForAction(self.simbad_button).setFixedSize(32, 32)
         # Overlay toggle action (toolbar)
-        self.overlay_toggle_action = QAction("Toggle Overlay", self)
+        self.overlay_toggle_action = QAction(QIcon.fromTheme("shapes"), "", self)
         self.overlay_toggle_action.setCheckable(True)
         self.overlay_toggle_action.setChecked(True)
         self.overlay_toggle_action.setVisible(False)
         self.overlay_toggle_action.triggered.connect(self.toggle_overlay_visibility)
         self.toolbar.addAction(self.overlay_toggle_action)
+        self.toolbar.widgetForAction(self.overlay_toggle_action).setFixedSize(32, 32)
+
+        self.toolbar.addWidget(make_toolbar_separator(self))
+
+        self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self)
+        self.header_button.setToolTip("Show FITS header")
+        self.header_button.setEnabled(False)
+        self.header_button.triggered.connect(self.show_header_dialog)
+        self.toolbar.addAction(self.header_button)
+        self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
 
         # Add a spacer to push navigation elements to the right
         spacer = QWidget(self)
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.toolbar.addWidget(spacer)
+        
+        # Add Lock stretch button (only visible if >1 image loaded)
+        self.lock_stretch_action = QAction(QIcon.fromTheme("unlock"), "", self)
+        self.lock_stretch_action.setToolTip("Lock stretch parameters")
+        self.lock_stretch_action.setVisible(False)
+        self.lock_stretch_action.triggered.connect(self.toggle_stretch_lock)
+        self.toolbar.addAction(self.lock_stretch_action)
+        self.toolbar.widgetForAction(self.lock_stretch_action).setFixedSize(32, 32)
         
         # Add Align button (only visible if >1 image loaded) - moved to right side
         self.align_action = QAction(QIcon.fromTheme("image-rotate-symbolic"), "", self)
@@ -251,6 +297,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.display_min = None
         self.display_max = None
         self.sigma_clip = 3.0
+        # Stretch lock attributes
+        self.stretch_locked = False
+        self.locked_display_min = None
+        self.locked_display_max = None
         if fits_path:
             self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
@@ -409,6 +459,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.display_min = auto_min
             self.display_max = auto_max
         self.display_min += self._get_display_min_step()
+        # Update locked parameters if stretch is locked
+        if self.stretch_locked:
+            self.locked_display_min = self.display_min
+            self.locked_display_max = self.display_max
         self.update_image_display(keep_zoom=True)
         self.update_display_minmax_tooltips()
 
@@ -419,6 +473,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.display_min = auto_min
             self.display_max = auto_max
         self.display_min -= self._get_display_min_step()
+        # Update locked parameters if stretch is locked
+        if self.stretch_locked:
+            self.locked_display_min = self.display_min
+            self.locked_display_max = self.display_max
         self.update_image_display(keep_zoom=True)
         self.update_display_minmax_tooltips()
 
@@ -459,26 +517,50 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         return 4.0
 
     def update_display_minmax_tooltips(self):
-        self.brightness_minus_button.setToolTip(f"Darken image (min: {self.display_min})")
-        self.brightness_plus_button.setToolTip(f"Brighten image (min: {self.display_min})")
+        lock_status = " (locked)" if self.stretch_locked else ""
+        self.brightness_minus_button.setToolTip(f"Darken image (min: {self.display_min}){lock_status}")
+        self.brightness_plus_button.setToolTip(f"Brighten image (min: {self.display_min}){lock_status}")
 
     def set_linear_stretch(self):
         self.stretch_mode = 'linear'
-        self.display_min = None
-        self.display_max = None
+        if not self.stretch_locked:
+            self.display_min = None
+            self.display_max = None
+        else:
+            # Recalculate locked parameters with new stretch mode
+            auto_min, auto_max = self._get_auto_display_minmax()
+            self.locked_display_min = auto_min
+            self.locked_display_max = auto_max
+            self.display_min = self.locked_display_min
+            self.display_max = self.locked_display_max
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
     def set_log_stretch(self):
         self.stretch_mode = 'log'
-        self.display_min = None
-        self.display_max = None
+        if not self.stretch_locked:
+            self.display_min = None
+            self.display_max = None
+        else:
+            # Recalculate locked parameters with new stretch mode
+            auto_min, auto_max = self._get_auto_display_minmax()
+            self.locked_display_min = auto_min
+            self.locked_display_max = auto_max
+            self.display_min = self.locked_display_min
+            self.display_max = self.locked_display_max
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
     def toggle_clipping(self):
         self.clipping_enabled = not self.clipping_enabled
         self.clipping_action.setChecked(self.clipping_enabled)
+        if self.stretch_locked:
+            # Recalculate locked parameters with new clipping setting
+            auto_min, auto_max = self._get_auto_display_minmax()
+            self.locked_display_min = auto_min
+            self.locked_display_max = auto_max
+            self.display_min = self.locked_display_min
+            self.display_max = self.locked_display_max
         self.update_image_display(keep_zoom=True)
 
     def update_image_display(self, keep_zoom=False):
@@ -582,8 +664,14 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
-                    self.display_min = None
-                    self.display_max = None
+                    # Only reset display parameters if stretch is not locked
+                    if not self.stretch_locked:
+                        self.display_min = None
+                        self.display_max = None
+                    else:
+                        # Use locked parameters
+                        self.display_min = self.locked_display_min
+                        self.display_max = self.locked_display_max
                 else:
                     self.image_label.setText("FITS file is not a 2D image.")
                     self.image_data = None
@@ -653,7 +741,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
     def update_align_button_visibility(self):
         # Hide align button if only one or no files loaded
-        self.align_action.setVisible(len(self.loaded_files) > 1)
+        visible = len(self.loaded_files) > 1
+        self.align_action.setVisible(visible)
+        self.lock_stretch_action.setVisible(visible)
 
     def align_images(self):
         # Remove overlays before aligning
@@ -715,6 +805,39 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._align_thread.wait()
         self._align_worker.error.connect(on_error)
         self._align_thread.start()
+
+    def toggle_stretch_lock(self):
+        self.stretch_locked = not self.stretch_locked
+        
+        # Update button icon
+        if self.stretch_locked:
+            lock_icon = QIcon.fromTheme("lock")
+            if lock_icon.isNull():
+                lock_icon = QIcon.fromTheme("object-locked")
+            self.lock_stretch_action.setIcon(lock_icon)
+            self.lock_stretch_action.setToolTip("Unlock stretch parameters")
+            # Store current display parameters
+            if self.display_min is None or self.display_max is None:
+                # Calculate current auto parameters if not set
+                auto_min, auto_max = self._get_auto_display_minmax()
+                self.locked_display_min = auto_min
+                self.locked_display_max = auto_max
+            else:
+                self.locked_display_min = self.display_min
+                self.locked_display_max = self.display_max
+        else:
+            unlock_icon = QIcon.fromTheme("unlock")
+            if unlock_icon.isNull():
+                unlock_icon = QIcon.fromTheme("object-unlocked")
+            self.lock_stretch_action.setIcon(unlock_icon)
+            self.lock_stretch_action.setToolTip("Lock stretch parameters")
+            # Restore locked parameters
+            self.display_min = self.locked_display_min
+            self.display_max = self.locked_display_max
+        
+        # Update display with new parameters
+        self.update_image_display(keep_zoom=True)
+        self.update_display_minmax_tooltips()
 
 def main():
     fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []
