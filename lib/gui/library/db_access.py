@@ -105,3 +105,31 @@ class DatabaseManager:
     def get_fits_file_by_id(self, fits_file_id, fits_files):
         """Get a FITS file by ID from the provided list."""
         return next((f for f in fits_files if f.id == fits_file_id), None) 
+
+def refresh_database():
+    """
+    Reload the database from disk. This is a placeholder for any logic needed to refresh the DB if modified externally.
+    For SQLite, this is typically just a reload in the GUI, but this function is a hook for future expansion.
+    """
+    # In most cases, just reloading the data in the GUI is sufficient.
+    # This function is a placeholder for any future logic (e.g., closing/reopening connections).
+    pass
+
+def cleanup_temp_directories():
+    """
+    Delete all files in /tmp/astropipes-solved and /tmp/astropipes-calibrated.
+    """
+    import shutil
+    import glob
+    import os
+    temp_dirs = ["/tmp/astropipes-solved", "/tmp/astropipes-calibrated"]
+    for temp_dir in temp_dirs:
+        if os.path.exists(temp_dir):
+            for filename in glob.glob(os.path.join(temp_dir, "*")):
+                try:
+                    if os.path.isfile(filename) or os.path.islink(filename):
+                        os.unlink(filename)
+                    elif os.path.isdir(filename):
+                        shutil.rmtree(filename)
+                except Exception as e:
+                    print(f"Failed to delete {filename}: {e}") 

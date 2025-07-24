@@ -89,6 +89,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 background: #444444; 
                 border-radius: 4px;
             }
+            QToolButton:checked {
+                border: 1px solid #777777;
+                background: #444444;
+                border-radius: 4px;
+            }
         """)
         self.addToolBar(self.toolbar)
 

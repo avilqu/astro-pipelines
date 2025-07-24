@@ -164,7 +164,15 @@ class AstroLibraryGUI(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
         
         # Create menu bar using the new function
-        create_menu_bar(self, self.close, self.scan_for_files, self.open_settings_dialog)
+        from . import db_access
+        create_menu_bar(
+            self,
+            self.close,
+            self.scan_for_files,
+            self.open_settings_dialog,
+            self.refresh_database,
+            self.cleanup_temp_directories
+        )
         
         # Create central widget
         central_widget = QWidget()
@@ -419,6 +427,25 @@ class AstroLibraryGUI(QMainWindow):
         # Update the time display mode label
         mode = getattr(config, 'TIME_DISPLAY_MODE', 'UTC')
         self.time_mode_label.setText(f"Time display mode: {mode}")
+
+    def refresh_database(self):
+        """Refresh the database from disk (for external modifications)."""
+        from . import db_access
+        try:
+            db_access.refresh_database()
+            self.load_database()
+            QMessageBox.information(self, "Database Refreshed", "Database has been refreshed from disk.")
+        except Exception as e:
+            QMessageBox.critical(self, "Refresh Failed", f"Failed to refresh database: {e}")
+
+    def cleanup_temp_directories(self):
+        """Delete all files in /tmp/astropipes-solved and /tmp/astropipes-calibrated."""
+        from . import db_access
+        try:
+            db_access.cleanup_temp_directories()
+            QMessageBox.information(self, "Cleanup Complete", "Temporary directories have been cleaned up.")
+        except Exception as e:
+            QMessageBox.critical(self, "Cleanup Failed", f"Failed to clean up temp directories: {e}")
 
 
 def main():
