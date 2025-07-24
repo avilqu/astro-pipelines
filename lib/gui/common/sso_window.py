@@ -1,0 +1,52 @@
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from PyQt6.QtGui import QFont, QColor, QBrush
+
+class SSOResultWindow(QDialog):
+    def __init__(self, sso_objects, pixel_coords_dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Solar System Objects in Field")
+        self.setGeometry(250, 250, 900, 500)
+        self.setModal(False)  # Make the dialog non-modal
+        layout = QVBoxLayout(self)
+        table = QTableWidget(self)
+        table.setColumnCount(8)
+        table.setHorizontalHeaderLabels([
+            "Name", "Type", "Magnitude", "Distance (AU)", "Velocity (arcsec/h)", "RA (deg)", "Dec (deg)", "Pixel (x, y)"
+        ])
+        table.setRowCount(len(sso_objects))
+        table.setFont(QFont("Courier New", 10))
+        def get_row_color(type_str):
+            if not type_str:
+                return None
+            t = type_str.strip()
+            if t == "Vulcanoid" or t.startswith("NEA"):
+                return QColor(220, 0, 0)  # red
+            if t == "Hungaria" or t.startswith("Mars-Crosser"):
+                return QColor(255, 140, 0)  # orange
+            if t.startswith("MB"):
+                return QColor(0, 180, 0)  # green
+            if t == "Trojan" or t == "Centaur":
+                return QColor(0, 100, 255)  # blue
+            if t == "IOC" or t.startswith("KBO"):
+                return QColor(160, 32, 240)  # purple
+            return None
+        for i, obj in enumerate(sso_objects):
+            type_str = str(getattr(obj, 'object_type', ''))
+            color = get_row_color(type_str)
+            items = [
+                QTableWidgetItem(str(getattr(obj, 'name', ''))),
+                QTableWidgetItem(type_str),
+                QTableWidgetItem(f"{getattr(obj, 'magnitude', 0):.2f}" if getattr(obj, 'magnitude', None) is not None else ""),
+                QTableWidgetItem(f"{getattr(obj, 'distance', 0):.2f}" if getattr(obj, 'distance', None) is not None else ""),
+                QTableWidgetItem(f"{getattr(obj, 'velocity', 0):.2f}" if getattr(obj, 'velocity', None) is not None else ""),
+                QTableWidgetItem(f"{getattr(obj, 'ra', 0):.5f}" if getattr(obj, 'ra', None) is not None else ""),
+                QTableWidgetItem(f"{getattr(obj, 'dec', 0):.5f}" if getattr(obj, 'dec', None) is not None else ""),
+                QTableWidgetItem(f"({pixel_coords_dict[obj][0]:.1f}, {pixel_coords_dict[obj][1]:.1f})") if obj in pixel_coords_dict else QTableWidgetItem("-")
+            ]
+            for col, item in enumerate(items):
+                if color:
+                    item.setForeground(QBrush(color))
+                table.setItem(i, col, item)
+        table.resizeColumnsToContents()
+        layout.addWidget(table)
+        self.setLayout(layout) 

@@ -248,6 +248,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.simbad_button.triggered.connect(self.open_simbad_search_dialog)
         self.toolbar.addAction(self.simbad_button)
         self.toolbar.widgetForAction(self.simbad_button).setFixedSize(32, 32)
+        # Add Solar System Objects button (before SIMBAD)
+        sso_icon = QIcon.fromTheme("kstars_planets")
+        if sso_icon.isNull():
+            sso_icon = QIcon.fromTheme("applications-science")
+        self.sso_button = QAction(sso_icon, "", self)
+        self.sso_button.setToolTip("Search for solar system objects in the field and overlay on image")
+        self.sso_button.setEnabled(True)
+        self.sso_button.triggered.connect(self.open_sso_search_dialog)
+        self.toolbar.addAction(self.sso_button)
+        self.toolbar.widgetForAction(self.sso_button).setFixedSize(32, 32)
         # Overlay toggle action (toolbar)
         self.overlay_toggle_action = QAction(QIcon.fromTheme("shapes"), "", self)
         self.overlay_toggle_action.setCheckable(True)
@@ -728,7 +738,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             if self.loaded_files and 0 <= self.current_file_index < len(self.loaded_files):
                 file_path = self.loaded_files[self.current_file_index]
             dlg = HeaderViewer(self._current_header, file_path, self)
-            dlg.exec()
+            dlg.show()
 
     def toggle_overlay_visibility(self):
         self._overlay_visible = not self._overlay_visible
@@ -736,7 +746,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.image_label.update()
 
     def update_overlay_button_visibility(self):
-        has_overlay = hasattr(self, '_simbad_overlay') and self._simbad_overlay is not None
+        has_overlay = (
+            (hasattr(self, '_simbad_overlay') and self._simbad_overlay is not None) or
+            (hasattr(self, '_sso_overlay') and self._sso_overlay is not None)
+        )
         self.overlay_toggle_action.setVisible(has_overlay)
         if has_overlay:
             self.overlay_toggle_action.setChecked(self._overlay_visible)
@@ -753,6 +766,64 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.image_label.update()  # Trigger repaint
         else:
             self.update_overlay_button_visibility()
+
+    def open_sso_search_dialog(self):
+        from astropy.time import Time
+        from lib.fits.catalogs import SolarSystemObject
+        from PyQt6.QtWidgets import QProgressDialog
+        # Remove overlays before new search
+        self._simbad_overlay = None
+        self._sso_overlay = None
+        self._overlay_visible = True
+        self.update_overlay_button_visibility()
+        if self.wcs is None or self.image_data is None:
+            QMessageBox.warning(self, "No WCS", "No WCS/image data available. Please solve the image first.")
+            return
+        epoch = Time.now()
+        # Progress dialog
+        progress = QProgressDialog("Searching Skybot for solar system objects...", None, 0, 0, self)
+        progress.setWindowTitle("Skybot Search")
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        # Start worker thread
+        self._skybot_thread = QThread()
+        self._skybot_worker = SkybotWorker(self.astrometry_catalog, self.wcs, self.image_data.shape, epoch)
+        self._skybot_worker.moveToThread(self._skybot_thread)
+        self._skybot_thread.started.connect(self._skybot_worker.run)
+        def on_finished(sso_list, pixel_coords_dict):
+            progress.close()
+            self._skybot_thread.quit()
+            self._skybot_thread.wait()
+            if not sso_list:
+                QMessageBox.information(self, "No Solar System Objects", "No solar system objects found in the field.")
+                return
+            # Overlay only those in field
+            sso_objects = list(pixel_coords_dict.keys())
+            coords_list = list(pixel_coords_dict.values())
+            self._sso_overlay = (sso_objects, coords_list)
+            self._overlay_visible = True
+            self.update_overlay_button_visibility()
+            self.image_label.update()
+            # Show SSO result window (all objects, with pixel coords if in field)
+            try:
+                from lib.gui.common.sso_window import SSOResultWindow
+                dlg = SSOResultWindow(sso_list, pixel_coords_dict, self)
+                dlg.show()
+            except ImportError:
+                pass
+            self.overlay_toggle_action.setVisible(True)
+            self.overlay_toggle_action.setChecked(True)
+        def on_error(msg):
+            progress.close()
+            self._skybot_thread.quit()
+            self._skybot_thread.wait()
+            QMessageBox.critical(self, "SSO Search Error", f"Error searching for solar system objects: {msg}")
+        self._skybot_worker.finished.connect(on_finished)
+        self._skybot_worker.error.connect(on_error)
+        self._skybot_thread.start()
 
     def toggle_play_pause(self):
         if not self.playing:
@@ -1005,6 +1076,26 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             thread.start()
         console_window.cancel_requested.connect(lambda: cancelled.update({"flag": True}))
         next_in_queue()
+
+class SkybotWorker(QObject):
+    finished = pyqtSignal(list, dict)  # sso_list, pixel_coords_dict
+    error = pyqtSignal(str)
+
+    def __init__(self, astrometry_catalog, wcs, image_shape, epoch):
+        super().__init__()
+        self.astrometry_catalog = astrometry_catalog
+        self.wcs = wcs
+        self.image_shape = image_shape
+        self.epoch = epoch
+
+    def run(self):
+        try:
+            sso_list = self.astrometry_catalog.get_field_objects(self.wcs, self.image_shape, self.epoch)
+            pixel_coords = self.astrometry_catalog.get_object_pixel_coordinates(self.wcs, sso_list)
+            pixel_coords_dict = {obj: (x, y) for (obj, x, y) in pixel_coords}
+            self.finished.emit(sso_list, pixel_coords_dict)
+        except Exception as e:
+            self.error.emit(str(e))
 
 def main():
     fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []

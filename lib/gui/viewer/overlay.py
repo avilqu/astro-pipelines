@@ -185,7 +185,7 @@ class ImageLabel(QLabel):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        # Draw overlay if enabled
+        # Draw SIMBAD overlay if enabled
         if (
             self.parent_viewer and
             hasattr(self.parent_viewer, '_simbad_overlay') and
@@ -212,6 +212,39 @@ class ImageLabel(QLabel):
                 x_disp = x_img * scale + x_offset
                 y_disp = y_img * scale + y_offset
                 overlay = SIMBADOverlay(simbad_object.name, (x_disp, y_disp))
+                painter = QPainter(self)
+                overlay.draw(painter)
+                painter.end()
+            except Exception as e:
+                pass
+        # Draw SSO overlay if enabled
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_sso_overlay') and
+            self.parent_viewer._sso_overlay and
+            getattr(self.parent_viewer, '_overlay_visible', True)
+        ):
+            try:
+                from lib.gui.viewer.overlay import SSOOverlay
+                sso_objects, pixel_coords_list = self.parent_viewer._sso_overlay
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                pixel_coords_disp = [
+                    (x * scale + x_offset, y * scale + y_offset)
+                    for (x, y) in pixel_coords_list
+                ]
+                overlay = SSOOverlay(sso_objects, pixel_coords_disp)
                 painter = QPainter(self)
                 overlay.draw(painter)
                 painter.end()
@@ -244,3 +277,27 @@ class SIMBADOverlay:
         text_x = int(x + self.radius + 8)
         text_y = int(y + 4)  # Slightly below center for better alignment
         painter.drawText(text_x, text_y, self.name) 
+
+class SSOOverlay:
+    def __init__(self, sso_objects, pixel_coords_list, color=QColor(255, 200, 0), radius=10):
+        self.sso_objects = sso_objects  # List of SolarSystemObject
+        self.pixel_coords_list = pixel_coords_list  # List of (x, y)
+        self.color = color
+        self.radius = radius
+
+    def draw(self, painter: QPainter):
+        pen = QPen(self.color)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        font = QFont()
+        font.setPointSize(10)
+        font.setBold(False)
+        painter.setFont(font)
+        for obj, (x, y) in zip(self.sso_objects, self.pixel_coords_list):
+            # Draw a circle (not filled) for each SSO
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
+            # Draw name to the right
+            text_x = int(x + self.radius + 4)
+            text_y = int(y + 4)
+            painter.drawText(text_x, text_y, obj.name) 

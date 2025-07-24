@@ -4,6 +4,7 @@ from PyQt6.QtGui import QFont
 class HeaderViewer(QDialog):
     def __init__(self, header_dict, file_path=None, parent=None):
         super().__init__(parent)
+        self.setModal(False)  # Make the dialog non-modal
         title = "FITS Header"
         if file_path:
             title += f" - {file_path}"
