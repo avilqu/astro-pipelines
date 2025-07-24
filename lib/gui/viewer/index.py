@@ -214,18 +214,20 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.overlay_toggle_action.setVisible(False)
         self.overlay_toggle_action.triggered.connect(self.toggle_overlay_visibility)
         self.toolbar.addAction(self.overlay_toggle_action)
-        # Add Align button (only visible if >1 image loaded)
-        self.align_action = QAction("Align", self)
+
+        # Add a spacer to push navigation elements to the right
+        spacer = QWidget(self)
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.toolbar.addWidget(spacer)
+        
+        # Add Align button (only visible if >1 image loaded) - moved to right side
+        self.align_action = QAction(QIcon.fromTheme("image-rotate-symbolic"), "", self)
         self.align_action.setToolTip("Align all images using WCS")
         self.align_action.setVisible(False)
         self.align_action.triggered.connect(self.align_images)
         self.toolbar.addAction(self.align_action)
-        self.toolbar.widgetForAction(self.align_action).setFixedSize(70, 32)
-
-        # Add a spacer to push nav_widget to the right
-        spacer = QWidget(self)
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.toolbar.addWidget(spacer)
+        self.toolbar.widgetForAction(self.align_action).setFixedSize(32, 32)
+        
         self.toolbar.addWidget(nav_widget)
         # Remove sidebar and use only scroll_area as central widget
         self.scroll_area = NoWheelScrollArea()
@@ -382,12 +384,14 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
     def update_navigation_buttons(self):
         n = len(self.loaded_files)
-        # Always enable navigation if more than one file (for looping)
-        enable = n > 1
-        self.prev_action.setEnabled(enable)
-        self.next_action.setEnabled(enable)
-        self.prev_button.setEnabled(enable)
-        self.next_button.setEnabled(enable)
+        # Hide navigation elements if only one or no files loaded
+        visible = n > 1
+        self.prev_action.setVisible(visible)
+        self.next_action.setVisible(visible)
+        self.prev_button.setVisible(visible)
+        self.next_button.setVisible(visible)
+        self.play_pause_button.setVisible(visible)
+        self.image_count_label.setVisible(visible)
         self.update_image_count_label()
 
     def update_image_count_label(self):
@@ -648,6 +652,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.show_next_file()
 
     def update_align_button_visibility(self):
+        # Hide align button if only one or no files loaded
         self.align_action.setVisible(len(self.loaded_files) > 1)
 
     def align_images(self):
