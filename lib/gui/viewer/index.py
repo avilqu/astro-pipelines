@@ -18,6 +18,7 @@ import config
 from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, compute_padded_reference_wcs, reproject_images_to_common_wcs
 from PyQt6.QtWidgets import QFrame
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
+from PyQt6.QtWidgets import QMenu  # Add this to the imports if not present
 
 def make_toolbar_separator(parent):
     sep = QFrame(parent)
@@ -262,12 +263,23 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         sso_icon = QIcon.fromTheme("kstars_planets")
         if sso_icon.isNull():
             sso_icon = QIcon.fromTheme("applications-science")
-        self.sso_button = QAction(sso_icon, "", self)
+        # Replace QAction with QToolButton + QMenu for dropdown
+        self.sso_button = QToolButton(self)
+        self.sso_button.setIcon(sso_icon)
         self.sso_button.setToolTip("Search for solar system objects in the field and overlay on image")
         self.sso_button.setEnabled(True)
-        self.sso_button.triggered.connect(self.open_sso_search_dialog)
-        self.toolbar.addAction(self.sso_button)
-        self.toolbar.widgetForAction(self.sso_button).setFixedSize(32, 32)
+        self.sso_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.sso_button.setFixedSize(32, 32)
+        # Create dropdown menu
+        sso_menu = QMenu(self.sso_button)
+        find_sso_action = QAction("Find SSO in field", self)
+        find_sso_action.triggered.connect(self.open_sso_search_dialog)
+        sso_menu.addAction(find_sso_action)
+        self.sso_button.setMenu(sso_menu)
+        # Remove the dropdown arrow via stylesheet
+        self.sso_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        # Do NOT connect .clicked to open_sso_search_dialog; only menu triggers the action
+        self.toolbar.addWidget(self.sso_button)
         # Overlay toggle action (toolbar)
         self.overlay_toggle_action = QAction(QIcon.fromTheme("shapes"), "", self)
         self.overlay_toggle_action.setCheckable(True)
