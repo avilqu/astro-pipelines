@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel, QThread, pyqtSignal as Signal
 from PyQt6.QtGui import QFont, QPalette, QColor
-from .context_dropdown import build_single_file_menu, build_multi_file_menu, build_empty_menu
+from .context_dropdown import build_single_file_menu, build_multi_file_menu, build_empty_menu, calibrate_and_compare_file
 import json
 from astropy.io import fits
 from lib.gui.common.header_window import HeaderViewer
@@ -733,12 +733,39 @@ class FitsTableWidget(QTableWidget):
                 self.console_window.cancel_requested.connect(self.platesolving_thread.stop)
                 
                 self.platesolving_thread.start()
-            menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image)
+            
+            def calibrate_and_compare():
+                fits_file = selected_files[0]
+                
+                def show_file_in_viewer(file_path):
+                    import subprocess
+                    import sys
+                    subprocess.Popen([
+                        sys.executable,
+                        'lib/gui/viewer/index.py',
+                        file_path
+                    ])
+                
+                def show_both_files_in_viewer(original_path, calibrated_path):
+                    import subprocess
+                    import sys
+                    subprocess.Popen([
+                        sys.executable,
+                        'lib/gui/viewer/index.py',
+                        original_path,
+                        calibrated_path
+                    ])
+                
+                calibrate_and_compare_file(self, fits_file, show_image_callback=show_file_in_viewer, show_both_callback=show_both_files_in_viewer)
+            
+            menu = build_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image, solve_image_callback=solve_image, calibrate_and_compare_callback=calibrate_and_compare)
         elif len(selected_files) > 1:
             from .context_dropdown import platesolve_multiple_files
             def load_in_viewer():
                 import sys, subprocess
-                fits_paths = [f.path for f in selected_files]
+                # Sort selected_files by date_obs (oldest to newest)
+                sorted_files = sorted(selected_files, key=lambda f: f.date_obs or '')
+                fits_paths = [f.path for f in sorted_files]
                 subprocess.Popen([
                     sys.executable,
                     'lib/gui/viewer/index.py',

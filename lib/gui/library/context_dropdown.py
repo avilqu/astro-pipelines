@@ -120,6 +120,7 @@ def platesolve_multiple_files(parent, files, on_all_finished=None):
         thread = PlatesolvingThread(fits_path)
         parent._platesolving_threads.append(thread)
         thread.output.connect(console_window.append_text)
+        thread.finished.connect(lambda result: on_finished(result))
         def on_finished(result):
             results.append(result)
             msg = parent._format_platesolving_result(result) if hasattr(parent, '_format_platesolving_result') else str(result)
@@ -128,6 +129,13 @@ def platesolve_multiple_files(parent, files, on_all_finished=None):
             if thread in parent._platesolving_threads:
                 parent._platesolving_threads.remove(thread)
             next_in_queue()
+        thread.start()
+    
+    # Connect cancel button
+    console_window.cancel_requested.connect(lambda: setattr(cancelled, 'flag', True))
+    
+    # Start the process
+    next_in_queue()
 
 def calibrate_and_compare_file(parent, fits_file, show_image_callback=None, show_both_callback=None):
     """
