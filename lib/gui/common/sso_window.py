@@ -1,7 +1,11 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel
 from PyQt6.QtGui import QFont, QColor, QBrush
+from PyQt6.QtCore import pyqtSignal
+from astropy.coordinates import Angle
+import astropy.units as u
 
 class SSOResultWindow(QDialog):
+    sso_row_selected = pyqtSignal(int)
     def __init__(self, sso_objects, pixel_coords_dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Solar System Objects in Field")
@@ -15,6 +19,8 @@ class SSOResultWindow(QDialog):
         ])
         table.setRowCount(len(sso_objects))
         table.setFont(QFont("Courier New", 10))
+        table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
+        table.setSelectionMode(table.SelectionMode.SingleSelection)
         def get_row_color(type_str):
             if not type_str:
                 return None
@@ -33,15 +39,35 @@ class SSOResultWindow(QDialog):
         for i, obj in enumerate(sso_objects):
             type_str = str(getattr(obj, 'object_type', ''))
             color = get_row_color(type_str)
+            ra_val = getattr(obj, 'ra', 0)
+            dec_val = getattr(obj, 'dec', 0)
+            try:
+                ra_str = Angle(ra_val, unit=u.deg).to_string(unit=u.hourangle, sep=':', precision=1, pad=True)
+            except Exception:
+                ra_str = str(ra_val)
+            try:
+                dec_str = Angle(dec_val, unit=u.deg).to_string(unit=u.deg, sep=':', precision=1, alwayssign=True, pad=True)
+            except Exception:
+                dec_str = str(dec_val)
+            # Flip y for display
+            pixel_str = "-"
+            if obj in pixel_coords_dict:
+                x, y = pixel_coords_dict[obj]
+                img_h = parent.image_data.shape[0] if parent and hasattr(parent, 'image_data') and parent.image_data is not None else None
+                if img_h is not None:
+                    y_flipped = img_h - y - 1
+                    pixel_str = f"({x:.1f}, {y_flipped:.1f})"
+                else:
+                    pixel_str = f"({x:.1f}, {y:.1f})"
             items = [
                 QTableWidgetItem(str(getattr(obj, 'name', ''))),
                 QTableWidgetItem(type_str),
                 QTableWidgetItem(f"{getattr(obj, 'magnitude', 0):.2f}" if getattr(obj, 'magnitude', None) is not None else ""),
                 QTableWidgetItem(f"{getattr(obj, 'distance', 0):.2f}" if getattr(obj, 'distance', None) is not None else ""),
                 QTableWidgetItem(f"{getattr(obj, 'velocity', 0):.2f}" if getattr(obj, 'velocity', None) is not None else ""),
-                QTableWidgetItem(f"{getattr(obj, 'ra', 0):.5f}" if getattr(obj, 'ra', None) is not None else ""),
-                QTableWidgetItem(f"{getattr(obj, 'dec', 0):.5f}" if getattr(obj, 'dec', None) is not None else ""),
-                QTableWidgetItem(f"({pixel_coords_dict[obj][0]:.1f}, {pixel_coords_dict[obj][1]:.1f})") if obj in pixel_coords_dict else QTableWidgetItem("-")
+                QTableWidgetItem(ra_str),
+                QTableWidgetItem(dec_str),
+                QTableWidgetItem(pixel_str)
             ]
             for col, item in enumerate(items):
                 if color:
@@ -50,5 +76,13 @@ class SSOResultWindow(QDialog):
         table.resizeColumnsToContents()
         table.setSortingEnabled(True)
         table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
+        # Connect selection change to emit signal
+        table.selectionModel().selectionChanged.connect(lambda selected, deselected: self._on_row_selected(table))
         layout.addWidget(table)
-        self.setLayout(layout) 
+        self.setLayout(layout)
+        self.table = table
+    def _on_row_selected(self, table):
+        selected_rows = table.selectionModel().selectedRows()
+        if selected_rows:
+            row = selected_rows[0].row()
+            self.sso_row_selected.emit(row) 

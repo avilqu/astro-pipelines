@@ -336,6 +336,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.stretch_locked = False
         self.locked_display_min = None
         self.locked_display_max = None
+        self._sso_highlight_index = None
         if fits_path:
             self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
@@ -777,7 +778,28 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         if self.wcs is None or self.image_data is None:
             QMessageBox.warning(self, "No WCS", "No WCS/image data available. Please solve the image first.")
             return
-        epoch = Time.now()
+        # --- Use DATE-OBS from FITS header as epoch ---
+        epoch = None
+        date_obs = None
+        header = None
+        # Try to get header from preloaded fits
+        if self.loaded_files and 0 <= self.current_file_index < len(self.loaded_files):
+            fits_path = self.loaded_files[self.current_file_index]
+            if fits_path in self._preloaded_fits:
+                _, header, _ = self._preloaded_fits[fits_path]
+        if header is not None:
+            date_obs = header.get('DATE-OBS')
+        if date_obs:
+            try:
+                epoch = Time(date_obs, format='isot', scale='utc')
+            except Exception:
+                try:
+                    epoch = Time(date_obs)
+                except Exception:
+                    epoch = None
+        if epoch is None:
+            epoch = Time.now()
+            QMessageBox.warning(self, "DATE-OBS missing", "DATE-OBS not found or invalid in FITS header. Using current time for Skybot search.")
         # Progress dialog
         progress = QProgressDialog("Searching Skybot for solar system objects...", None, 0, 0, self)
         progress.setWindowTitle("Skybot Search")
@@ -802,6 +824,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             sso_objects = list(pixel_coords_dict.keys())
             coords_list = list(pixel_coords_dict.values())
             self._sso_overlay = (sso_objects, coords_list)
+            self._sso_highlight_index = None  # Reset highlight
             self._overlay_visible = True
             self.update_overlay_button_visibility()
             self.image_label.update()
@@ -809,6 +832,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             try:
                 from lib.gui.common.sso_window import SSOResultWindow
                 dlg = SSOResultWindow(sso_list, pixel_coords_dict, self)
+                dlg.sso_row_selected.connect(self.on_sso_row_selected)
                 dlg.show()
             except ImportError:
                 pass
@@ -1074,6 +1098,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             thread.start()
         console_window.cancel_requested.connect(lambda: cancelled.update({"flag": True}))
         next_in_queue()
+
+    def on_sso_row_selected(self, row_index):
+        self._sso_highlight_index = row_index
+        self.image_label.update()
 
 class SkybotWorker(QObject):
     finished = pyqtSignal(list, dict)  # sso_list, pixel_coords_dict

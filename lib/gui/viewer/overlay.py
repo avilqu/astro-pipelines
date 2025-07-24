@@ -125,7 +125,7 @@ class ImageLabel(QLabel):
         if (0 <= pixmap_x < pixmap_w and 0 <= pixmap_y < pixmap_h):
             orig_x = pixmap_x / scale
             orig_y = pixmap_y / scale
-            # Format pixel value
+            # Use direct y (no flip)
             pixel_value = None
             try:
                 if (0 <= orig_x < img_w and 0 <= orig_y < img_h):
@@ -209,6 +209,7 @@ class ImageLabel(QLabel):
                 x_offset = (label_w - pixmap_w) // 2
                 y_offset = (label_h - pixmap_h) // 2
                 x_img, y_img = pixel_coords
+                # Use direct y (no flip)
                 x_disp = x_img * scale + x_offset
                 y_disp = y_img * scale + y_offset
                 overlay = SIMBADOverlay(simbad_object.name, (x_disp, y_disp))
@@ -244,7 +245,8 @@ class ImageLabel(QLabel):
                     (x * scale + x_offset, y * scale + y_offset)
                     for (x, y) in pixel_coords_list
                 ]
-                overlay = SSOOverlay(sso_objects, pixel_coords_disp)
+                highlight_index = getattr(self.parent_viewer, '_sso_highlight_index', None)
+                overlay = SSOOverlay(sso_objects, pixel_coords_disp, highlight_index=highlight_index)
                 painter = QPainter(self)
                 overlay.draw(painter)
                 painter.end()
@@ -279,22 +281,35 @@ class SIMBADOverlay:
         painter.drawText(text_x, text_y, self.name) 
 
 class SSOOverlay:
-    def __init__(self, sso_objects, pixel_coords_list, color=QColor(255, 200, 0), radius=10):
+    def __init__(self, sso_objects, pixel_coords_list, color=QColor(255, 200, 0), radius=10, highlight_index=None):
         self.sso_objects = sso_objects  # List of SolarSystemObject
         self.pixel_coords_list = pixel_coords_list  # List of (x, y)
         self.color = color
         self.radius = radius
+        self.highlight_index = highlight_index
+
+    def _whiten_color(self, color, factor=0.5):
+        # Blend color with white by the given factor (0.0 = original, 1.0 = white)
+        r = int(color.red() + (255 - color.red()) * factor)
+        g = int(color.green() + (255 - color.green()) * factor)
+        b = int(color.blue() + (255 - color.blue()) * factor)
+        return QColor(r, g, b)
 
     def draw(self, painter: QPainter):
-        pen = QPen(self.color)
-        pen.setWidth(2)
-        painter.setPen(pen)
         font = QFont()
         font.setPointSize(10)
         font.setBold(False)
         painter.setFont(font)
-        for obj, (x, y) in zip(self.sso_objects, self.pixel_coords_list):
-            # Draw a circle (not filled) for each SSO
+        for idx, (obj, (x, y)) in enumerate(zip(self.sso_objects, self.pixel_coords_list)):
+            if self.highlight_index is not None and idx == self.highlight_index:
+                color = QColor(255, 0, 0)  # Red for highlight
+                pen = QPen(color)
+                pen.setWidth(3)
+            else:
+                color = self.color
+                pen = QPen(color)
+                pen.setWidth(2)
+            painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
             # Draw name to the right
