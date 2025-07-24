@@ -707,7 +707,7 @@ class FitsTableWidget(QTableWidget):
                     header = get_fits_header_as_json(fits_file.path)
                 except Exception as e:
                     header = {"Error": str(e)}
-                dlg = HeaderViewer(header, self)
+                dlg = HeaderViewer(header, fits_file.path, self)
                 dlg.exec()
             def show_image():
                 import sys, subprocess

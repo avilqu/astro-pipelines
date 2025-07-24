@@ -81,7 +81,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                         header = json.loads(header)
                 except Exception as e:
                     header = {"Error": str(e)}
-                dlg = HeaderViewer(header, self)
+                dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                 dlg.exec()
             def show_image():
                 import sys, subprocess
@@ -124,7 +124,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                             header = json.loads(header)
                     except Exception as e:
                         header = {"Error": str(e)}
-                    dlg = HeaderViewer(header, self)
+                    dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                     dlg.exec()
                 def show_image():
                     import sys, subprocess
@@ -287,7 +287,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                         header = json.loads(header)
                 except Exception as e:
                     header = {"Error": str(e)}
-                dlg = HeaderViewer(header, self)
+                dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                 dlg.exec()
             def show_image():
                 import sys, subprocess
@@ -466,7 +466,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                         header = json.loads(header)
                 except Exception as e:
                     header = {"Error": str(e)}
-                dlg = HeaderViewer(header, self)
+                dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                 dlg.exec()
             def show_image():
                 import sys, subprocess

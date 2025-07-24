@@ -2,9 +2,12 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit
 from PyQt6.QtGui import QFont
 
 class HeaderViewer(QDialog):
-    def __init__(self, header_dict, parent=None):
+    def __init__(self, header_dict, file_path=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("FITS Header")
+        title = "FITS Header"
+        if file_path:
+            title += f" - {file_path}"
+        self.setWindowTitle(title)
         self.setGeometry(200, 200, 700, 600)
         layout = QVBoxLayout(self)
         self.text_area = QTextEdit()

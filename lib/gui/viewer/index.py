@@ -719,7 +719,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
     def show_header_dialog(self):
         if hasattr(self, '_current_header') and self._current_header:
-            dlg = HeaderViewer(self._current_header, self)
+            file_path = None
+            if self.loaded_files and 0 <= self.current_file_index < len(self.loaded_files):
+                file_path = self.loaded_files[self.current_file_index]
+            dlg = HeaderViewer(self._current_header, file_path, self)
             dlg.exec()
 
     def toggle_overlay_visibility(self):
