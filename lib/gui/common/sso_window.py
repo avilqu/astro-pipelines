@@ -48,5 +48,7 @@ class SSOResultWindow(QDialog):
                     item.setForeground(QBrush(color))
                 table.setItem(i, col, item)
         table.resizeColumnsToContents()
+        table.setSortingEnabled(True)
+        table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
         layout.addWidget(table)
         self.setLayout(layout) 

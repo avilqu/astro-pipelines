@@ -719,15 +719,13 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 self.image_label.setText("No image data in FITS file.")
                 self.image_data = None
                 self.header_button.setEnabled(False)
-            self._simbad_overlay = None
-            self._overlay_visible = True
+            # self._simbad_overlay = None  # Do NOT clear SIMBAD overlay when switching images
             self.update_overlay_button_visibility()
         except Exception as e:
             self.image_label.setText(f"Error loading FITS: {e}")
             self.image_data = None
             self.header_button.setEnabled(False)
-            self._simbad_overlay = None
-            self._overlay_visible = True
+            # self._simbad_overlay = None  # Do NOT clear SIMBAD overlay on error
             self.update_overlay_button_visibility()
         self.update_navigation_buttons()
         self.update_image_count_label()

@@ -3,6 +3,9 @@ from PyQt6.QtGui import QPixmap, QImage
 
 from PyQt6.QtWidgets import (QPushButton, QVBoxLayout, QHBoxLayout, 
                              QLabel, QDialog, QLineEdit, QMessageBox)
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
+from PyQt6.QtWidgets import QProgressDialog, QApplication
+from PyQt6.QtCore import Qt
 
 class SIMBADSearchDialog(QDialog):
     """Dialog window for SIMBAD object search"""
@@ -53,50 +56,92 @@ class SIMBADSearchDialog(QDialog):
             QMessageBox.warning(self, "Search Error", "Please enter an object name.")
             return
         
-        # Disable search button during search
         self.search_button.setEnabled(False)
         self.search_button.setText("Searching...")
-        
-        try:
-            # Search SIMBAD
-            simbad_object = self.parent_viewer.astrometry_catalog.simbad_search(object_name)
-            
+        # Show progress dialog
+        progress = QProgressDialog("Searching SIMBAD...", None, 0, 0, self)
+        progress.setWindowTitle("SIMBAD Search")
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        # Start worker thread
+        self._simbad_thread = QThread()
+        self._simbad_worker = SIMBADWorker(
+            self.parent_viewer.astrometry_catalog,
+            self.parent_viewer.wcs,
+            self.parent_viewer.image_data.shape,
+            object_name
+        )
+        self._simbad_worker.moveToThread(self._simbad_thread)
+        self._simbad_thread.started.connect(self._simbad_worker.run)
+        def on_finished(simbad_object, pixel_coords):
+            progress.close()
+            self._simbad_thread.quit()
+            self._simbad_thread.wait()
             if simbad_object is None:
                 QMessageBox.information(self, "Not Found", f"The object '{object_name}' was not found in SIMBAD.")
+                self.search_button.setEnabled(True)
+                self.search_button.setText("Search")
                 return
-            
-            # Check if object is in the field
-            if self.parent_viewer.wcs is None:
-                QMessageBox.warning(self, "No WCS", "No WCS information available. Please solve the image first.")
-                return
-            
-            is_in_field, pixel_coords = self.parent_viewer.astrometry_catalog.check_object_in_field(
-                self.parent_viewer.wcs, 
-                self.parent_viewer.image_data.shape, 
-                simbad_object
-            )
-            
-            if is_in_field:
-                # Object found and in field
-                self.result = (simbad_object, pixel_coords)
-                QMessageBox.information(self, "Object Found", 
-                    f"Found '{simbad_object.name}' in the field!\n"
-                    f"Type: {simbad_object.object_type}\n"
-                    f"RA: {simbad_object.ra:.4f}°, Dec: {simbad_object.dec:.4f}°")
-                self.accept()
-            else:
-                # Object found but out of field
-                QMessageBox.information(self, "Object Out of Field", 
-                    f"The object '{simbad_object.name}' was found in SIMBAD but is out of frame.\n"
+            if pixel_coords is None:
+                QMessageBox.information(self, "Object Out of Field", \
+                    f"The object '{simbad_object.name}' was found in SIMBAD but is out of frame.\n" \
                     f"Coordinates: RA {simbad_object.ra:.4f}°, Dec {simbad_object.dec:.4f}°")
+                self.search_button.setEnabled(True)
+                self.search_button.setText("Search")
                 self.reject()
-                
-        except Exception as e:
-            QMessageBox.critical(self, "Search Error", f"Error searching SIMBAD: {str(e)}")
-        finally:
-            # Re-enable search button
+                return
+            self.result = (simbad_object, pixel_coords)
+            QMessageBox.information(self, "Object Found", \
+                f"Found '{simbad_object.name}' in the field!\n" \
+                f"Type: {simbad_object.object_type}\n" \
+                f"RA: {simbad_object.ra:.4f}°, Dec: {simbad_object.dec:.4f}°")
             self.search_button.setEnabled(True)
             self.search_button.setText("Search")
+            self.accept()
+        def on_error(msg):
+            progress.close()
+            self._simbad_thread.quit()
+            self._simbad_thread.wait()
+            QMessageBox.critical(self, "Search Error", f"Error searching SIMBAD: {msg}")
+            self.search_button.setEnabled(True)
+            self.search_button.setText("Search")
+        self._simbad_worker.finished.connect(on_finished)
+        self._simbad_worker.error.connect(on_error)
+        self._simbad_thread.start()
+
+
+class SIMBADWorker(QObject):
+    finished = pyqtSignal(object, object)  # simbad_object, pixel_coords
+    error = pyqtSignal(str)
+
+    def __init__(self, astrometry_catalog, wcs, image_shape, object_name):
+        super().__init__()
+        self.astrometry_catalog = astrometry_catalog
+        self.wcs = wcs
+        self.image_shape = image_shape
+        self.object_name = object_name
+
+    def run(self):
+        try:
+            simbad_object = self.astrometry_catalog.simbad_search(self.object_name)
+            if simbad_object is None:
+                self.finished.emit(None, None)
+                return
+            if self.wcs is None:
+                self.error.emit("No WCS information available. Please solve the image first.")
+                return
+            is_in_field, pixel_coords = self.astrometry_catalog.check_object_in_field(
+                self.wcs, self.image_shape, simbad_object
+            )
+            if is_in_field:
+                self.finished.emit(simbad_object, pixel_coords)
+            else:
+                self.finished.emit(simbad_object, None)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 def create_image_object(image_data: np.ndarray, display_min=None, display_max=None, clipping=False, sigma_clip=3):
