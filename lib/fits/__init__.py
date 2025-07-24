@@ -19,6 +19,7 @@ from .wcs import (
     WCSApplicationError,
     ImageValidationError
 )
+from .calibration import CalibrationManager
 
 __all__ = [
     'get_fits_header_as_json', 
@@ -37,5 +38,6 @@ __all__ = [
     'ImageValidationResult',
     'WCSExtractionError',
     'WCSApplicationError',
-    'ImageValidationError'
+    'ImageValidationError',
+    'CalibrationManager'
 ] 

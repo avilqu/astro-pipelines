@@ -1,9 +1,11 @@
 from PyQt6.QtWidgets import QMenu
 from PyQt6.QtGui import QAction, QFont
+from colorama import Fore, Style
 from lib.gui.common.console_window import ConsoleOutputWindow
 from .platesolving_thread import PlatesolvingThread
+from .calibration_thread import CalibrationThread
 
-def build_single_file_menu(parent=None, show_header_callback=None, show_image_callback=None, solve_image_callback=None):
+def build_single_file_menu(parent=None, show_header_callback=None, show_image_callback=None, solve_image_callback=None, calibrate_and_compare_callback=None):
     menu = QMenu(parent)
     show_image_action = QAction("Show in FITS viewer", menu)
     font = show_image_action.font()
@@ -12,6 +14,14 @@ def build_single_file_menu(parent=None, show_header_callback=None, show_image_ca
     if show_image_callback:
         show_image_action.triggered.connect(show_image_callback)
     menu.addAction(show_image_action)
+    
+    # Add separator before calibration action
+    menu.addSeparator()
+    
+    calibrate_action = QAction("Calibrate and compare", menu)
+    if calibrate_and_compare_callback:
+        calibrate_action.triggered.connect(calibrate_and_compare_callback)
+    menu.addAction(calibrate_action)
     
     # Add separator before solve image action
     menu.addSeparator()
@@ -118,13 +128,70 @@ def platesolve_multiple_files(parent, files, on_all_finished=None):
             if thread in parent._platesolving_threads:
                 parent._platesolving_threads.remove(thread)
             next_in_queue()
-        thread.finished.connect(on_finished)
-        console_window.cancel_requested.connect(lambda: cancel(thread))
-        parent.platesolving_thread = thread  # For possible cancellation
-        thread.start()
 
-    def cancel(thread):
-        cancelled["flag"] = True
-        thread.stop()
-
-    next_in_queue() 
+def calibrate_and_compare_file(parent, fits_file, show_image_callback=None, show_both_callback=None):
+    """
+    Calibrate a FITS file and then open both original and calibrated versions in the viewer.
+    parent: the parent widget (for dialog parenting)
+    fits_file: file object (must have .path)
+    show_image_callback: callback to show single image in viewer
+    show_both_callback: callback to show both images in same viewer instance
+    """
+    console_window = ConsoleOutputWindow("Calibrating File", parent)
+    console_window.show_and_raise()
+    
+    # Ensure threads are kept alive
+    if not hasattr(parent, '_calibration_threads'):
+        parent._calibration_threads = []
+    
+    # Create calibration thread
+    thread = CalibrationThread(fits_file.path)
+    parent._calibration_threads.append(thread)
+    
+    def on_output(text):
+        console_window.append_text(text)
+    
+    def on_finished(result):
+        # Remove thread from list
+        if thread in parent._calibration_threads:
+            parent._calibration_threads.remove(thread)
+        
+        if 'error' in result:
+            console_window.append_text(f"\n{Fore.RED}Calibration failed: {result['error']}{Style.RESET_ALL}\n")
+            return
+        
+        if result.get('success'):
+            console_window.append_text(f"\n{Fore.GREEN}Calibration completed successfully!{Style.RESET_ALL}\n")
+            console_window.append_text(f"Original: {result['original_path']}\n")
+            console_window.append_text(f"Calibrated: {result['calibrated_path']}\n")
+            
+            # Open both files in viewer if callback provided
+            if show_both_callback:
+                console_window.append_text(f"\nOpening both files in FITS viewer...\n")
+                try:
+                    # Open both files in the same viewer instance
+                    show_both_callback(result['original_path'], result['calibrated_path'])
+                    console_window.append_text(f"{Fore.GREEN}Both files opened in same viewer instance!{Style.RESET_ALL}\n")
+                except Exception as e:
+                    console_window.append_text(f"{Fore.RED}Error opening files in viewer: {e}{Style.RESET_ALL}\n")
+            elif show_image_callback:
+                console_window.append_text(f"\nOpening both files in separate FITS viewer instances...\n")
+                try:
+                    # Open original file
+                    show_image_callback(result['original_path'])
+                    # Open calibrated file
+                    show_image_callback(result['calibrated_path'])
+                    console_window.append_text(f"{Fore.GREEN}Both files opened in separate viewers!{Style.RESET_ALL}\n")
+                except Exception as e:
+                    console_window.append_text(f"{Fore.RED}Error opening files in viewer: {e}{Style.RESET_ALL}\n")
+        else:
+            console_window.append_text(f"\n{Fore.RED}Calibration failed{Style.RESET_ALL}\n")
+    
+    # Connect signals
+    thread.output.connect(on_output)
+    thread.finished.connect(on_finished)
+    console_window.cancel_requested.connect(thread.stop)
+    
+    # Start calibration
+    console_window.append_text(f"Starting calibration for: {fits_file.path}\n")
+    thread.start() 

@@ -48,6 +48,10 @@ if __name__ == "__main__":
         "-S", "--solve", metavar="FITS_FILE", 
         help="solve a single FITS file using astrometry.net"
     )
+    parser.add_argument(
+        "-C", "--calibrate", metavar="FITS_FILE", 
+        help="calibrate a single FITS file using master bias, dark, and flat"
+    )
     
     args = parser.parse_args()
 
@@ -190,6 +194,50 @@ if __name__ == "__main__":
             print(f"{Style.BRIGHT + Fore.RED}Error during platesolving: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
+    def calibrate_image():
+        """Calibrate a single FITS image using master bias, dark, and flat"""
+        try:
+            from lib.fits.calibration import CalibrationManager
+            import os
+            
+            fits_file = args.calibrate
+            
+            # Check if file exists
+            if not os.path.exists(fits_file):
+                print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Check if file has .fits extension
+            if not fits_file.lower().endswith(('.fits', '.fit')):
+                print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension){Style.RESET_ALL}")
+                sys.exit(1)
+            
+            print(f"{Style.BRIGHT + Fore.BLUE}Starting calibration for: {fits_file}{Style.RESET_ALL}")
+            
+            # Initialize calibration manager
+            calib_manager = CalibrationManager()
+            
+            # Calibrate the file
+            result = calib_manager.calibrate_file_simple(fits_file)
+            
+            if 'error' in result:
+                print(f"{Style.BRIGHT + Fore.RED}Calibration failed: {result['error']}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            if result['success']:
+                print(f"\n{Style.BRIGHT + Fore.GREEN}Calibration completed successfully!{Style.RESET_ALL}")
+                print(f"Original file: {result['original_path']}")
+                print(f"Calibrated file: {result['calibrated_path']}")
+                print(f"Filename: {result['filename']}")
+                
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: Required modules not found.{Style.RESET_ALL}")
+            print(f"Error details: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error during calibration: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
     # Handle arguments
     if args.gui is not None:
         launch_gui()
@@ -203,6 +251,8 @@ if __name__ == "__main__":
         scan_all()
     elif args.solve:
         solve_image()
+    elif args.calibrate:
+        calibrate_image()
     else:
         # Default behavior: show help
         parser.print_help()
