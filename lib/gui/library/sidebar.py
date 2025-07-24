@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTreeWidget, QTreeWidgetItem, QInputDialog, QMessageBox
 from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QFont, QBrush, QColor
 from lib.db import get_db_manager
 from lib.db.edit import rename_target_across_database
 from lib.gui.library.context_dropdown import build_sidebar_target_menu
@@ -27,7 +28,7 @@ class LeftPanel(QWidget):
         # Set light grey text color, bigger font, and padding
         self.menu_tree.setStyleSheet("""
             QTreeWidget {
-                color: #cccccc;
+                color: #ffffff;
                 font-size: 14px;
             }
     
@@ -44,14 +45,26 @@ class LeftPanel(QWidget):
         self.menu_tree.addTopLevelItem(self.targets_item)
         self.menu_tree.addTopLevelItem(self.dates_item)
 
+        # Set bold font for expandable items
+        bold_font = QFont()
+        bold_font.setBold(True)
+        self.targets_item.setFont(0, bold_font)
+        self.obslog_item.setFont(0, bold_font)
+        self.dates_item.setFont(0, bold_font)
         # Calibration section
         self.calibration_item = QTreeWidgetItem(["Calibration"])
+        self.calibration_item.setFont(0, bold_font)
         bias_count = db.get_calibration_file_count("Bias")
         darks_count = db.get_calibration_file_count("Dark")
         flats_count = db.get_calibration_file_count("Flat")
+
+        darker_brush = QBrush(QColor("#bbbbbb"))
         self.bias_item = QTreeWidgetItem([f"Bias ({bias_count})"])
+        self.bias_item.setForeground(0, darker_brush)
         self.darks_item = QTreeWidgetItem([f"Darks ({darks_count})"])
+        self.darks_item.setForeground(0, darker_brush)
         self.flats_item = QTreeWidgetItem([f"Flats ({flats_count})"])
+        self.flats_item.setForeground(0, darker_brush)
         self.calibration_item.addChild(self.bias_item)
         self.calibration_item.addChild(self.darks_item)
         self.calibration_item.addChild(self.flats_item)
@@ -61,15 +74,18 @@ class LeftPanel(QWidget):
         # Populate targets and dates immediately
         for target in db.get_unique_targets():
             count = db.get_file_count_by_target(target)
-            QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
+            item = QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
+            item.setForeground(0, darker_brush)
         if TIME_DISPLAY_MODE == 'Local':
             for date in reversed(db.get_unique_local_dates()):
                 count = db.get_file_count_by_local_date(date)
-                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item.setForeground(0, darker_brush)
         else:
             for date in reversed(db.get_unique_dates()):
                 count = db.get_file_count_by_date(date)
-                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item.setForeground(0, darker_brush)
 
         # Expand both Targets and Dates by default
         self.menu_tree.expandItem(self.targets_item)
@@ -170,16 +186,19 @@ class LeftPanel(QWidget):
         # Repopulate targets
         for target in db.get_unique_targets():
             count = db.get_file_count_by_target(target)
-            QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
+            item = QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
+            item.setForeground(0, darker_brush)
         # Repopulate dates
         if TIME_DISPLAY_MODE == 'Local':
             for date in reversed(db.get_unique_local_dates()):
                 count = db.get_file_count_by_local_date(date)
-                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item.setForeground(0, darker_brush)
         else:
             for date in reversed(db.get_unique_dates()):
                 count = db.get_file_count_by_date(date)
-                QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
+                item.setForeground(0, darker_brush)
         # Expand both Targets and Dates by default
         self.menu_tree.expandItem(self.targets_item)
         self.menu_tree.expandItem(self.dates_item) 
