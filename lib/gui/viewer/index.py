@@ -230,6 +230,14 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.clipping_action.triggered.connect(self.toggle_clipping)
         self.toolbar.addAction(self.clipping_action)
         self.toolbar.widgetForAction(self.clipping_action).setFixedSize(32, 32)
+
+        # Add Lock stretch button (only visible if >1 image loaded)
+        self.lock_stretch_action = QAction(QIcon.fromTheme("unlock"), "", self)
+        self.lock_stretch_action.setToolTip("Lock stretch parameters")
+        self.lock_stretch_action.setVisible(False)
+        self.lock_stretch_action.triggered.connect(self.toggle_stretch_lock)
+        self.toolbar.addAction(self.lock_stretch_action)
+        self.toolbar.widgetForAction(self.lock_stretch_action).setFixedSize(32, 32)
         
         self.toolbar.addWidget(make_toolbar_separator(self))
         
@@ -282,23 +290,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         spacer = QWidget(self)
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.toolbar.addWidget(spacer)
-        
-        # Add Lock stretch button (only visible if >1 image loaded)
-        self.lock_stretch_action = QAction(QIcon.fromTheme("unlock"), "", self)
-        self.lock_stretch_action.setToolTip("Lock stretch parameters")
-        self.lock_stretch_action.setVisible(False)
-        self.lock_stretch_action.triggered.connect(self.toggle_stretch_lock)
-        self.toolbar.addAction(self.lock_stretch_action)
-        self.toolbar.widgetForAction(self.lock_stretch_action).setFixedSize(32, 32)
-        
-        # Add Align button (only visible if >1 image loaded) - moved to right side
+
+        # Restore Align button (only visible if >1 image loaded) - should be after the spacer
         self.align_action = QAction(QIcon.fromTheme("image-rotate-symbolic"), "", self)
         self.align_action.setToolTip("Align all images using WCS")
         self.align_action.setVisible(False)
         self.align_action.triggered.connect(self.align_images)
         self.toolbar.addAction(self.align_action)
         self.toolbar.widgetForAction(self.align_action).setFixedSize(32, 32)
-        
+
         self.toolbar.addWidget(nav_widget)
         # Remove sidebar and use only scroll_area as central widget
         self.scroll_area = NoWheelScrollArea()
