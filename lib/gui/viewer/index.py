@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import QStatusBar, QSizePolicy, QLabel, QMessageBox, QProgr
 import config
 from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, compute_padded_reference_wcs, reproject_images_to_common_wcs
 from PyQt6.QtWidgets import QFrame
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 
 def make_toolbar_separator(parent):
     sep = QFrame(parent)
@@ -193,7 +194,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         zoom_to_fit_action.triggered.connect(self.zoom_to_fit)
         self.toolbar.addAction(zoom_to_fit_action)
         self.toolbar.widgetForAction(zoom_to_fit_action).setFixedSize(32, 32)
-        
+
+        # Add Zoom to Region button
+        self.zoom_region_action = QAction(QIcon.fromTheme("page-zoom"), "", self)
+        self.zoom_region_action.setCheckable(True)
+        self.zoom_region_action.setChecked(False)
+        self.zoom_region_action.setToolTip("Zoom to selected region (draw rectangle)")
+        self.zoom_region_action.toggled.connect(self.on_zoom_region_toggled)
+        self.toolbar.addAction(self.zoom_region_action)
+        self.toolbar.widgetForAction(self.zoom_region_action).setFixedSize(32, 32)
+
         self.toolbar.addWidget(make_toolbar_separator(self))
 
         linear_action = QAction(QIcon.fromTheme("view-object-histogram-linear-symbolic"), "", self)
@@ -309,6 +319,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(self.align_action)
         self.toolbar.widgetForAction(self.align_action).setFixedSize(32, 32)
 
+        # Add File List toggle button (only visible if >1 image loaded)
+        self.filelist_action = QAction(QIcon.fromTheme("view-list-details"), "", self)
+        self.filelist_action.setToolTip("Show list of loaded FITS files")
+        self.filelist_action.setVisible(False)
+        self.filelist_action.setCheckable(True)
+        self.filelist_action.setChecked(False)
+        self.filelist_action.triggered.connect(self.toggle_filelist_window)
+        self.toolbar.addAction(self.filelist_action)
+        self.toolbar.widgetForAction(self.filelist_action).setFixedSize(32, 32)
+
         self.toolbar.addWidget(nav_widget)
         # Remove sidebar and use only scroll_area as central widget
         self.scroll_area = NoWheelScrollArea()
@@ -337,6 +357,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_min = None
         self.locked_display_max = None
         self._sso_highlight_index = None
+        self._zoom_region_mode = False  # Track if zoom-to-region is active
+        self._pending_zoom_rect = None  # Store the last selected rectangle
         if fits_path:
             self.open_and_add_file(fits_path)
         self.update_overlay_button_visibility()
@@ -411,6 +433,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_count_label()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()
+        # Update file list window if open
+        if hasattr(self, '_filelist_window') and self._filelist_window is not None:
+            self._filelist_window.table.setRowCount(len(self.loaded_files))
+            for i, path in enumerate(self.loaded_files):
+                item = QTableWidgetItem(os.path.basename(path))
+                item.setToolTip(path)
+                self._filelist_window.table.setItem(i, 0, item)
+            self._filelist_window.file_paths = list(self.loaded_files)
+            self._filelist_window.select_row(self.current_file_index)
 
     def _preload_fits_file(self, fits_path):
         if fits_path in self._preloaded_fits:
@@ -449,6 +480,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_count_label()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()
+        # Update highlight in file list window
+        if hasattr(self, '_filelist_window') and self._filelist_window is not None:
+            self._filelist_window.select_row(self.current_file_index)
 
     def show_next_file(self):
         # Save zoom and center before switching
@@ -471,6 +505,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_count_label()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()
+        # Update highlight in file list window
+        if hasattr(self, '_filelist_window') and self._filelist_window is not None:
+            self._filelist_window.select_row(self.current_file_index)
 
     def update_navigation_buttons(self):
         n = len(self.loaded_files)
@@ -869,6 +906,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         visible = len(self.loaded_files) > 1
         self.align_action.setVisible(visible)
         self.lock_stretch_action.setVisible(visible)
+        self.filelist_action.setVisible(visible)
 
     def align_images(self):
         # Remove overlays before aligning
@@ -1103,6 +1141,60 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._sso_highlight_index = row_index
         self.image_label.update()
 
+    def toggle_filelist_window(self):
+        if not hasattr(self, '_filelist_window') or self._filelist_window is None:
+            def on_row_selected(row):
+                self.current_file_index = row
+                self.load_fits(self.loaded_files[row], restore_view=True)
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+                self.update_align_button_visibility()
+                self.update_platesolve_button_visibility()
+                # Update highlight in file list window
+                if hasattr(self, '_filelist_window') and self._filelist_window is not None:
+                    self._filelist_window.select_row(row)
+            self._filelist_window = FileListWindow(self.loaded_files, self.current_file_index, on_row_selected, self)
+            self._filelist_window.finished.connect(self._on_filelist_closed)
+            self.filelist_action.setChecked(True)
+            self._filelist_window.show()
+        else:
+            self._filelist_window.close()
+
+    def _on_filelist_closed(self):
+        self.filelist_action.setChecked(False)
+        self._filelist_window = None
+
+    def on_zoom_region_toggled(self, checked):
+        self._zoom_region_mode = checked
+        self.image_label.set_zoom_region_mode(checked)
+        if not checked:
+            self._pending_zoom_rect = None
+            self.image_label.clear_zoom_region_rect()
+
+    def zoom_to_region(self, img_x0, img_y0, img_x1, img_y1):
+        # img_x0, img_y0, img_x1, img_y1 are in image coordinates (float)
+        # Compute the rectangle in image coordinates
+        x0, x1 = sorted([img_x0, img_x1])
+        y0, y1 = sorted([img_y0, img_y1])
+        width = x1 - x0
+        height = y1 - y0
+        if width < 5 or height < 5:
+            return  # Ignore too small regions
+        # Compute the zoom factor needed to fit this region in the viewport
+        viewport = self.scroll_area.viewport()
+        if width == 0 or height == 0:
+            return
+        scale_x = viewport.width() / width
+        scale_y = viewport.height() / height
+        self._zoom = min(scale_x, scale_y)
+        # Center the viewport on the center of the selected region
+        center_x = (x0 + x1) / 2
+        center_y = (y0 + y1) / 2
+        self.update_image_display(keep_zoom=True)
+        self._set_viewport_center(center_x, center_y)
+        # Optionally, turn off region mode after zoom
+        self.zoom_region_action.setChecked(False)
+
 class SkybotWorker(QObject):
     finished = pyqtSignal(list, dict)  # sso_list, pixel_coords_dict
     error = pyqtSignal(str)
@@ -1122,6 +1214,41 @@ class SkybotWorker(QObject):
             self.finished.emit(sso_list, pixel_coords_dict)
         except Exception as e:
             self.error.emit(str(e))
+
+class FileListWindow(QDialog):
+    def __init__(self, file_paths, current_index, on_row_selected, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Loaded FITS Files")
+        self.resize(400, 400)
+        self.table = QTableWidget(self)
+        self.table.setColumnCount(1)
+        self.table.setHorizontalHeaderLabels(["Filename"])
+        self.table.setRowCount(len(file_paths))
+        self.file_paths = file_paths
+        self.on_row_selected = on_row_selected
+        for i, path in enumerate(file_paths):
+            item = QTableWidgetItem(os.path.basename(path))
+            item.setToolTip(path)
+            self.table.setItem(i, 0, item)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.select_row(current_index)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table)
+        self.setLayout(layout)
+        self.table.cellDoubleClicked.connect(self._row_activated)
+        self.table.cellClicked.connect(self._row_activated)
+
+    def _row_activated(self, row, col):
+        if 0 <= row < len(self.file_paths):
+            self.on_row_selected(row)
+            # Do not close the window here
+
+    def select_row(self, row):
+        if 0 <= row < self.table.rowCount():
+            self.table.selectRow(row)
 
 def main():
     fits_paths = sys.argv[1:] if len(sys.argv) > 1 else []

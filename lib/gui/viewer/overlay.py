@@ -4,7 +4,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.time import Time
 from PyQt6.QtWidgets import QLabel, QScrollArea, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QMessageBox
-from PyQt6.QtCore import Qt, QPoint, QTimer, QPointF
+from PyQt6.QtCore import Qt, QPoint, QTimer, QPointF, QRect
 from PyQt6.QtGui import QPixmap, QPainter, QMouseEvent, QKeyEvent, QFont, QPen, QColor, QCursor
 
 class ImageLabel(QLabel):
@@ -27,6 +27,11 @@ class ImageLabel(QLabel):
         self.pan_timer.setInterval(16)
         self.target_scroll_pos = QPoint()
         self._custom_cross_cursor = self._create_cross_cursor()
+        # --- Zoom to region state ---
+        self._zoom_region_mode = False
+        self._zoom_region_start = None  # QPoint
+        self._zoom_region_end = None    # QPoint
+        self._zoom_region_active = False
 
     def _create_cross_cursor(self):
         # Create a 24x24 pixmap with a 1px thick white cross
@@ -55,7 +60,28 @@ class ImageLabel(QLabel):
             self.unsetCursor()
         super().leaveEvent(event)
 
+    def set_zoom_region_mode(self, enabled):
+        self._zoom_region_mode = enabled
+        if not enabled:
+            self._zoom_region_start = None
+            self._zoom_region_end = None
+            self._zoom_region_active = False
+            self.update()
+
+    def clear_zoom_region_rect(self):
+        self._zoom_region_start = None
+        self._zoom_region_end = None
+        self._zoom_region_active = False
+        self.update()
+
     def mousePressEvent(self, event: QMouseEvent):
+        if self._zoom_region_mode and event.button() == Qt.MouseButton.LeftButton:
+            self._zoom_region_start = event.pos()
+            self._zoom_region_end = event.pos()
+            self._zoom_region_active = True
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            self.update()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
             self.panning = True
             self.pan_start_pos = event.pos()
@@ -70,6 +96,10 @@ class ImageLabel(QLabel):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        if self._zoom_region_mode and self._zoom_region_active:
+            self._zoom_region_end = event.pos()
+            self.update()
+            return
         if self.parent_viewer and self.parent_viewer.pixmap is not None:
             if self.panning:
                 delta = event.pos() - self.pan_start_pos
@@ -164,6 +194,19 @@ class ImageLabel(QLabel):
                 self.parent_viewer.status_pixel_label.setText("--")
 
     def mouseReleaseEvent(self, event: QMouseEvent):
+        if self._zoom_region_mode and self._zoom_region_active and event.button() == Qt.MouseButton.LeftButton:
+            self._zoom_region_end = event.pos()
+            self._zoom_region_active = False
+            self.setCursor(self._custom_cross_cursor)
+            # Convert the selection rectangle to image coordinates and call parent
+            rect = self._get_zoom_region_rect()
+            if rect is not None and self.parent_viewer is not None:
+                (img_x0, img_y0), (img_x1, img_y1) = rect
+                self.parent_viewer.zoom_to_region(img_x0, img_y0, img_x1, img_y1)
+            self._zoom_region_start = None
+            self._zoom_region_end = None
+            self.update()
+            return
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
             self.panning = False
             self.pan_timer.stop()
@@ -252,7 +295,43 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        # Draw zoom region rectangle if active or if selection exists
+        if self._zoom_region_mode and (self._zoom_region_active or (self._zoom_region_start and self._zoom_region_end)):
+            painter = QPainter(self)
+            pen = QPen(QColor(0, 180, 255), 2, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            start = self._zoom_region_start
+            end = self._zoom_region_end
+            if start and end:
+                rect = QRect(start, end)
+                painter.drawRect(rect.normalized())
+            painter.end()
         # Remove info insert drawing; now handled by status bar 
+
+    def _get_zoom_region_rect(self):
+        # Returns ((img_x0, img_y0), (img_x1, img_y1)) in image coordinates, or None
+        if self._zoom_region_start is None or self._zoom_region_end is None:
+            return None
+        pixmap = self.pixmap()
+        if pixmap is None or self.parent_viewer is None or self.parent_viewer.image_data is None:
+            return None
+        img_h, img_w = self.parent_viewer.image_data.shape
+        pixmap_w = pixmap.width()
+        pixmap_h = pixmap.height()
+        label_w = self.width()
+        label_h = self.height()
+        scale_x = pixmap_w / img_w
+        scale_y = pixmap_h / img_h
+        scale = scale_x
+        x_offset = (label_w - pixmap_w) // 2
+        y_offset = (label_h - pixmap_h) // 2
+        def to_img_coords(qpoint):
+            px = qpoint.x() - x_offset
+            py = qpoint.y() - y_offset
+            img_x = px / scale
+            img_y = py / scale
+            return (img_x, img_y)
+        return to_img_coords(self._zoom_region_start), to_img_coords(self._zoom_region_end)
 
 class SIMBADOverlay:
     def __init__(self, name, pixel_coords, color=QColor(0, 255, 0), radius=12):
