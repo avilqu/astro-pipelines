@@ -84,7 +84,10 @@ class DatabaseScannerThread(QThread):
 class DatabaseManager:
     """Manages database operations for the GUI."""
     
-    def __init__(self, db_path='astropipes.db'):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            import config
+            db_path = config.DATABASE_PATH
         self.db_path = db_path
     
     def get_db_manager(self):

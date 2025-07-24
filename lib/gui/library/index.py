@@ -242,7 +242,8 @@ class AstroLibraryGUI(QMainWindow):
         self.progress_bar.setRange(0, 0)  # Indeterminate progress
         
         # Use thread to avoid blocking GUI
-        self.loader_thread = DatabaseLoaderThread('astropipes.db')
+        import config
+        self.loader_thread = DatabaseLoaderThread(config.DATABASE_PATH)
         self.loader_thread.data_loaded.connect(self.on_data_loaded)
         self.loader_thread.error_occurred.connect(self.on_database_error)
         self.loader_thread.start()

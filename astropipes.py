@@ -6,7 +6,8 @@
 
 # Initialize database
 from lib.db import get_db_manager
-db_manager = get_db_manager('astropipes.db')
+import config
+db_manager = get_db_manager(config.DATABASE_PATH)
 
 if __name__ == "__main__":
     import argparse

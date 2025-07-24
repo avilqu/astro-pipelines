@@ -13,12 +13,12 @@ class DatabaseManager:
         """Initialize the database manager.
         
         Args:
-            db_path: Path to the SQLite database file. If None, uses default location.
+            db_path: Path to the SQLite database file. If None, uses default location from config.
         """
         if db_path is None:
-            # Use default location in the project directory
-            project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            db_path = os.path.join(project_dir, 'astro_pipelines.db')
+            # Use default location from config
+            import config
+            db_path = config.DATABASE_PATH
         
         self.db_path = db_path
         self.engine = None

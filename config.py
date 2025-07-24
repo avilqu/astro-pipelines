@@ -21,6 +21,9 @@ CALIBRATION_PATH = '/home/tan/Astro/calibration'
 DATA_PATH = '/home/tan/Astro/obs'
 OBS_PATH = '/home/tan/Astro/obs'
 
+# Database configuration
+DATABASE_PATH = '/home/tan/dev/astro-pipelines/astropipes.db'  # SQLite database file path (absolute path)
+
 # Astrometry.net API key
 ASTROMETRY_KEY = 'zrvbykzuksfbcilr'
 
