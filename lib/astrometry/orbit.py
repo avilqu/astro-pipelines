@@ -368,3 +368,132 @@ def _solve_kepler_equation_simple(M: float, e: float, tolerance: float = 1e-8, m
         E = E_new
     
     raise Exception("Kepler equation did not converge") 
+
+def compute_ephemeris(orbit_data: Dict[str, Any], date_obs: str) -> Tuple[float, float]:
+    """
+    Compute the geocentric apparent right-ascension and declination of a solar-system object
+    for a given observation epoch using its osculating orbital elements.
+
+    This implementation follows the classic ephemeris computation steps described in
+    “Computation of an Ephemeris” (E. Myers, 2013) and is designed to provide reasonable
+    accuracy (typically < 1′) for minor-planet predictions a few decades from the
+    elements’ epoch.
+
+    Parameters
+    ----------
+    orbit_data : Dict[str, Any]
+        Dictionary returned by ``get_neofixer_orbit``.  The orbital elements are expected
+        under the key ``"elements"`` and must at minimum contain the following keys:
+
+        * ``a``        – semi-major axis [AU]
+        * ``e``        – eccentricity
+        * ``i``        – inclination [deg]
+        * ``asc_node`` – longitude of ascending node Ω [deg]
+        * ``arg_per``  – argument of perihelion ω [deg]
+        * ``M``        – mean anomaly at epoch M₀ [deg]
+        * ``epoch``    – epoch of elements (JD)
+
+    date_obs : str
+        Observation time in ISO format (e.g. ``'2025-01-22T11:35:43.182'``).
+
+    Returns
+    -------
+    Tuple[float, float]
+        A tuple ``(ra_deg, dec_deg)`` giving **geocentric** right ascension and
+        declination in decimal degrees (ICRS, J2000).  RA is returned in the range
+        0 ≤ RA < 360.
+    """
+    if not ASTROPY_AVAILABLE:
+        raise ImportError("astropy is required for orbital calculations. Please install it with 'pip install astropy'.")
+
+    try:
+        # --- 1. Extract and prepare orbital elements ---------------------------------
+        el = orbit_data["elements"]
+        a_AU: float = el["a"]          # semi-major axis [AU]
+        e: float = el["e"]             # eccentricity
+        i_deg: float = el["i"]        # inclination [deg]
+        omega_deg: float = el["arg_per"]   # argument of perihelion ω [deg]
+        Omega_deg: float = el["asc_node"]  # longitude of ascending node Ω [deg]
+        M0_deg: float = el["M"]        # mean anomaly at epoch [deg]
+        epoch_jd: float = el["epoch"]  # epoch of elements (JD, TT)
+
+        # --- 2. Compute mean anomaly at observation epoch ----------------------------
+        # Gaussian gravitational constant k (√(GM☉)) in AU^{3/2}/day
+        k = 0.01720209895  # IAU 1976 value
+        n_rad_per_day = k / (a_AU ** 1.5)      # mean motion n [rad/day]
+
+        # Observation epoch in Julian Date (TT assumed sufficiently close to UTC for minutes-level precision)
+        t_obs = Time(date_obs, format="isot", scale="utc")
+        jd_obs = t_obs.jd
+        dt_days = jd_obs - epoch_jd
+
+        M_rad = np.radians((M0_deg % 360.0)) + n_rad_per_day * dt_days
+        M_rad = np.fmod(M_rad, 2.0 * np.pi)  # wrap into [0,2π)
+
+        # --- 3. Solve Kepler's equation to obtain eccentric anomaly -------------------
+        E_rad = _solve_kepler_equation_simple(M_rad, e)
+
+        # --- 4. True anomaly and heliocentric distance --------------------------------
+        sin_E2 = np.sin(E_rad / 2.0)
+        cos_E2 = np.cos(E_rad / 2.0)
+
+        # True anomaly f
+        f_rad = 2.0 * np.arctan2(np.sqrt(1 + e) * sin_E2,
+                                 np.sqrt(1 - e) * cos_E2 + 1e-15)  # avoid division by zero
+
+        # heliocentric distance r [AU]
+        r_AU = a_AU * (1 - e * np.cos(E_rad))
+
+        # --- 5. Heliocentric state vector in orbital plane ----------------------------
+        x_orb = r_AU * np.cos(f_rad)
+        y_orb = r_AU * np.sin(f_rad)
+        z_orb = 0.0
+
+        # --- 6. Rotate into ecliptic coordinates -------------------------------------
+        # Rotation sequence: argument of perihelion (ω) -> inclination (i) -> Ω
+        cos_ω, sin_ω = np.cos(np.radians(omega_deg)), np.sin(np.radians(omega_deg))
+        cos_i, sin_i = np.cos(np.radians(i_deg)), np.sin(np.radians(i_deg))
+        cos_Omega, sin_Omega = np.cos(np.radians(Omega_deg)), np.sin(np.radians(Omega_deg))
+
+        # 6a. ω
+        x1 = x_orb * cos_ω - y_orb * sin_ω
+        y1 = x_orb * sin_ω + y_orb * cos_ω
+        z1 = z_orb
+        # 6b. i
+        x2 = x1
+        y2 = y1 * cos_i
+        z2 = y1 * sin_i
+        # 6c. Ω
+        x_ecl = x2 * cos_Omega - y2 * sin_Omega
+        y_ecl = x2 * sin_Omega + y2 * cos_Omega
+        z_ecl = z2
+
+        # --- 7. Convert to equatorial (ICRS) coordinates -----------------------------
+        epsilon_rad = np.radians(23.43928)  # obliquity of ecliptic (J2000)
+        cos_eps, sin_eps = np.cos(epsilon_rad), np.sin(epsilon_rad)
+
+        x_eq = x_ecl
+        y_eq = y_ecl * cos_eps - z_ecl * sin_eps
+        z_eq = y_ecl * sin_eps + z_ecl * cos_eps
+
+        # --- 8. Compute geocentric vector -------------------------------------------
+        # Earth barycentric position (AU) in ICRS at observation epoch
+        earth_bary = get_body_barycentric_posvel("earth", t_obs)[0].xyz.to(u.AU).value  # numpy array length-3
+        x_geo = x_eq - earth_bary[0]
+        y_geo = y_eq - earth_bary[1]
+        z_geo = z_eq - earth_bary[2]
+
+        # --- 9. Convert to RA/Dec ----------------------------------------------------
+        r_geo = np.sqrt(x_geo ** 2 + y_geo ** 2 + z_geo ** 2)
+        ra_rad = np.arctan2(y_geo, x_geo)
+        dec_rad = np.arcsin(z_geo / r_geo)
+
+        ra_deg = np.degrees(ra_rad) % 360.0
+        dec_deg = np.degrees(dec_rad)
+
+        return ra_deg, dec_deg
+
+    except KeyError as err:
+        raise ValueError(f"Missing expected orbital element key: {err}")
+    except Exception as exc:
+        raise Exception(f"Failed to compute ephemeris: {exc}") 

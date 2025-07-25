@@ -9,7 +9,7 @@ import os
 class OrbitDataWindow(QDialog):
     def __init__(self, object_name, orbit_data, predicted_positions, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Orbita elements - {object_name}")
+        self.setWindowTitle(f"Orbital elements - {object_name}")
         self.setGeometry(300, 200, 800, 600)
         self.setModal(False)
         
