@@ -70,7 +70,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.pixmap = None  # For ImageLabel compatibility
         self.wcs = None    # For ImageLabel compatibility
         self.image_data = None  # Store current image data
-        self.stretch_mode = 'log'  # 'linear' or 'log', default to log
+        self.stretch_mode = 'linear'  # 'linear' or 'log', default to linear
         self.toolbar = QToolBar("Main Toolbar")
         self.toolbar.setMovable(False)  # Disable moving the toolbar
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)  # Remove handle visual
@@ -266,7 +266,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Replace QAction with QToolButton + QMenu for dropdown
         self.sso_button = QToolButton(self)
         self.sso_button.setIcon(sso_icon)
-        self.sso_button.setToolTip("Search for solar system objects in the field and overlay on image")
+        self.sso_button.setToolTip("Solar System Objects")
         self.sso_button.setEnabled(True)
         self.sso_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.sso_button.setFixedSize(32, 32)
@@ -275,6 +275,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         find_sso_action = QAction("Find SSO in field", self)
         find_sso_action.triggered.connect(self.open_sso_search_dialog)
         sso_menu.addAction(find_sso_action)
+        
+        # Add separator
+        sso_menu.addSeparator()
+        
+        # Add Compute orbit data action
+        compute_orbit_action = QAction("Compute orbit data", self)
+        compute_orbit_action.triggered.connect(self.open_orbit_computation_dialog)
+        sso_menu.addAction(compute_orbit_action)
+        
         self.sso_button.setMenu(sso_menu)
         # Remove the dropdown arrow via stylesheet
         self.sso_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
@@ -573,7 +582,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Compute the default min/max as would be used by create_image_object
         if self.stretch_mode == 'log':
             data = self.image_data.astype(float)
-            data = np.where(data > 0, np.log10(data), 0)
+            # Avoid divide-by-zero warning by only computing log10 for positive values
+            mask = data > 0
+            log_data = np.zeros_like(data)
+            log_data[mask] = np.log10(data[mask])
+            data = log_data
         else:
             data = self.image_data
         if self.clipping_enabled:
@@ -596,7 +609,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Use a step based on the image stddev
         if self.stretch_mode == 'log':
             data = self.image_data.astype(float)
-            data = np.where(data > 0, np.log10(data), 0)
+            # Avoid divide-by-zero warning by only computing log10 for positive values
+            mask = data > 0
+            log_data = np.zeros_like(data)
+            log_data[mask] = np.log10(data[mask])
+            data = log_data
         else:
             data = self.image_data
         if data is not None:
@@ -678,8 +695,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             orig_pixmap = create_image_object(self.image_data, display_min=self.display_min, display_max=self.display_max, clipping=self.clipping_enabled, sigma_clip=self.sigma_clip)
         else:
             data = self.image_data.astype(float)
-            data = np.where(data > 0, np.log10(data), 0)
-            orig_pixmap = create_image_object(data, display_min=self.display_min, display_max=self.display_max, clipping=self.clipping_enabled, sigma_clip=self.sigma_clip)
+            # Avoid divide-by-zero warning by only computing log10 for positive values
+            mask = data > 0
+            log_data = np.zeros_like(data)
+            log_data[mask] = np.log10(data[mask])
+            orig_pixmap = create_image_object(log_data, display_min=self.display_min, display_max=self.display_max, clipping=self.clipping_enabled, sigma_clip=self.sigma_clip)
         self._orig_pixmap = orig_pixmap  # Always set to the unscaled pixmap
         # Set the display pixmap according to current zoom
         new_width = int(orig_pixmap.width() * self._zoom)
@@ -895,6 +915,61 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._skybot_worker.finished.connect(on_finished)
         self._skybot_worker.error.connect(on_error)
         self._skybot_thread.start()
+
+    def open_orbit_computation_dialog(self):
+        """Open dialog to compute orbit data for a specific object."""
+        if not self.loaded_files:
+            QMessageBox.warning(self, "No Files", "No FITS files loaded. Please load some files first.")
+            return
+        
+        from lib.gui.common.orbit_details import OrbitComputationDialog
+        dialog = OrbitComputationDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            object_name = dialog.get_object_name()
+            if not object_name:
+                QMessageBox.warning(self, "No Object", "Please enter an object designation.")
+                return
+            
+            # Progress dialog
+            progress = QProgressDialog(f"Computing orbit data for {object_name}...", None, 0, 0, self)
+            progress.setWindowTitle("Orbit Computation")
+            progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+            
+            # Start worker thread
+            self._orbit_thread = QThread()
+            from lib.gui.common.orbit_details import OrbitComputationWorker
+            self._orbit_worker = OrbitComputationWorker(object_name, self.loaded_files)
+            self._orbit_worker.moveToThread(self._orbit_thread)
+            self._orbit_thread.started.connect(self._orbit_worker.run)
+            
+            def on_finished(orbit_data, predicted_positions):
+                progress.close()
+                self._orbit_thread.quit()
+                self._orbit_thread.wait()
+                
+                if not predicted_positions:
+                    QMessageBox.warning(self, "No Predictions", 
+                                      "No DATE-OBS found in loaded FITS files. Cannot compute predicted positions.")
+                    return
+                
+                # Show orbit data window
+                from lib.gui.common.orbit_details import OrbitDataWindow
+                dlg = OrbitDataWindow(object_name, orbit_data, predicted_positions, self)
+                dlg.show()
+            
+            def on_error(msg):
+                progress.close()
+                self._orbit_thread.quit()
+                self._orbit_thread.wait()
+                QMessageBox.critical(self, "Orbit Computation Error", f"Error computing orbit data: {msg}")
+            
+            self._orbit_worker.finished.connect(on_finished)
+            self._orbit_worker.error.connect(on_error)
+            self._orbit_thread.start()
 
     def toggle_play_pause(self):
         if not self.playing:

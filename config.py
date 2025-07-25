@@ -97,3 +97,6 @@ TESTED_FITS_CARDS = [
 # --- User Settings ---
 TIME_DISPLAY_MODE = 'Local'
 BLINK_PERIOD_MS = 1000
+
+MPCQ_DATASET_ID = 'astropipes-467001.asteroid_institute_mpc_replica'
+MPCQ_VIEWS_DATASET_ID = 'astropipes-467001.asteroid_institute___mpc_replica_views'

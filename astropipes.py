@@ -63,6 +63,15 @@ if __name__ == "__main__":
         "-C", "--calibrate", metavar="FITS_FILE", 
         help="calibrate a single FITS file using master bias, dark, and flat"
     )
+    parser.add_argument(
+        "--get-obs", metavar="OBJECT_DESIGNATION", help="download and display MPC observations for the given asteroid designation"
+    )
+    parser.add_argument(
+        "--get-neocp-obs", metavar="NEOCP_DESIGNATION", help="download and display NEOCP observations for the given object designation"
+    )
+    parser.add_argument(
+        "--get-neocp-objects", action="store_true", help="get the current list of objects on the NEOCP"
+    )
     
     args = parser.parse_args()
 
@@ -249,6 +258,104 @@ if __name__ == "__main__":
             print(f"{Style.BRIGHT + Fore.RED}Error during calibration: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
+    def get_observations():
+        """Download and display MPC observations for a given asteroid designation using mpcq."""
+        try:
+            from lib.astrometry.orbit import get_asteroid_observations
+            designation = args.get_obs
+            print(f"{Style.BRIGHT + Fore.BLUE}Querying MPC observations for: {designation}{Style.RESET_ALL}")
+            observations = get_asteroid_observations(designation)
+            # Try to display as a table using pandas if possible
+            try:
+                import pandas as pd
+                if hasattr(observations, 'to_pandas'):
+                    df = observations.to_pandas()
+                elif hasattr(observations, 'to_dataframe'):
+                    df = observations.to_dataframe()
+                else:
+                    df = pd.DataFrame(observations)
+                # Select only the specified columns
+                columns_to_show = ['trksub', 'provid', 'stn', 'submission._id', 'ra', 'dec', 'mag']
+                available_columns = [col for col in columns_to_show if col in df.columns]
+                if available_columns:
+                    df_filtered = df[available_columns]
+                    print(df_filtered.to_string(index=False))
+                else:
+                    print(f"{Style.BRIGHT + Fore.YELLOW}None of the requested columns found. Available columns: {list(df.columns)}{Style.RESET_ALL}")
+                    print(df.to_string(index=False))
+            except Exception as e:
+                print(f"{Style.BRIGHT + Fore.YELLOW}Could not display as table: {e}{Style.RESET_ALL}")
+                print(observations)
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: mpcq library is required for this feature.{Style.RESET_ALL}")
+            print(f"Install with: pip install mpcq")
+            print(f"ImportError details: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error fetching observations: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
+    def get_neocp_observations():
+        """Download and display NEOCP observations for a given object designation."""
+        try:
+            from lib.astrometry.orbit import get_neocp_observations
+            designation = args.get_neocp_obs
+            print(f"{Style.BRIGHT + Fore.BLUE}Querying NEOCP observations for: {designation}{Style.RESET_ALL}")
+            observations = get_neocp_observations(designation)
+            
+            if not observations:
+                print(f"{Fore.YELLOW}No observations found for {designation}{Style.RESET_ALL}")
+                return
+            
+            print(f"{Style.BRIGHT}Found {len(observations)} observations:{Style.RESET_ALL}")
+            print()
+            
+            # Display each observation line
+            for i, obs in enumerate(observations, 1):
+                print(f"{Fore.CYAN}{i:3d}.{Style.RESET_ALL} {obs}")
+            
+            print()
+            print(f"{Style.BRIGHT}Total: {len(observations)} observations{Style.RESET_ALL}")
+            
+        except ImportError:
+            print(f"{Fore.RED}Error: Could not import orbit module{Style.RESET_ALL}")
+        except Exception as e:
+            print(f"{Fore.RED}Error fetching NEOCP observations: {e}{Style.RESET_ALL}")
+
+    def get_neocp_objects():
+        """Get and display the current list of objects on the NEOCP."""
+        try:
+            from lib.astrometry.orbit import get_neocp_objects
+            print(f"{Style.BRIGHT + Fore.BLUE}Querying current NEOCP objects...{Style.RESET_ALL}")
+            objects = get_neocp_objects()
+            # Try to display as a table using pandas if possible
+            try:
+                import pandas as pd
+                df = pd.DataFrame(objects)
+                if not df.empty:
+                    # Select key columns for NEOCP objects
+                    columns_to_show = ['packed', 'priority', 'score', 'vmag', 'ra', 'dec', 'uncert', 'status', 'neocp']
+                    available_columns = [col for col in columns_to_show if col in df.columns]
+                    if available_columns:
+                        df_filtered = df[available_columns]
+                        print(df_filtered.to_string(index=False))
+                    else:
+                        print(f"{Style.BRIGHT + Fore.YELLOW}None of the requested columns found. Available columns: {list(df.columns)}{Style.RESET_ALL}")
+                        print(df.to_string(index=False))
+                else:
+                    print(f"{Style.BRIGHT + Fore.YELLOW}No NEOCP objects found{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Style.BRIGHT + Fore.YELLOW}Could not display as table: {e}{Style.RESET_ALL}")
+                print(objects)
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: requests library is required for this feature.{Style.RESET_ALL}")
+            print(f"Install with: pip install requests")
+            print(f"ImportError details: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error fetching NEOCP objects: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
     # Handle arguments
     if args.gui is not None:
         launch_gui()
@@ -264,6 +371,12 @@ if __name__ == "__main__":
         solve_image()
     elif args.calibrate:
         calibrate_image()
+    elif args.get_obs:
+        get_observations()
+    elif args.get_neocp_obs:
+        get_neocp_observations()
+    elif args.get_neocp_objects:
+        get_neocp_objects()
     else:
         # Default behavior: show help
         parser.print_help()
