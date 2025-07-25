@@ -523,23 +523,23 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
             obs_dt = datetime.strptime(date_obs, '%Y-%m-%d %H:%M:%S')
         parsed_dates.append(obs_dt)
     
-    # Use the middle date for the API call to ensure we get good coverage
+    # Use the start date for the API call to ensure we cover all dates from the beginning
     sorted_dates = sorted(parsed_dates)
-    middle_date = sorted_dates[len(sorted_dates) // 2]
+    start_date = sorted_dates[0]
     
     # Calculate time span needed to cover all dates
     time_span = (sorted_dates[-1] - sorted_dates[0]).total_seconds() / 3600  # hours
-    # Add some padding and ensure minimum coverage
-    time_span = max(time_span + 2, 4)  # at least 4 hours coverage
+    # Add padding to ensure we have entries before the first date and after the last date
+    time_span = max(time_span + 4, 6)  # at least 6 hours coverage with 2 hours padding on each side
     
-    # Calculate number of steps needed (1 step per hour, minimum 6 steps)
-    n_steps = max(int(time_span) + 2, 6)
+    # Calculate number of steps needed (1 step per hour, minimum 8 steps)
+    n_steps = max(int(time_span) + 2, 8)
     
     findorb_url = "https://www.projectpluto.com/cgi-bin/fo/fo_serve.cgi"
     data = {
         "TextArea": "",
         "obj_name": object_designation,
-        "year": middle_date.strftime('%Y-%m-%dT%H:%M:%S'),
+        "year": start_date.strftime('%Y-%m-%dT%H:%M:%S'),
         "n_steps": str(n_steps),
         "stepsize": "1h",  # 1 hour steps
         "mpc_code": "R56",
@@ -564,6 +564,10 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
         'Origin': 'https://www.projectpluto.com',
         'Connection': 'keep-alive',
     }
+    
+    print(f"[DEBUG] Making Find_Orb API call for {len(dates_obs)} dates")
+    print(f"[DEBUG] Date range: {start_date} to {sorted_dates[-1]} (span: {time_span:.1f} hours)")
+    print(f"[DEBUG] Querying ephemeris starting from {start_date} with {n_steps} steps")
     
     try:
         resp = requests.post(findorb_url, data=data, files=files, headers=headers, timeout=60)
@@ -629,29 +633,57 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
             before_entry = None
             after_entry = None
             
+            # Find the closest entries before and after the observation time
             for i, (ephem_dt, entry) in enumerate(ephemeris_entries):
                 if ephem_dt <= obs_dt:
-                    before_entry = (ephem_dt, entry)
-                if ephem_dt >= obs_dt:
+                    # Update before_entry to the latest entry that's <= obs_dt
+                    if before_entry is None or ephem_dt > before_entry[0]:
+                        before_entry = (ephem_dt, entry)
+                else:
+                    # Found first entry > obs_dt, this is our after_entry
                     after_entry = (ephem_dt, entry)
                     break
             
-            # If we don't have both before and after, use the closest available
-            if before_entry is None and after_entry is not None:
-                before_entry = after_entry
-            elif after_entry is None and before_entry is not None:
-                after_entry = before_entry
-            elif before_entry is None and after_entry is None:
-                print(f"[DEBUG] No ephemeris entries found for {date_obs}")
+            # If we didn't find an after_entry, check if there are more entries
+            if after_entry is None and len(ephemeris_entries) > 0:
+                # All entries are before obs_dt, use the last two entries
+                if len(ephemeris_entries) >= 2:
+                    before_entry = ephemeris_entries[-2]
+                    after_entry = ephemeris_entries[-1]
+                else:
+                    # Only one entry, use it for both
+                    after_entry = ephemeris_entries[-1]
+            
+            # If we didn't find a before_entry, check if there are entries after obs_dt
+            if before_entry is None and len(ephemeris_entries) > 0:
+                # All entries are after obs_dt, use the first two entries
+                if len(ephemeris_entries) >= 2:
+                    before_entry = ephemeris_entries[0]
+                    after_entry = ephemeris_entries[1]
+                else:
+                    # Only one entry, use it for both
+                    before_entry = ephemeris_entries[0]
+            
+            # Ensure we have both entries for interpolation
+            if before_entry is None or after_entry is None:
+                print(f"[DEBUG] Could not find suitable ephemeris entries for {date_obs}")
                 continue
             
             # Interpolate between the two entries
             dt1, entry1 = before_entry
             dt2, entry2 = after_entry
             
+            # Only show debug for first 3 and last 3 interpolations to avoid spam
+            show_debug = len(results) < 3 or len(results) >= len(dates_obs) - 3
+            
+            if show_debug:
+                print(f"[DEBUG] Interpolating between {dt1} (RA={entry1.get('RA', 0):.6f}, Dec={entry1.get('Dec', 0):.6f}) and {dt2} (RA={entry2.get('RA', 0):.6f}, Dec={entry2.get('Dec', 0):.6f}) for {obs_dt}")
+            
             if dt1 == dt2:
                 # No interpolation needed
                 interpolated_result = entry1.copy()
+                if show_debug:
+                    print(f"[DEBUG] No interpolation needed, times are identical")
             else:
                 # Linear interpolation
                 total_time_diff = (dt2 - dt1).total_seconds()
@@ -677,6 +709,9 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
                 interpolated_result = entry1.copy()
                 interpolated_result['RA'] = interpolated_ra
                 interpolated_result['Dec'] = interpolated_dec
+                
+                if show_debug:
+                    print(f"[DEBUG] Interpolation factor: {interpolation_factor:.6f}, time diff: {obs_time_diff:.1f}s / {total_time_diff:.1f}s")
             
             interpolated_result['date_obs'] = date_obs
             interpolated_result['Date'] = obs_dt.strftime('%Y-%m-%d %H:%M:%S')

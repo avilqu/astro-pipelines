@@ -107,7 +107,7 @@ Orbit Quality:
             self.positions_table.setRowCount(0)
             return
         # Use all keys from the first entry as columns, except the excluded ones
-        exclude = {"ISO_time", "JD", "date_obs"}
+        exclude = {"ISO_time", "JD", "date_obs", "RA60", "Dec60"}
         columns = [k for k in predicted_positions[0].keys() if k not in exclude]
         self.positions_table.setColumnCount(len(columns))
         self.positions_table.setHorizontalHeaderLabels(columns)

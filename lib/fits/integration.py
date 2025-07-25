@@ -17,6 +17,7 @@ import ccdproc as ccdp
 from typing import List, Dict, Optional, Tuple, Union, Callable
 from pathlib import Path
 import warnings
+from datetime import datetime
 
 # Import configuration
 from config import (SIGMA_LOW, SIGMA_HIGH, TESTED_FITS_CARDS, 
@@ -172,7 +173,11 @@ def get_observation_time(file_path: str) -> Optional[str]:
 def calculate_motion_shifts(files: List[str], object_name: str, 
                           reference_time: Optional[str] = None) -> List[Tuple[float, float]]:
     """
-    Calculate pixel shifts needed to keep moving object static.
+    Calculate pixel shifts needed to keep moving object static using motion rate and position angle.
+    
+    This function uses the motion_rate (arcsec/hour) and motionPA (degrees) fields from the ephemeris
+    to calculate the required shifts between images based on time differences, rather than
+    calculating shifts between ephemeris positions.
     
     Parameters:
     -----------
@@ -188,14 +193,19 @@ def calculate_motion_shifts(files: List[str], object_name: str,
     List[Tuple[float, float]]
         List of (dx, dy) pixel shifts for each image
     """
-    print(f"\nCalculating motion shifts for object {object_name}...")
+    print(f"\nCalculating motion shifts for object {object_name} using motion rate and position angle...")
     
     shifts = []
-    reference_ra = None
-    reference_dec = None
+    reference_time_dt = None
+    avg_motion_rate = None
+    avg_motion_pa = None
+    
+    # First pass: collect all ephemeris data and calculate averages
+    ephemeris_data = []
+    observation_times = []
     
     for i, file_path in enumerate(files):
-        print(f"Processing {i+1}/{len(files)}: {Path(file_path).name}")
+        print(f"Collecting ephemeris data for {i+1}/{len(files)}: {Path(file_path).name}")
         
         # Get observation time
         obs_time = get_observation_time(file_path)
@@ -204,14 +214,39 @@ def calculate_motion_shifts(files: List[str], object_name: str,
             shifts.append((0.0, 0.0))
             continue
         
-        # Get predicted position
+        # Parse observation time
         try:
-            result = predict_position_findorb(object_name, obs_time)
-            if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
-                entry = result['ephemeris']['entries']['0']
-                ra = float(entry.get('RA', 0.0))
-                dec = float(entry.get('Dec', 0.0))
-                print(f"  Predicted position: RA={ra:.6f}°, Dec={dec:.6f}°")
+            if 'T' in obs_time:
+                obs_dt = datetime.fromisoformat(obs_time.replace('Z', '+00:00'))
+            else:
+                obs_dt = datetime.strptime(obs_time, '%Y-%m-%d %H:%M:%S')
+            observation_times.append((obs_dt, file_path))
+        except Exception as e:
+            print(f"Warning: Could not parse observation time for {file_path}: {e}")
+            shifts.append((0.0, 0.0))
+            continue
+        
+        # Get predicted position and motion data
+        try:
+            result = predict_position_findorb(object_name, [obs_time])
+            if result and obs_time in result:
+                entry = result[obs_time]
+                motion_rate = entry.get('motion_rate')
+                motion_pa = entry.get('motionPA')
+                
+                if motion_rate is not None and motion_pa is not None:
+                    ephemeris_data.append({
+                        'file_path': file_path,
+                        'obs_time': obs_time,
+                        'obs_dt': obs_dt,
+                        'motion_rate': float(motion_rate),
+                        'motion_pa': float(motion_pa)
+                    })
+                    print(f"  Motion rate: {motion_rate:.2f} arcsec/hour, PA: {motion_pa:.1f}°")
+                else:
+                    print(f"Warning: Missing motion data for {file_path}")
+                    shifts.append((0.0, 0.0))
+                    continue
             else:
                 print(f"Warning: Could not get ephemeris for {file_path}")
                 shifts.append((0.0, 0.0))
@@ -220,48 +255,81 @@ def calculate_motion_shifts(files: List[str], object_name: str,
             print(f"Warning: Error getting ephemeris for {file_path}: {e}")
             shifts.append((0.0, 0.0))
             continue
-        
-        # Set reference position (first image or specified time)
-        if reference_ra is None:
-            if reference_time is None:
-                # Use first image as reference
-                reference_ra, reference_dec = ra, dec
-                print(f"  Using first image as reference: RA={reference_ra:.6f}°, Dec={reference_dec:.6f}°")
+    
+    if not ephemeris_data:
+        print("Warning: No valid ephemeris data found")
+        return [(0.0, 0.0)] * len(files)
+    
+    # Calculate average motion rate and position angle
+    motion_rates = [data['motion_rate'] for data in ephemeris_data]
+    motion_pas = [data['motion_pa'] for data in ephemeris_data]
+    
+    avg_motion_rate = np.mean(motion_rates)
+    avg_motion_pa = np.mean(motion_pas)
+    
+    print(f"\nAverage motion rate: {avg_motion_rate:.2f} arcsec/hour")
+    print(f"Average motion position angle: {avg_motion_pa:.1f}°")
+    
+    # Set reference time
+    if reference_time is None:
+        # Use earliest observation time as reference
+        reference_time_dt = min(data['obs_dt'] for data in ephemeris_data)
+        print(f"Using earliest observation time as reference: {reference_time_dt}")
+    else:
+        try:
+            if 'T' in reference_time:
+                reference_time_dt = datetime.fromisoformat(reference_time.replace('Z', '+00:00'))
             else:
-                # Get reference position at specified time
-                try:
-                    ref_result = predict_position_findorb(object_name, reference_time)
-                    if ref_result and 'ephemeris' in ref_result and 'entries' in ref_result['ephemeris']:
-                        ref_entry = ref_result['ephemeris']['entries']['0']
-                        reference_ra = float(ref_entry.get('RA', 0.0))
-                        reference_dec = float(ref_entry.get('Dec', 0.0))
-                        print(f"  Reference position at {reference_time}: RA={reference_ra:.6f}°, Dec={reference_dec:.6f}°")
-                    else:
-                        reference_ra, reference_dec = ra, dec
-                        print(f"  Using first image as reference: RA={reference_ra:.6f}°, Dec={reference_dec:.6f}°")
-                except Exception as e:
-                    print(f"Warning: Could not get reference ephemeris: {e}")
-                    reference_ra, reference_dec = ra, dec
-                    print(f"  Using first image as reference: RA={reference_ra:.6f}°, Dec={reference_dec:.6f}°")
+                reference_time_dt = datetime.strptime(reference_time, '%Y-%m-%d %H:%M:%S')
+            print(f"Using specified reference time: {reference_time_dt}")
+        except Exception as e:
+            print(f"Warning: Could not parse reference time, using earliest observation: {e}")
+            reference_time_dt = min(data['obs_dt'] for data in ephemeris_data)
+    
+    # Second pass: calculate shifts for each image
+    print(f"\nCalculating shifts relative to reference time...")
+    
+    for i, file_path in enumerate(files):
+        print(f"Processing {i+1}/{len(files)}: {Path(file_path).name}")
         
-        # Calculate angular offset
-        dra = (ra - reference_ra) * np.cos(np.radians(reference_dec))
-        ddec = dec - reference_dec
+        # Find corresponding ephemeris data
+        file_data = None
+        for data in ephemeris_data:
+            if data['file_path'] == file_path:
+                file_data = data
+                break
+        
+        if not file_data:
+            print(f"Warning: No ephemeris data found for {file_path}, using zero shift")
+            shifts.append((0.0, 0.0))
+            continue
+        
+        # Calculate time difference from reference
+        time_diff_hours = (file_data['obs_dt'] - reference_time_dt).total_seconds() / 3600.0
+        
+        # Calculate angular motion in arcseconds
+        angular_motion_arcsec = avg_motion_rate * time_diff_hours
+        
+        # Convert to RA/Dec offsets
+        motion_pa_rad = np.radians(avg_motion_pa)
+        dra_arcsec = angular_motion_arcsec * np.cos(motion_pa_rad)
+        ddec_arcsec = angular_motion_arcsec * np.sin(motion_pa_rad)
         
         # Convert to pixel shifts using WCS
         try:
             wcs = WCS(fits.getheader(file_path, ext=0))
             if wcs.is_celestial:
-                # Convert angular offset to pixel offset
+                # Get pixel scale in arcsec/pixel
                 pixel_scale = wcs.pixel_scale_matrix.diagonal()
-                dx = -dra / (pixel_scale[0] * u.deg).to(u.arcsec).value * 3600  # Convert to arcsec
-                dy = -ddec / (pixel_scale[1] * u.deg).to(u.arcsec).value * 3600
+                pixel_scale_arcsec = (pixel_scale * u.deg).to(u.arcsec).value
                 
-                # Convert arcsec to pixels using pixel scale
-                dx_pix = dx / (pixel_scale[0] * u.deg).to(u.arcsec).value
-                dy_pix = dy / (pixel_scale[1] * u.deg).to(u.arcsec).value
+                # Convert arcsec to pixels
+                dx_pix = -dra_arcsec / pixel_scale_arcsec[0]  # Negative because RA increases to the left
+                dy_pix = -ddec_arcsec / pixel_scale_arcsec[1]  # Negative because we want to shift in opposite direction
                 
                 shifts.append((dx_pix, dy_pix))
+                print(f"  Time diff: {time_diff_hours:.3f} hours")
+                print(f"  Angular motion: {angular_motion_arcsec:.2f} arcsec")
                 print(f"  Shift: dx={dx_pix:.2f} pix, dy={dy_pix:.2f} pix")
             else:
                 print(f"Warning: No valid WCS in {file_path}")
