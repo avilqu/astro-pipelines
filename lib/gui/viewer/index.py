@@ -941,8 +941,29 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             QMessageBox.warning(self, "No Files", "No FITS files loaded. Please load some files first.")
             return
         
+        # Extract target name from current FITS file
+        target_name = None
+        if self.current_file_index >= 0 and self.current_file_index < len(self.loaded_files):
+            current_file_path = self.loaded_files[self.current_file_index]
+            
+            # Try to get target name from preloaded FITS data first
+            if current_file_path in self._preloaded_fits:
+                _, header, _ = self._preloaded_fits[current_file_path]
+                if header:
+                    target_name = header.get('OBJECT', '').strip()
+            
+            # If not found in preloaded data, try to read from file directly
+            if not target_name:
+                try:
+                    from astropy.io import fits
+                    with fits.open(current_file_path) as hdul:
+                        header = hdul[0].header
+                        target_name = header.get('OBJECT', '').strip()
+                except Exception:
+                    pass
+        
         from lib.gui.common.orbit_details import OrbitComputationDialog
-        dialog = OrbitComputationDialog(self)
+        dialog = OrbitComputationDialog(self, target_name)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             object_name = dialog.get_object_name()
             if not object_name:

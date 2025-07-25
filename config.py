@@ -48,6 +48,12 @@ SOLVER_VALIDATE_IMAGES = True  # Whether to validate images before attempting to
 SIGMA_LOW = 4
 SIGMA_HIGH = 3
 
+# Memory management settings for image integration
+# These settings help prevent memory crashes when processing large numbers of files
+INTEGRATION_MEMORY_LIMIT = 2e9  # 2GB memory limit for integration (in bytes)
+INTEGRATION_CHUNK_SIZE = 10     # Number of images to process in each chunk
+INTEGRATION_ENABLE_CHUNKED = True  # Enable chunked processing for large datasets
+
 # Constraints for selecting calibratin masters. Note that
 # astro-pipelines generates and uses calibrated master darks
 # and scales them to match the exposure of the light frame

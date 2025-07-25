@@ -498,26 +498,50 @@ def compute_ephemeris(orbit_data: Dict[str, Any], date_obs: str) -> Tuple[float,
     except Exception as exc:
         raise Exception(f"Failed to compute ephemeris: {exc}") 
 
-def predict_position_findorb(object_designation: str, date_obs: str):
+def predict_position_findorb(object_designation: str, dates_obs: list):
     """
-    Query Find_Orb online service for ephemeris and return interpolated position at precise time.
+    Query Find_Orb online service for ephemeris and return interpolated positions for multiple dates.
     Args:
         object_designation (str): The object name (e.g., '2025 BC').
-        date_obs (str): Observation date/time in ISO format (e.g., '2025-01-22T11:36:18').
+        dates_obs (list): List of observation dates/times in ISO format (e.g., ['2025-01-22T11:36:18', '2025-01-22T12:36:18']).
     Returns:
-        dict: The interpolated position and metadata from the first ephemeris entry.
+        dict: Dictionary with date_obs as keys and interpolated positions as values.
     """
     import requests
     from datetime import datetime
     import json
     
+    if not dates_obs:
+        return {}
+    
+    # Find the date range to cover all requested dates
+    parsed_dates = []
+    for date_obs in dates_obs:
+        if 'T' in date_obs:
+            obs_dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
+        else:
+            obs_dt = datetime.strptime(date_obs, '%Y-%m-%d %H:%M:%S')
+        parsed_dates.append(obs_dt)
+    
+    # Use the middle date for the API call to ensure we get good coverage
+    sorted_dates = sorted(parsed_dates)
+    middle_date = sorted_dates[len(sorted_dates) // 2]
+    
+    # Calculate time span needed to cover all dates
+    time_span = (sorted_dates[-1] - sorted_dates[0]).total_seconds() / 3600  # hours
+    # Add some padding and ensure minimum coverage
+    time_span = max(time_span + 2, 4)  # at least 4 hours coverage
+    
+    # Calculate number of steps needed (1 step per hour, minimum 6 steps)
+    n_steps = max(int(time_span) + 2, 6)
+    
     findorb_url = "https://www.projectpluto.com/cgi-bin/fo/fo_serve.cgi"
     data = {
         "TextArea": "",
         "obj_name": object_designation,
-        "year": date_obs,
-        "n_steps": "2",
-        "stepsize": "1mn",
+        "year": middle_date.strftime('%Y-%m-%dT%H:%M:%S'),
+        "n_steps": str(n_steps),
+        "stepsize": "1h",  # 1 hour steps
         "mpc_code": "R56",
         "faint_limit": "99",
         "ephem_type": "0",
@@ -561,68 +585,112 @@ def predict_position_findorb(object_designation: str, date_obs: str):
                 except Exception as e2:
                     print(f"[DEBUG] Failed to parse JSON from response text: {e2}")
                     print(text[:2000])
-                    return None
+                    return {}
             else:
                 print("[DEBUG] Could not find JSON object in response text.")
                 print(text[:2000])
-                return None
-        # Parse the requested observation time
-        if 'T' in date_obs:
-            obs_dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
-        else:
-            obs_dt = datetime.strptime(date_obs, '%Y-%m-%d %H:%M:%S')
-        # Get the two ephemeris entries
-        if 'ephemeris' in result_json and 'entries' in result_json['ephemeris']:
-            entries = result_json['ephemeris']['entries']
-            if len(entries) >= 2:
-                entry1 = entries['0']
-                entry2 = entries['1']
-                time1_str = entry1.get('ISO_time', entry1.get('Date', ''))
-                time2_str = entry2.get('ISO_time', entry2.get('Date', ''))
-                # Convert to datetime objects
-                try:
-                    dt1 = datetime.strptime(time1_str[:19], '%Y-%m-%dT%H:%M:%S')
-                    dt2 = datetime.strptime(time2_str[:19], '%Y-%m-%dT%H:%M:%S')
-                except ValueError:
-                    dt1 = datetime.strptime(time1_str[:16], '%Y-%m-%dT%H:%M')
-                    dt2 = datetime.strptime(time2_str[:16], '%Y-%m-%dT%H:%M')
+                return {}
+        
+        # Parse ephemeris entries
+        if 'ephemeris' not in result_json or 'entries' not in result_json['ephemeris']:
+            print("No ephemeris data found in response")
+            return {}
+        
+        entries = result_json['ephemeris']['entries']
+        if len(entries) < 2:
+            print(f"Expected at least 2 ephemeris entries, got {len(entries)}")
+            return {}
+        
+        # Convert entries to list and sort by time
+        ephemeris_entries = []
+        for key, entry in entries.items():
+            time_str = entry.get('ISO_time', entry.get('Date', ''))
+            try:
+                if 'T' in time_str:
+                    dt = datetime.strptime(time_str[:19], '%Y-%m-%dT%H:%M:%S')
+                else:
+                    dt = datetime.strptime(time_str[:16], '%Y-%m-%dT%H:%M')
+                ephemeris_entries.append((dt, entry))
+            except ValueError:
+                print(f"[DEBUG] Could not parse time from entry: {time_str}")
+                continue
+        
+        ephemeris_entries.sort(key=lambda x: x[0])  # Sort by datetime
+        
+        # Interpolate positions for each requested date
+        results = {}
+        for date_obs in dates_obs:
+            if 'T' in date_obs:
+                obs_dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
+            else:
+                obs_dt = datetime.strptime(date_obs, '%Y-%m-%d %H:%M:%S')
+            
+            # Find the two ephemeris entries that bracket the observation time
+            before_entry = None
+            after_entry = None
+            
+            for i, (ephem_dt, entry) in enumerate(ephemeris_entries):
+                if ephem_dt <= obs_dt:
+                    before_entry = (ephem_dt, entry)
+                if ephem_dt >= obs_dt:
+                    after_entry = (ephem_dt, entry)
+                    break
+            
+            # If we don't have both before and after, use the closest available
+            if before_entry is None and after_entry is not None:
+                before_entry = after_entry
+            elif after_entry is None and before_entry is not None:
+                after_entry = before_entry
+            elif before_entry is None and after_entry is None:
+                print(f"[DEBUG] No ephemeris entries found for {date_obs}")
+                continue
+            
+            # Interpolate between the two entries
+            dt1, entry1 = before_entry
+            dt2, entry2 = after_entry
+            
+            if dt1 == dt2:
+                # No interpolation needed
+                interpolated_result = entry1.copy()
+            else:
+                # Linear interpolation
                 total_time_diff = (dt2 - dt1).total_seconds()
                 obs_time_diff = (obs_dt - dt1).total_seconds()
-                if total_time_diff > 0:
-                    interpolation_factor = obs_time_diff / total_time_diff
-                else:
-                    interpolation_factor = 0.5
+                interpolation_factor = obs_time_diff / total_time_diff
+                
                 ra1 = float(entry1.get('RA', 0))
                 ra2 = float(entry2.get('RA', 0))
                 dec1 = float(entry1.get('Dec', 0))
                 dec2 = float(entry2.get('Dec', 0))
+                
+                # Handle RA wrap-around
                 if abs(ra2 - ra1) > 180:
                     if ra2 > ra1:
                         ra1 += 360
                     else:
                         ra2 += 360
+                
                 interpolated_ra = ra1 + interpolation_factor * (ra2 - ra1)
                 interpolated_dec = dec1 + interpolation_factor * (dec2 - dec1)
                 interpolated_ra = interpolated_ra % 360.0
+                
                 interpolated_result = entry1.copy()
                 interpolated_result['RA'] = interpolated_ra
                 interpolated_result['Dec'] = interpolated_dec
-                interpolated_result['Date'] = obs_dt.strftime('%Y-%m-%d %H:%M:%S')
-                result_json['ephemeris']['entries']['0'] = interpolated_result
-                print(f"Interpolated position at {obs_dt}: RA={interpolated_ra:.6f}, Dec={interpolated_dec:.6f}")
-                print(json.dumps(result_json, indent=2))
-                return result_json
-            else:
-                print(f"Expected 2 ephemeris entries, got {len(entries)}")
-                return result_json
-        else:
-            print("No ephemeris data found in response")
-            return result_json
+            
+            interpolated_result['date_obs'] = date_obs
+            interpolated_result['Date'] = obs_dt.strftime('%Y-%m-%d %H:%M:%S')
+            results[date_obs] = interpolated_result
+            
+            print(f"Interpolated position at {obs_dt}: RA={interpolated_result['RA']:.6f}, Dec={interpolated_result['Dec']:.6f}")
+        
+        return results
+        
     except Exception as e:
         print(f"Failed to query Find_Orb or parse JSON: {e}")
         if 'resp' in locals():
             print(resp.text[:2000])
-        return None
+        return {}
 
 
 def test_findorb_ephemeris():
@@ -639,9 +707,9 @@ def test_findorb_ephemeris():
     
     print(f"Testing Find_Orb ephemeris for {object_name} at {date_obs}")
     try:
-        result = predict_position_findorb(object_name, date_obs)
-        if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
-            entry = result['ephemeris']['entries']['0']  # First entry
+        result = predict_position_findorb(object_name, [date_obs])
+        if result and date_obs in result:
+            entry = result[date_obs]
             ra_deg = entry.get('RA', 0.0)
             dec_deg = entry.get('Dec', 0.0)
             

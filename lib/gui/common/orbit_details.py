@@ -208,7 +208,7 @@ Orbit Quality:
         self._stack_thread.start()
 
 class OrbitComputationDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, target_name=None):
         super().__init__(parent)
         self.setWindowTitle("Get orbital elements")
         self.setModal(True)
@@ -223,6 +223,9 @@ class OrbitComputationDialog(QDialog):
         # Object name input
         self.object_input = QLineEdit()
         self.object_input.setPlaceholderText("Object designation...")
+        # Pre-fill with target name if provided
+        if target_name:
+            self.object_input.setText(target_name)
         layout.addWidget(self.object_input)
         
         # Buttons
@@ -264,13 +267,18 @@ class OrbitComputationWorker(QObject):
             from lib.astrometry.orbit import predict_position_findorb, get_neofixer_orbit
             predicted_positions = []
             orbit_data = None
+            
             # Get orbital elements from NEOfixer
             try:
                 orbit_data = get_neofixer_orbit(self.object_name)
             except Exception as e:
                 print(f"Failed to get orbital elements for {self.object_name}: {e}")
                 orbit_data = None
-            # Get predicted positions from Find_Orb for each FITS file
+            
+            # Collect all observation dates from FITS files
+            dates_obs = []
+            date_to_file_map = {}  # Map formatted dates back to file paths for debugging
+            
             for fits_path in self.loaded_files:
                 date_obs = None
                 print(f"\n[DEBUG] Processing file: {fits_path}")
@@ -282,6 +290,7 @@ class OrbitComputationWorker(QObject):
                         print(f"[DEBUG] DATE-OBS from header: {date_obs}")
                 except Exception as e:
                     print(f"[DEBUG] Failed to read FITS header for {fits_path}: {e}")
+                
                 # If not found in header, try database
                 if not date_obs:
                     try:
@@ -297,6 +306,7 @@ class OrbitComputationWorker(QObject):
                             date_obs = db_entry.date_obs.isoformat(sep='T', timespec='seconds')
                     except Exception as e:
                         print(f"[DEBUG] Failed to get date_obs from database for {fits_path}: {e}")
+                
                 if date_obs:
                     # Format date_obs to YYYY-MM-DDTHH:MM:SS (with 'T' and seconds, no Z, no decimal)
                     import re
@@ -312,18 +322,35 @@ class OrbitComputationWorker(QObject):
                             date_obs_fmt = dt.strftime('%Y-%m-%dT%H:%M:%S')
                         except Exception:
                             date_obs_fmt = date_obs[:10] + 'T' + date_obs[11:16] + ':00'  # crude fallback
+                    
                     print(f"[DEBUG] Using date_obs for prediction (formatted): {date_obs_fmt}")
-                    try:
-                        result = predict_position_findorb(self.object_name, date_obs_fmt)
-                        if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
-                            entry = result['ephemeris']['entries']['0']  # First entry
-                            entry['date_obs'] = date_obs_fmt  # Add the formatted date_obs
-                            predicted_positions.append(entry)
-                    except Exception as e:
-                        print(f"[DEBUG] Failed to get predicted position for {fits_path}: {e}")
-                        continue
+                    dates_obs.append(date_obs_fmt)
+                    date_to_file_map[date_obs_fmt] = fits_path
                 else:
                     print(f"[DEBUG] No date_obs found for {fits_path}, skipping prediction.")
+            
+            # Make a single call to Find_Orb with all dates
+            if dates_obs:
+                print(f"\n[DEBUG] Making Find_Orb API call for {len(dates_obs)} dates")
+                try:
+                    result = predict_position_findorb(self.object_name, dates_obs)
+                    if result:
+                        # Convert the result dictionary to a list of positions
+                        for date_obs_fmt in dates_obs:
+                            if date_obs_fmt in result:
+                                entry = result[date_obs_fmt]
+                                entry['date_obs'] = date_obs_fmt  # Ensure date_obs is included
+                                predicted_positions.append(entry)
+                                print(f"[DEBUG] Added position for {date_to_file_map.get(date_obs_fmt, 'unknown file')}: RA={entry.get('RA', 'N/A')}, Dec={entry.get('Dec', 'N/A')}")
+                            else:
+                                print(f"[DEBUG] No position found for {date_obs_fmt} (file: {date_to_file_map.get(date_obs_fmt, 'unknown')})")
+                    else:
+                        print("[DEBUG] No results returned from Find_Orb")
+                except Exception as e:
+                    print(f"[DEBUG] Failed to get predicted positions from Find_Orb: {e}")
+            else:
+                print("[DEBUG] No valid dates found for any files")
+            
             self.finished.emit(orbit_data, predicted_positions)
         except Exception as e:
             print(traceback.format_exc())
