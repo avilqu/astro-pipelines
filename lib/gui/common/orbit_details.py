@@ -155,13 +155,18 @@ class OrbitComputationWorker(QObject):
     
     def run(self):
         try:
-            from lib.astrometry.orbit import get_neofixer_orbit, predict_position_from_orbit
-            
-            # Get orbit data
-            orbit_data = get_neofixer_orbit(self.object_name)
-            
-            # Get dates from loaded FITS files
+            from lib.astrometry.orbit import predict_position_findorb, get_neofixer_orbit
             predicted_positions = []
+            orbit_data = None
+            
+            # Get orbital elements from NEOfixer
+            try:
+                orbit_data = get_neofixer_orbit(self.object_name)
+            except Exception as e:
+                print(f"Failed to get orbital elements for {self.object_name}: {e}")
+                orbit_data = None
+            
+            # Get predicted positions from Find_Orb for each FITS file
             for fits_path in self.loaded_files:
                 try:
                     from astropy.io import fits
@@ -169,14 +174,16 @@ class OrbitComputationWorker(QObject):
                         header = hdul[0].header
                         date_obs = header.get('DATE-OBS')
                         if date_obs:
-                            # Predict position for this date
-                            ra, dec = predict_position_from_orbit(orbit_data, date_obs)
-                            predicted_positions.append((date_obs, ra, dec))
+                            # Get predicted position from Find_Orb
+                            result = predict_position_findorb(self.object_name, date_obs)
+                            if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
+                                entry = result['ephemeris']['entries']['0']  # First entry
+                                ra = entry.get('RA', 0.0)
+                                dec = entry.get('Dec', 0.0)
+                                predicted_positions.append((date_obs, ra, dec))
                 except Exception as e:
-                    # Skip files that can't be read
+                    print(f"Failed to process {fits_path}: {e}")
                     continue
-            
             self.finished.emit(orbit_data, predicted_positions)
-            
         except Exception as e:
             self.error.emit(str(e)) 

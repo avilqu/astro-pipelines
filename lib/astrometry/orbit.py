@@ -1,7 +1,7 @@
 import os
 import requests
 from typing import Any, List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 
 try:
@@ -497,3 +497,107 @@ def compute_ephemeris(orbit_data: Dict[str, Any], date_obs: str) -> Tuple[float,
         raise ValueError(f"Missing expected orbital element key: {err}")
     except Exception as exc:
         raise Exception(f"Failed to compute ephemeris: {exc}") 
+
+def predict_position_findorb(object_designation: str, date_obs: str):
+    """
+    Query Find_Orb online service for ephemeris and return the full JSON response.
+    Args:
+        object_designation (str): The object name (e.g., '2025 BC').
+        date_obs (str): Observation date/time in ISO format (e.g., '2025-01-22T11:36:18').
+    Returns:
+        dict: The full JSON response from Find_Orb.
+    """
+    import requests
+    findorb_url = "https://www.projectpluto.com/cgi-bin/fo/fo_serve.cgi"
+    data = {
+        "TextArea": "",
+        "obj_name": object_designation,
+        "year": date_obs,
+        "n_steps": "1",
+        "stepsize": "1",
+        "mpc_code": "R56",
+        "faint_limit": "99",
+        "ephem_type": "0",
+        "sigmas": "on",
+        "total_motion": "on",
+        "element_center": "-2",
+        "epoch": "",
+        "resids": "0",
+        "language": "e",
+        "file_no": "3",  # JSON output
+    }
+    files = {
+        "upfile": ("", b""),
+    }
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Referer': 'https://www.projectpluto.com/fo.htm',
+        'Accept': 'application/json, text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.projectpluto.com',
+        'Connection': 'keep-alive',
+    }
+    try:
+        resp = requests.post(findorb_url, data=data, files=files, headers=headers, timeout=60)
+        resp.raise_for_status()
+        result_json = resp.json()
+        import json
+        print(json.dumps(result_json, indent=2))
+        return result_json
+    except Exception as e:
+        print(f"Failed to query Find_Orb or parse JSON: {e}")
+        print(resp.text[:2000])
+        return None
+
+
+def test_findorb_ephemeris():
+    """
+    Test the Find_Orb ephemeris workflow for object '2025 BC' at a specific date.
+    Prints the predicted RA/Dec and compares to expected values.
+    """
+    object_name = "2025 BC"
+    date_obs = "2025-01-22T11:36:18.572"
+    expected_ra_hms = "06:00:22.7"
+    expected_dec_dms = "-37:34:08.2"
+    from astropy.coordinates import Angle
+    import astropy.units as u
+    
+    print(f"Testing Find_Orb ephemeris for {object_name} at {date_obs}")
+    try:
+        result = predict_position_findorb(object_name, date_obs)
+        if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
+            entry = result['ephemeris']['entries']['0']  # First entry
+            ra_deg = entry.get('RA', 0.0)
+            dec_deg = entry.get('Dec', 0.0)
+            
+            ra_angle = Angle(ra_deg, unit=u.deg)
+            dec_angle = Angle(dec_deg, unit=u.deg)
+            
+            ra_hms = ra_angle.hms
+            dec_dms = dec_angle.dms
+            
+            print(f"Predicted RA: {ra_angle.hms[0]:02.0f}:{ra_angle.hms[1]:02.0f}:{ra_angle.hms[2]:.1f}")
+            print(f"Predicted Dec: {dec_angle.dms[0]:+03.0f}:{abs(dec_angle.dms[1]):02.0f}:{abs(dec_angle.dms[2]):.1f}")
+            print(f"Expected RA: {expected_ra_hms}")
+            print(f"Expected Dec: {expected_dec_dms}")
+            
+            # Convert expected values to degrees for comparison
+            expected_ra_angle = Angle(expected_ra_hms, unit=u.hourangle)
+            expected_dec_angle = Angle(expected_dec_dms, unit=u.deg)
+            
+            ra_diff = abs(ra_deg - expected_ra_angle.deg)
+            dec_diff = abs(dec_deg - expected_dec_angle.deg)
+            
+            print(f"RA difference: {ra_diff:.3f} degrees")
+            print(f"Dec difference: {dec_diff:.3f} degrees")
+            
+            # Allow for some tolerance (e.g., 0.1 degrees)
+            tolerance = 0.1
+            if ra_diff < tolerance and dec_diff < tolerance:
+                print("Test PASSED: Predicted position matches expected values within tolerance")
+            else:
+                print("Test FAILED: Predicted position differs significantly from expected values")
+        else:
+            print("Test FAILED: Invalid response format")
+    except Exception as e:
+        print(f"Test FAILED: {e}") 
