@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, QTextEdit, QHBoxLayout, QPushButton, QLineEdit, QMessageBox, QProgressDialog
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, QTextEdit, QHBoxLayout, QPushButton, QLineEdit, QMessageBox, QProgressDialog, QAbstractItemView
 from PyQt6.QtGui import QFont, QColor, QBrush, QTextCursor
 from PyQt6.QtCore import pyqtSignal, QThread, QObject
 from astropy.coordinates import Angle
@@ -7,6 +7,7 @@ from astropy.time import Time
 import os
 
 class OrbitDataWindow(QDialog):
+    row_selected = pyqtSignal(int, object)  # row index, ephemeris tuple
     def __init__(self, object_name, orbit_data, predicted_positions, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Orbital elements - {object_name}")
@@ -33,11 +34,16 @@ class OrbitDataWindow(QDialog):
             "Date/Time", "RA (deg)", "Dec (deg)", "RA (h:m:s)", "Dec (d:m:s)"
         ])
         self.positions_table.setFont(QFont("Courier New", 10))
+        self.positions_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.positions_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         layout.addWidget(self.positions_table)
         
         # Populate data
         self._populate_orbital_elements(orbit_data)
         self._populate_predicted_positions(predicted_positions)
+        
+        self.predicted_positions = predicted_positions  # Store for access on click
+        self.positions_table.cellClicked.connect(self._on_row_clicked)
         
         self.setLayout(layout)
     
@@ -109,6 +115,10 @@ Orbit Quality:
                 self.positions_table.setItem(i, col, item)
         
         self.positions_table.resizeColumnsToContents()
+
+    def _on_row_clicked(self, row, col):
+        if 0 <= row < len(self.predicted_positions):
+            self.row_selected.emit(row, self.predicted_positions[row])
 
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None):

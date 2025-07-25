@@ -295,6 +295,43 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        # Draw ephemeris marker overlay if present
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_ephemeris_overlay') and
+            self.parent_viewer._ephemeris_overlay is not None and
+            getattr(self.parent_viewer, '_overlay_visible', True)
+        ):
+            try:
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                _, (x_img, y_img) = self.parent_viewer._ephemeris_overlay
+                x_disp = x_img * scale + x_offset
+                y_disp = y_img * scale + y_offset
+                painter = QPainter(self)
+                pen = QPen(QColor(255, 0, 0))
+                pen.setWidth(3)
+                painter.setPen(pen)
+                radius = 12
+                # Draw a red cross
+                painter.drawLine(int(x_disp - radius), int(y_disp), int(x_disp + radius), int(y_disp))
+                painter.drawLine(int(x_disp), int(y_disp - radius), int(x_disp), int(y_disp + radius))
+                # Optionally, draw a circle
+                painter.drawEllipse(int(x_disp - radius), int(y_disp - radius), int(2 * radius), int(2 * radius))
+                painter.end()
+            except Exception as e:
+                pass
         # Draw zoom region rectangle if active or if selection exists
         if self._zoom_region_mode and (self._zoom_region_active or (self._zoom_region_start and self._zoom_region_end)):
             painter = QPainter(self)

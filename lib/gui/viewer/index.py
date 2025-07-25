@@ -799,6 +799,23 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.update_overlay_button_visibility()
         self.update_navigation_buttons()
         self.update_image_count_label()
+        # After loading, update ephemeris marker if present
+        if hasattr(self, '_ephemeris_predicted_positions') and self._ephemeris_predicted_positions:
+            idx = self.current_file_index
+            if 0 <= idx < len(self._ephemeris_predicted_positions):
+                ephemeris = self._ephemeris_predicted_positions[idx]
+                ra, dec = ephemeris[1], ephemeris[2]
+                if self.wcs is not None:
+                    from astropy.wcs.utils import skycoord_to_pixel
+                    from astropy.coordinates import SkyCoord
+                    import astropy.units as u
+                    skycoord = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
+                    x, y = skycoord_to_pixel(skycoord, self.wcs)
+                    self._ephemeris_overlay = ((ra, dec), (x, y))
+                    self._show_ephemeris_marker((x, y))
+                else:
+                    self._ephemeris_overlay = None
+                    self._show_ephemeris_marker(None)
 
     def show_header_dialog(self):
         if hasattr(self, '_current_header') and self._current_header:
@@ -816,7 +833,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def update_overlay_button_visibility(self):
         has_overlay = (
             (hasattr(self, '_simbad_overlay') and self._simbad_overlay is not None) or
-            (hasattr(self, '_sso_overlay') and self._sso_overlay is not None)
+            (hasattr(self, '_sso_overlay') and self._sso_overlay is not None) or
+            (hasattr(self, '_ephemeris_overlay') and self._ephemeris_overlay is not None)
         )
         self.overlay_toggle_action.setVisible(has_overlay)
         if has_overlay:
@@ -935,7 +953,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             progress.setWindowTitle("Orbit Computation")
             progress.setWindowModality(Qt.WindowModality.ApplicationModal)
             progress.setMinimumDuration(0)
-            progress.setValue(0)
             progress.show()
             QApplication.processEvents()
             
@@ -959,7 +976,14 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 # Show orbit data window
                 from lib.gui.common.orbit_details import OrbitDataWindow
                 dlg = OrbitDataWindow(object_name, orbit_data, predicted_positions, self)
+                dlg.row_selected.connect(self.on_ephemeris_row_selected)
+                self._ephemeris_predicted_positions = predicted_positions
+                self._ephemeris_object_name = object_name
                 dlg.show()
+                # Optionally, select the current file's row by default
+                if self.current_file_index >= 0:
+                    dlg.positions_table.selectRow(self.current_file_index)
+                    self.on_ephemeris_row_selected(self.current_file_index, predicted_positions[self.current_file_index])
             
             def on_error(msg):
                 progress.close()
@@ -1250,6 +1274,34 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def _on_filelist_closed(self):
         self.filelist_action.setChecked(False)
         self._filelist_window = None
+
+    def on_ephemeris_row_selected(self, row_index, ephemeris):
+        # Load the corresponding FITS file and add a marker at the ephemeris position
+        if not (0 <= row_index < len(self.loaded_files)):
+            return
+        self.current_file_index = row_index
+        self.load_fits(self.loaded_files[row_index], restore_view=True)
+        # Set marker overlay for ephemeris position
+        ra, dec = ephemeris[1], ephemeris[2]
+        if self.wcs is not None:
+            from astropy.wcs.utils import skycoord_to_pixel
+            from astropy.coordinates import SkyCoord
+            import astropy.units as u
+            skycoord = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
+            x, y = skycoord_to_pixel(skycoord, self.wcs)
+            self._ephemeris_overlay = ((ra, dec), (x, y))
+            self._show_ephemeris_marker((x, y))
+        else:
+            self._ephemeris_overlay = None
+            self._show_ephemeris_marker(None)
+        self.image_label.update()
+
+    def _show_ephemeris_marker(self, pixel_coords):
+        # Store the marker position for overlay drawing
+        self._ephemeris_marker_coords = pixel_coords
+        self._overlay_visible = True
+        self.update_overlay_button_visibility()
+        self.image_label.update()
 
     def on_zoom_region_toggled(self, checked):
         self._zoom_region_mode = checked
