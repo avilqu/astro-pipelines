@@ -21,6 +21,10 @@ CALIBRATION_PATH = '/home/tan/Astro/calibration'
 DATA_PATH = '/home/tan/Astro/obs'
 OBS_PATH = '/home/tan/Astro/obs'
 
+OBS_CODE = 'R56'
+OBS_LON = 170.483
+OBS_LAT = -43.906701849273134
+
 # Database configuration
 DATABASE_PATH = '/home/tan/dev/astro-pipelines/astropipes.db'  # SQLite database file path (absolute path)
 

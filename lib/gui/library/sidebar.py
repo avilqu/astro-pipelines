@@ -58,13 +58,13 @@ class LeftPanel(QWidget):
         darks_count = db.get_calibration_file_count("Dark")
         flats_count = db.get_calibration_file_count("Flat")
 
-        darker_brush = QBrush(QColor("#bbbbbb"))
+        self.darker_brush = QBrush(QColor("#bbbbbb"))
         self.bias_item = QTreeWidgetItem([f"Bias ({bias_count})"])
-        self.bias_item.setForeground(0, darker_brush)
+        self.bias_item.setForeground(0, self.darker_brush)
         self.darks_item = QTreeWidgetItem([f"Darks ({darks_count})"])
-        self.darks_item.setForeground(0, darker_brush)
+        self.darks_item.setForeground(0, self.darker_brush)
         self.flats_item = QTreeWidgetItem([f"Flats ({flats_count})"])
-        self.flats_item.setForeground(0, darker_brush)
+        self.flats_item.setForeground(0, self.darker_brush)
         self.calibration_item.addChild(self.bias_item)
         self.calibration_item.addChild(self.darks_item)
         self.calibration_item.addChild(self.flats_item)
@@ -75,17 +75,17 @@ class LeftPanel(QWidget):
         for target in db.get_unique_targets():
             count = db.get_file_count_by_target(target)
             item = QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
-            item.setForeground(0, darker_brush)
+            item.setForeground(0, self.darker_brush)
         if TIME_DISPLAY_MODE == 'Local':
             for date in reversed(db.get_unique_local_dates()):
                 count = db.get_file_count_by_local_date(date)
                 item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
-                item.setForeground(0, darker_brush)
+                item.setForeground(0, self.darker_brush)
         else:
             for date in reversed(db.get_unique_dates()):
                 count = db.get_file_count_by_date(date)
                 item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
-                item.setForeground(0, darker_brush)
+                item.setForeground(0, self.darker_brush)
 
         # Expand both Targets and Dates by default
         self.menu_tree.expandItem(self.targets_item)
@@ -187,18 +187,18 @@ class LeftPanel(QWidget):
         for target in db.get_unique_targets():
             count = db.get_file_count_by_target(target)
             item = QTreeWidgetItem(self.targets_item, [f"{target} ({count})"])
-            item.setForeground(0, darker_brush)
+            item.setForeground(0, self.darker_brush)
         # Repopulate dates
         if TIME_DISPLAY_MODE == 'Local':
             for date in reversed(db.get_unique_local_dates()):
                 count = db.get_file_count_by_local_date(date)
                 item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
-                item.setForeground(0, darker_brush)
+                item.setForeground(0, self.darker_brush)
         else:
             for date in reversed(db.get_unique_dates()):
                 count = db.get_file_count_by_date(date)
                 item = QTreeWidgetItem(self.dates_item, [f"{date} ({count})"])
-                item.setForeground(0, darker_brush)
+                item.setForeground(0, self.darker_brush)
         # Expand both Targets and Dates by default
         self.menu_tree.expandItem(self.targets_item)
         self.menu_tree.expandItem(self.dates_item) 
