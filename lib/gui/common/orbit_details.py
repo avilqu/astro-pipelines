@@ -89,31 +89,20 @@ Orbit Quality:
         self.elements_text.setPlainText(text)
     
     def _populate_predicted_positions(self, predicted_positions):
-        """Populate the predicted positions table."""
+        """Populate the predicted positions table with all fields from the ephemeris entry, except ISO_time, JD, and date_obs."""
+        if not predicted_positions:
+            self.positions_table.setRowCount(0)
+            return
+        # Use all keys from the first entry as columns, except the excluded ones
+        exclude = {"ISO_time", "JD", "date_obs"}
+        columns = [k for k in predicted_positions[0].keys() if k not in exclude]
+        self.positions_table.setColumnCount(len(columns))
+        self.positions_table.setHorizontalHeaderLabels(columns)
         self.positions_table.setRowCount(len(predicted_positions))
-        
-        for i, (date_obs, ra, dec) in enumerate(predicted_positions):
-            # Format RA and Dec in different ways
-            try:
-                ra_angle = Angle(ra, unit=u.deg)
-                dec_angle = Angle(dec, unit=u.deg)
-                ra_hms = ra_angle.to_string(unit=u.hourangle, sep=':', precision=1, pad=True)
-                dec_dms = dec_angle.to_string(unit=u.deg, sep=':', precision=1, alwayssign=True, pad=True)
-            except Exception:
-                ra_hms = f"{ra:.6f}"
-                dec_dms = f"{dec:.6f}"
-            
-            items = [
-                QTableWidgetItem(date_obs),
-                QTableWidgetItem(f"{ra:.6f}"),
-                QTableWidgetItem(f"{dec:.6f}"),
-                QTableWidgetItem(ra_hms),
-                QTableWidgetItem(dec_dms)
-            ]
-            
-            for col, item in enumerate(items):
-                self.positions_table.setItem(i, col, item)
-        
+        for i, entry in enumerate(predicted_positions):
+            for j, key in enumerate(columns):
+                value = entry.get(key, "")
+                self.positions_table.setItem(i, j, QTableWidgetItem(str(value)))
         self.positions_table.resizeColumnsToContents()
 
     def _on_row_clicked(self, row, col):
@@ -223,9 +212,8 @@ class OrbitComputationWorker(QObject):
                         result = predict_position_findorb(self.object_name, date_obs_fmt)
                         if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
                             entry = result['ephemeris']['entries']['0']  # First entry
-                            ra = entry.get('RA', 0.0)
-                            dec = entry.get('Dec', 0.0)
-                            predicted_positions.append((date_obs_fmt, ra, dec))
+                            entry['date_obs'] = date_obs_fmt  # Add the formatted date_obs
+                            predicted_positions.append(entry)
                     except Exception as e:
                         print(f"[DEBUG] Failed to get predicted position for {fits_path}: {e}")
                         continue

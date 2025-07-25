@@ -608,27 +608,6 @@ def predict_position_findorb(object_designation: str, date_obs: str):
                 interpolated_result['RA'] = interpolated_ra
                 interpolated_result['Dec'] = interpolated_dec
                 interpolated_result['Date'] = obs_dt.strftime('%Y-%m-%d %H:%M:%S')
-
-                # --- JNow to J2000 conversion using astropy ---
-                try:
-                    from astropy.coordinates import SkyCoord
-                    from astropy import units as u
-                    from astropy.time import Time
-                    # Create SkyCoord in FK5 (JNow, equinox of date)
-                    coord_jnow = SkyCoord(ra=interpolated_ra * u.deg, dec=interpolated_dec * u.deg,
-                                          frame='fk5', obstime=Time(obs_dt), equinox=Time(obs_dt))
-                    # Convert to J2000
-                    coord_j2000 = coord_jnow.transform_to('fk5')
-                    coord_j2000 = SkyCoord(ra=coord_jnow.ra, dec=coord_jnow.dec, frame='fk5', equinox='J2000')
-                    coord_j2000 = coord_jnow.transform_to(SkyCoord(ra=coord_jnow.ra, dec=coord_jnow.dec, frame='fk5', equinox='J2000'))
-                    # Overwrite with J2000 values
-                    interpolated_result['RA_J2000'] = coord_j2000.ra.deg
-                    interpolated_result['Dec_J2000'] = coord_j2000.dec.deg
-                except Exception as e:
-                    print(f"[DEBUG] JNow to J2000 conversion failed: {e}")
-                    interpolated_result['RA_J2000'] = None
-                    interpolated_result['Dec_J2000'] = None
-
                 result_json['ephemeris']['entries']['0'] = interpolated_result
                 print(f"Interpolated position at {obs_dt}: RA={interpolated_ra:.6f}, Dec={interpolated_dec:.6f}")
                 print(json.dumps(result_json, indent=2))

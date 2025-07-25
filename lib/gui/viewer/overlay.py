@@ -321,14 +321,17 @@ class ImageLabel(QLabel):
                 y_disp = y_img * scale + y_offset
                 painter = QPainter(self)
                 pen = QPen(QColor(255, 0, 0))
-                pen.setWidth(3)
+                pen.setWidth(1)  # Thinner lines
                 painter.setPen(pen)
-                radius = 12
-                # Draw a red cross
-                painter.drawLine(int(x_disp - radius), int(y_disp), int(x_disp + radius), int(y_disp))
-                painter.drawLine(int(x_disp), int(y_disp - radius), int(x_disp), int(y_disp + radius))
-                # Optionally, draw a circle
-                painter.drawEllipse(int(x_disp - radius), int(y_disp - radius), int(2 * radius), int(2 * radius))
+                radius = 24  # Twice as long as before
+                gap = 6      # Length of the gap at the center
+                # Draw a red cross with missing center (4 segments)
+                # Horizontal segments
+                painter.drawLine(int(x_disp - radius), int(y_disp), int(x_disp - gap), int(y_disp))
+                painter.drawLine(int(x_disp + gap), int(y_disp), int(x_disp + radius), int(y_disp))
+                # Vertical segments
+                painter.drawLine(int(x_disp), int(y_disp - radius), int(x_disp), int(y_disp - gap))
+                painter.drawLine(int(x_disp), int(y_disp + gap), int(x_disp), int(y_disp + radius))
                 painter.end()
             except Exception as e:
                 pass

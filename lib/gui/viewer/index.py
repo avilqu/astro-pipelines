@@ -804,7 +804,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             idx = self.current_file_index
             if 0 <= idx < len(self._ephemeris_predicted_positions):
                 ephemeris = self._ephemeris_predicted_positions[idx]
-                ra, dec = ephemeris[1], ephemeris[2]
+                ra = ephemeris.get("RA", 0.0)
+                dec = ephemeris.get("Dec", 0.0)
                 if self.wcs is not None:
                     from astropy.wcs.utils import skycoord_to_pixel
                     from astropy.coordinates import SkyCoord
@@ -1282,7 +1283,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.current_file_index = row_index
         self.load_fits(self.loaded_files[row_index], restore_view=True)
         # Set marker overlay for ephemeris position
-        ra, dec = ephemeris[1], ephemeris[2]
+        ra = ephemeris.get("RA", 0.0)
+        dec = ephemeris.get("Dec", 0.0)
         if self.wcs is not None:
             from astropy.wcs.utils import skycoord_to_pixel
             from astropy.coordinates import SkyCoord
