@@ -13,19 +13,18 @@ from PyQt6.QtGui import QFont, QTextCursor
 
 
 class RealTimeStringIO(io.StringIO):
-    """StringIO subclass that emits content in real-time."""
-    
-    def __init__(self, output_signal):
+    """StringIO subclass that calls a callback with content in real-time."""
+    def __init__(self, output_callback):
         super().__init__()
-        self.output_signal = output_signal
+        self.output_callback = output_callback
         self.lock = threading.Lock()
-    
+
     def write(self, text):
         with self.lock:
             super().write(text)
             if text:
-                self.output_signal.emit(text)
-    
+                self.output_callback(text)
+
     def flush(self):
         with self.lock:
             super().flush()

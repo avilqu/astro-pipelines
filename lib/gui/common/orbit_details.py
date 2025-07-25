@@ -112,7 +112,7 @@ Orbit Quality:
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Compute Orbit Data")
+        self.setWindowTitle("Get orbital elements")
         self.setModal(True)
         self.setFixedSize(400, 150)
         
@@ -129,7 +129,7 @@ class OrbitComputationDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
-        self.compute_button = QPushButton("Compute")
+        self.compute_button = QPushButton("Get")
         self.compute_button.clicked.connect(self.accept)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
@@ -146,25 +146,32 @@ class OrbitComputationDialog(QDialog):
 class OrbitComputationWorker(QObject):
     finished = pyqtSignal(dict, list)  # orbit_data, predicted_positions
     error = pyqtSignal(str)
+    console_output = pyqtSignal(str)
     
-    def __init__(self, object_name, loaded_files):
+    def __init__(self, object_name, loaded_files, console_window=None):
         super().__init__()
         self.object_name = object_name
         self.loaded_files = loaded_files
+        self.console_window = console_window
     
     def run(self):
+        import sys
+        from lib.gui.common.console_window import RealTimeStringIO
+        import traceback
         try:
+            # Redirect stdout/stderr to the console_output signal (thread-safe)
+            rtio = RealTimeStringIO(self.console_output.emit)
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout = sys.stderr = rtio
             from lib.astrometry.orbit import predict_position_findorb, get_neofixer_orbit
             predicted_positions = []
             orbit_data = None
-            
             # Get orbital elements from NEOfixer
             try:
                 orbit_data = get_neofixer_orbit(self.object_name)
             except Exception as e:
                 print(f"Failed to get orbital elements for {self.object_name}: {e}")
                 orbit_data = None
-            
             # Get predicted positions from Find_Orb for each FITS file
             for fits_path in self.loaded_files:
                 date_obs = None
@@ -221,4 +228,8 @@ class OrbitComputationWorker(QObject):
                     print(f"[DEBUG] No date_obs found for {fits_path}, skipping prediction.")
             self.finished.emit(orbit_data, predicted_positions)
         except Exception as e:
-            self.error.emit(str(e)) 
+            print(traceback.format_exc())
+            self.error.emit(str(e))
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr 

@@ -949,23 +949,21 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 QMessageBox.warning(self, "No Object", "Please enter an object designation.")
                 return
             
-            # Progress dialog
-            progress = QProgressDialog(f"Computing orbit data for {object_name}...", None, 0, 0, self)
-            progress.setWindowTitle("Orbit Computation")
-            progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-            progress.setMinimumDuration(0)
-            progress.show()
-            QApplication.processEvents()
+            # Console output window for orbit computation
+            from lib.gui.common.console_window import ConsoleOutputWindow
+            console_window = ConsoleOutputWindow(f"Orbit Computation: {object_name}", self)
+            console_window.show_and_raise()
             
             # Start worker thread
             self._orbit_thread = QThread()
             from lib.gui.common.orbit_details import OrbitComputationWorker
-            self._orbit_worker = OrbitComputationWorker(object_name, self.loaded_files)
+            self._orbit_worker = OrbitComputationWorker(object_name, self.loaded_files, console_window)
             self._orbit_worker.moveToThread(self._orbit_thread)
+            self._orbit_worker.console_output.connect(console_window.append_text)
             self._orbit_thread.started.connect(self._orbit_worker.run)
             
             def on_finished(orbit_data, predicted_positions):
-                progress.close()
+                console_window.append_text("\nComputation finished.\n")
                 self._orbit_thread.quit()
                 self._orbit_thread.wait()
                 
@@ -987,7 +985,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self.on_ephemeris_row_selected(self.current_file_index, predicted_positions[self.current_file_index])
             
             def on_error(msg):
-                progress.close()
+                console_window.append_text(f"\nError: {msg}\n")
                 self._orbit_thread.quit()
                 self._orbit_thread.wait()
                 QMessageBox.critical(self, "Orbit Computation Error", f"Error computing orbit data: {msg}")
