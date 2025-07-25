@@ -979,6 +979,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 self._ephemeris_predicted_positions = predicted_positions
                 self._ephemeris_object_name = object_name
                 dlg.show()
+                # Store reference to prevent garbage collection
+                self._orbit_window = dlg
                 # Optionally, select the current file's row by default
                 if self.current_file_index >= 0:
                     dlg.positions_table.selectRow(self.current_file_index)

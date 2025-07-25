@@ -1,20 +1,35 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, QTextEdit, QHBoxLayout, QPushButton, QLineEdit, QMessageBox, QProgressDialog, QAbstractItemView
-from PyQt6.QtGui import QFont, QColor, QBrush, QTextCursor
-from PyQt6.QtCore import pyqtSignal, QThread, QObject
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
+                             QTextEdit, QHBoxLayout, QPushButton, QLineEdit, QMessageBox, 
+                             QProgressDialog, QAbstractItemView, QMenuBar, QMenu, QMainWindow,
+                             QWidget, QFileDialog)
+from PyQt6.QtGui import QFont, QColor, QBrush, QTextCursor, QAction
+from PyQt6.QtCore import pyqtSignal, QThread, QObject, Qt
 from astropy.coordinates import Angle
 import astropy.units as u
 from astropy.time import Time
 import os
 
-class OrbitDataWindow(QDialog):
+class OrbitDataWindow(QMainWindow):
     row_selected = pyqtSignal(int, object)  # row index, ephemeris tuple
     def __init__(self, object_name, orbit_data, predicted_positions, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Orbital elements - {object_name}")
         self.setGeometry(300, 200, 800, 600)
-        self.setModal(False)
         
-        layout = QVBoxLayout(self)
+        # Store data for stacking
+        self.object_name = object_name
+        self.orbit_data = orbit_data
+        self.predicted_positions = predicted_positions
+        self.parent_viewer = parent
+        
+        # Create central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout()
+        central_widget.setLayout(layout)
+        
+        # Create menu bar
+        self._create_menu_bar()
         
         # Title
         self.elements_text = QTextEdit()
@@ -44,8 +59,6 @@ class OrbitDataWindow(QDialog):
         
         self.predicted_positions = predicted_positions  # Store for access on click
         self.positions_table.cellClicked.connect(self._on_row_clicked)
-        
-        self.setLayout(layout)
     
     def _populate_orbital_elements(self, orbit_data):
         """Populate the orbital elements text area."""
@@ -108,6 +121,91 @@ Orbit Quality:
     def _on_row_clicked(self, row, col):
         if 0 <= row < len(self.predicted_positions):
             self.row_selected.emit(row, self.predicted_positions[row])
+    
+    def _create_menu_bar(self):
+        """Create the menu bar with Actions menu."""
+        menubar = self.menuBar()
+        
+        # Create Actions menu
+        actions_menu = menubar.addMenu("Actions")
+        
+        # Create Stack on ephemeris action
+        stack_action = QAction("Stack on ephemeris", self)
+        stack_action.setStatusTip("Stack loaded images with motion tracking for this object")
+        stack_action.triggered.connect(self._stack_on_ephemeris)
+        actions_menu.addAction(stack_action)
+    
+    def _stack_on_ephemeris(self):
+        """Perform motion tracking integration and load result in viewer."""
+        if not self.parent_viewer or not hasattr(self.parent_viewer, 'loaded_files'):
+            QMessageBox.warning(self, "No Files", "No FITS files are currently loaded in the viewer.")
+            return
+        
+        loaded_files = self.parent_viewer.loaded_files
+        if len(loaded_files) < 2:
+            QMessageBox.warning(self, "Insufficient Files", "At least 2 FITS files are required for stacking.")
+            return
+        
+        # Create output directory if it doesn't exist
+        import os
+        output_dir = "/tmp/astropipes-stacked"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate output filename
+        import time
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        safe_object_name = self.object_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        output_file = os.path.join(output_dir, f"motion_tracked_{safe_object_name}_{timestamp}.fits")
+        
+        # Create console window for output
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        console_window = ConsoleOutputWindow("Motion Tracking Integration", self)
+        console_window.show_and_raise()
+        
+        # Start stacking in background thread
+        self._stack_thread = QThread()
+        self._stack_worker = MotionTrackingStackWorker(
+            loaded_files, 
+            self.object_name, 
+            output_file,
+            console_window
+        )
+        self._stack_worker.moveToThread(self._stack_thread)
+        self._stack_thread.started.connect(self._stack_worker.run)
+        
+        def on_console_output(text):
+            console_window.append_text(text)
+        
+        def on_finished(success, message):
+            if success:
+                console_window.append_text(f"\n\033[1;32mMotion tracking integration completed successfully!\033[0m\n\n{message}\n")
+                # Add the result to the loaded files in the viewer
+                if self.parent_viewer and hasattr(self.parent_viewer, 'loaded_files'):
+                    # Add to loaded files list
+                    self.parent_viewer.loaded_files.append(output_file)
+                    # Load the file in the viewer
+                    self.parent_viewer.open_and_add_file(output_file)
+                    # Update navigation buttons and file count
+                    if hasattr(self.parent_viewer, 'update_navigation_buttons'):
+                        self.parent_viewer.update_navigation_buttons()
+                    if hasattr(self.parent_viewer, 'update_image_count_label'):
+                        self.parent_viewer.update_image_count_label()
+            else:
+                console_window.append_text(f"\n\033[1;31mMotion tracking integration failed:\033[0m\n\n{message}\n")
+            
+            self._stack_thread.quit()
+            self._stack_thread.wait()
+        
+        def on_cancel():
+            console_window.append_text("\n\033[1;31mCancelling motion tracking integration...\033[0m\n")
+            self._stack_thread.quit()
+            self._stack_thread.wait()
+            console_window.close()
+        
+        self._stack_worker.console_output.connect(on_console_output)
+        self._stack_worker.finished.connect(on_finished)
+        console_window.cancel_requested.connect(on_cancel)
+        self._stack_thread.start()
 
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None):
@@ -232,4 +330,65 @@ class OrbitComputationWorker(QObject):
             self.error.emit(str(e))
         finally:
             sys.stdout = old_stdout
-            sys.stderr = old_stderr 
+            sys.stderr = old_stderr
+
+
+class MotionTrackingStackWorker(QObject):
+    """Worker thread for motion tracking integration."""
+    console_output = pyqtSignal(str)  # console output text
+    finished = pyqtSignal(bool, str)  # success, message
+    
+    def __init__(self, files, object_name, output_path, console_window=None):
+        super().__init__()
+        self.files = files
+        self.object_name = object_name
+        self.output_path = output_path
+        self.console_window = console_window
+    
+    def run(self):
+        """Run the motion tracking integration."""
+        try:
+            import sys
+            from lib.gui.common.console_window import RealTimeStringIO
+            from lib.fits.integration import integrate_with_motion_tracking, MotionTrackingIntegrationError
+            
+            # Redirect stdout/stderr to console output
+            rtio = RealTimeStringIO(self.console_output.emit)
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout = sys.stderr = rtio
+            
+            try:
+                self.console_output.emit(f"\033[1;34mStarting motion tracking integration for {self.object_name}\033[0m\n")
+                self.console_output.emit(f"\033[1;34mProcessing {len(self.files)} files\033[0m\n")
+                self.console_output.emit(f"\033[1;34mOutput will be saved to: {self.output_path}\033[0m\n\n")
+                
+                # Perform motion tracking integration
+                result = integrate_with_motion_tracking(
+                    files=self.files,
+                    object_name=self.object_name,
+                    method='average',
+                    sigma_clip=True,
+                    output_path=self.output_path
+                )
+                
+                # Success message
+                message = f"Successfully created motion tracked stack:\n"
+                message += f"Object: {self.object_name}\n"
+                message += f"Files processed: {len(self.files)}\n"
+                message += f"Output: {self.output_path}\n"
+                message += f"Image shape: {result.data.shape}\n"
+                message += f"Data range: {result.data.min():.2f} to {result.data.max():.2f}"
+                
+                self.finished.emit(True, message)
+                
+            finally:
+                # Restore stdout/stderr
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+            
+        except MotionTrackingIntegrationError as e:
+            self.finished.emit(False, f"Motion tracking integration error: {e}")
+        except Exception as e:
+            import traceback
+            error_msg = f"Unexpected error during motion tracking integration:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.finished.emit(False, error_msg) 

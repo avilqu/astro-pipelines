@@ -20,6 +20,13 @@ from .wcs import (
     ImageValidationError
 )
 from .calibration import CalibrationManager
+from .integration import (
+    integrate_with_motion_tracking,
+    integrate_standard,
+    calculate_motion_shifts,
+    check_sequence_consistency,
+    MotionTrackingIntegrationError
+)
 
 __all__ = [
     'get_fits_header_as_json', 
@@ -39,5 +46,10 @@ __all__ = [
     'WCSExtractionError',
     'WCSApplicationError',
     'ImageValidationError',
-    'CalibrationManager'
+    'CalibrationManager',
+    'integrate_with_motion_tracking',
+    'integrate_standard',
+    'calculate_motion_shifts',
+    'check_sequence_consistency',
+    'MotionTrackingIntegrationError'
 ] 
