@@ -168,22 +168,59 @@ class OrbitComputationWorker(QObject):
             
             # Get predicted positions from Find_Orb for each FITS file
             for fits_path in self.loaded_files:
+                date_obs = None
+                print(f"\n[DEBUG] Processing file: {fits_path}")
                 try:
                     from astropy.io import fits
                     with fits.open(fits_path) as hdul:
                         header = hdul[0].header
                         date_obs = header.get('DATE-OBS')
-                        if date_obs:
-                            # Get predicted position from Find_Orb
-                            result = predict_position_findorb(self.object_name, date_obs)
-                            if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
-                                entry = result['ephemeris']['entries']['0']  # First entry
-                                ra = entry.get('RA', 0.0)
-                                dec = entry.get('Dec', 0.0)
-                                predicted_positions.append((date_obs, ra, dec))
+                        print(f"[DEBUG] DATE-OBS from header: {date_obs}")
                 except Exception as e:
-                    print(f"Failed to process {fits_path}: {e}")
-                    continue
+                    print(f"[DEBUG] Failed to read FITS header for {fits_path}: {e}")
+                # If not found in header, try database
+                if not date_obs:
+                    try:
+                        from lib.db.manager import get_db_manager
+                        db_manager = get_db_manager()
+                        db_entry = db_manager.get_fits_file_by_path(fits_path)
+                        if db_entry:
+                            print(f"[DEBUG] Found DB entry for {fits_path}. date_obs: {db_entry.date_obs}")
+                        else:
+                            print(f"[DEBUG] No DB entry found for {fits_path}")
+                        if db_entry and db_entry.date_obs:
+                            # Convert datetime to ISO string
+                            date_obs = db_entry.date_obs.isoformat(sep='T', timespec='seconds')
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to get date_obs from database for {fits_path}: {e}")
+                if date_obs:
+                    # Format date_obs to YYYY-MM-DDTHH:MM:SS (with 'T' and seconds, no Z, no decimal)
+                    import re
+                    match = re.match(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?", date_obs)
+                    if match:
+                        seconds = match.group(3) if match.group(3) is not None else '00'
+                        date_obs_fmt = f"{match.group(1)}T{match.group(2)}:{seconds}"
+                    else:
+                        # Fallback: try to parse and reformat
+                        from datetime import datetime
+                        try:
+                            dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
+                            date_obs_fmt = dt.strftime('%Y-%m-%dT%H:%M:%S')
+                        except Exception:
+                            date_obs_fmt = date_obs[:10] + 'T' + date_obs[11:16] + ':00'  # crude fallback
+                    print(f"[DEBUG] Using date_obs for prediction (formatted): {date_obs_fmt}")
+                    try:
+                        result = predict_position_findorb(self.object_name, date_obs_fmt)
+                        if result and 'ephemeris' in result and 'entries' in result['ephemeris']:
+                            entry = result['ephemeris']['entries']['0']  # First entry
+                            ra = entry.get('RA', 0.0)
+                            dec = entry.get('Dec', 0.0)
+                            predicted_positions.append((date_obs_fmt, ra, dec))
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to get predicted position for {fits_path}: {e}")
+                        continue
+                else:
+                    print(f"[DEBUG] No date_obs found for {fits_path}, skipping prediction.")
             self.finished.emit(orbit_data, predicted_positions)
         except Exception as e:
             self.error.emit(str(e)) 

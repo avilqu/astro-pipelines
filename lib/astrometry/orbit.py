@@ -500,21 +500,24 @@ def compute_ephemeris(orbit_data: Dict[str, Any], date_obs: str) -> Tuple[float,
 
 def predict_position_findorb(object_designation: str, date_obs: str):
     """
-    Query Find_Orb online service for ephemeris and return the full JSON response.
+    Query Find_Orb online service for ephemeris and return interpolated position at precise time.
     Args:
         object_designation (str): The object name (e.g., '2025 BC').
         date_obs (str): Observation date/time in ISO format (e.g., '2025-01-22T11:36:18').
     Returns:
-        dict: The full JSON response from Find_Orb.
+        dict: The interpolated position and metadata from the first ephemeris entry.
     """
     import requests
+    from datetime import datetime
+    import json
+    
     findorb_url = "https://www.projectpluto.com/cgi-bin/fo/fo_serve.cgi"
     data = {
         "TextArea": "",
         "obj_name": object_designation,
         "year": date_obs,
-        "n_steps": "1",
-        "stepsize": "1",
+        "n_steps": "2",
+        "stepsize": "1mn",
         "mpc_code": "R56",
         "faint_limit": "99",
         "ephem_type": "0",
@@ -537,16 +540,88 @@ def predict_position_findorb(object_designation: str, date_obs: str):
         'Origin': 'https://www.projectpluto.com',
         'Connection': 'keep-alive',
     }
+    
     try:
         resp = requests.post(findorb_url, data=data, files=files, headers=headers, timeout=60)
         resp.raise_for_status()
-        result_json = resp.json()
-        import json
-        print(json.dumps(result_json, indent=2))
-        return result_json
+        try:
+            result_json = resp.json()
+        except Exception as e:
+            # Try to extract JSON from the response text even if resp.json() fails
+            import re
+            print(f"[DEBUG] resp.json() failed: {e}, attempting to extract JSON from text...")
+            text = resp.text
+            # Find the first '{' and last '}'
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                json_str = text[start:end+1]
+                try:
+                    result_json = json.loads(json_str)
+                except Exception as e2:
+                    print(f"[DEBUG] Failed to parse JSON from response text: {e2}")
+                    print(text[:2000])
+                    return None
+            else:
+                print("[DEBUG] Could not find JSON object in response text.")
+                print(text[:2000])
+                return None
+        # Parse the requested observation time
+        if 'T' in date_obs:
+            obs_dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
+        else:
+            obs_dt = datetime.strptime(date_obs, '%Y-%m-%d %H:%M:%S')
+        # Get the two ephemeris entries
+        if 'ephemeris' in result_json and 'entries' in result_json['ephemeris']:
+            entries = result_json['ephemeris']['entries']
+            if len(entries) >= 2:
+                entry1 = entries['0']
+                entry2 = entries['1']
+                time1_str = entry1.get('ISO_time', entry1.get('Date', ''))
+                time2_str = entry2.get('ISO_time', entry2.get('Date', ''))
+                # Convert to datetime objects
+                try:
+                    dt1 = datetime.strptime(time1_str[:19], '%Y-%m-%dT%H:%M:%S')
+                    dt2 = datetime.strptime(time2_str[:19], '%Y-%m-%dT%H:%M:%S')
+                except ValueError:
+                    dt1 = datetime.strptime(time1_str[:16], '%Y-%m-%dT%H:%M')
+                    dt2 = datetime.strptime(time2_str[:16], '%Y-%m-%dT%H:%M')
+                total_time_diff = (dt2 - dt1).total_seconds()
+                obs_time_diff = (obs_dt - dt1).total_seconds()
+                if total_time_diff > 0:
+                    interpolation_factor = obs_time_diff / total_time_diff
+                else:
+                    interpolation_factor = 0.5
+                ra1 = float(entry1.get('RA', 0))
+                ra2 = float(entry2.get('RA', 0))
+                dec1 = float(entry1.get('Dec', 0))
+                dec2 = float(entry2.get('Dec', 0))
+                if abs(ra2 - ra1) > 180:
+                    if ra2 > ra1:
+                        ra1 += 360
+                    else:
+                        ra2 += 360
+                interpolated_ra = ra1 + interpolation_factor * (ra2 - ra1)
+                interpolated_dec = dec1 + interpolation_factor * (dec2 - dec1)
+                interpolated_ra = interpolated_ra % 360.0
+                interpolated_result = entry1.copy()
+                interpolated_result['RA'] = interpolated_ra
+                interpolated_result['Dec'] = interpolated_dec
+                interpolated_result['Date'] = obs_dt.strftime('%Y-%m-%d %H:%M:%S')
+                result_json['ephemeris']['entries']['0'] = interpolated_result
+                print(f"Interpolated position at {obs_dt}: RA={interpolated_ra:.6f}, Dec={interpolated_dec:.6f}")
+                print(json.dumps(result_json, indent=2))
+                return result_json
+            else:
+                print(f"Expected 2 ephemeris entries, got {len(entries)}")
+                return result_json
+        else:
+            print("No ephemeris data found in response")
+            return result_json
     except Exception as e:
         print(f"Failed to query Find_Orb or parse JSON: {e}")
-        print(resp.text[:2000])
+        if 'resp' in locals():
+            print(resp.text[:2000])
         return None
 
 
