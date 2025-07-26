@@ -988,11 +988,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 self._orbit_thread.quit()
                 self._orbit_thread.wait()
                 
-                if not predicted_positions:
-                    QMessageBox.warning(self, "No Predictions", 
-                                      "No DATE-OBS found in loaded FITS files. Cannot compute predicted positions.")
-                    return
-                
                 # Show orbit data window
                 from lib.gui.common.orbit_details import OrbitDataWindow
                 dlg = OrbitDataWindow(object_name, orbit_data, predicted_positions, self)

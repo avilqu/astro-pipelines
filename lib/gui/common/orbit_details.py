@@ -346,10 +346,19 @@ class OrbitComputationWorker(QObject):
                                 print(f"[DEBUG] No position found for {date_obs_fmt} (file: {date_to_file_map.get(date_obs_fmt, 'unknown')})")
                     else:
                         print("[DEBUG] No results returned from Find_Orb")
+                        # Emit error for Find_Orb failure
+                        self.error.emit("Could not get orbital elements from Find_Orb. The service may be temporarily unavailable.")
+                        return
                 except Exception as e:
                     print(f"[DEBUG] Failed to get predicted positions from Find_Orb: {e}")
+                    # Emit error for Find_Orb failure
+                    self.error.emit("Could not get orbital elements from Find_Orb. The service may be temporarily unavailable.")
+                    return
             else:
                 print("[DEBUG] No valid dates found for any files")
+                # Emit error for no DATE-OBS found
+                self.error.emit("No DATE-OBS found in loaded FITS files. Cannot compute predicted positions.")
+                return
             
             self.finished.emit(orbit_data, predicted_positions)
         except Exception as e:
