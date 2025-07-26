@@ -218,20 +218,17 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(log_action)
         self.toolbar.widgetForAction(log_action).setFixedSize(32, 32)
 
-        # Add brightness -/+ buttons (not related to sigma clipping)
-        from PyQt6.QtWidgets import QToolButton
-        self.brightness_minus_button = QToolButton(self)
-        self.brightness_minus_button.setText("-")
-        self.brightness_minus_button.setToolTip("Darken image")
-        self.brightness_minus_button.setFixedSize(32, 32)
-        self.brightness_minus_button.clicked.connect(self.increase_display_min)
-        self.toolbar.addWidget(self.brightness_minus_button)
-        self.brightness_plus_button = QToolButton(self)
-        self.brightness_plus_button.setText("+")
-        self.brightness_plus_button.setToolTip("Brighten image")
-        self.brightness_plus_button.setFixedSize(32, 32)
-        self.brightness_plus_button.clicked.connect(self.decrease_display_min)
-        self.toolbar.addWidget(self.brightness_plus_button)
+        # Add brightness slider (not related to sigma clipping)
+        from PyQt6.QtWidgets import QSlider, QLabel
+        
+        self.brightness_slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.brightness_slider.setMinimum(0)
+        self.brightness_slider.setMaximum(100)
+        self.brightness_slider.setValue(50)  # Default to middle position
+        self.brightness_slider.setFixedWidth(120)
+        self.brightness_slider.setToolTip("Adjust image brightness")
+        self.brightness_slider.valueChanged.connect(self.on_brightness_slider_changed)
+        self.toolbar.addWidget(self.brightness_slider)
 
         # Add Clipping button
         self.clipping_action =  QAction(QIcon.fromTheme("arrow-up-double"), "", self)
@@ -545,31 +542,42 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             # Displayed as 1-based index
             self.image_count_label.setText(f"{self.current_file_index + 1} / {n}")
 
-    def increase_display_min(self):
-        # Make image darker by increasing display_min
-        if self.display_min is None or self.display_max is None:
-            auto_min, auto_max = self._get_auto_display_minmax()
-            self.display_min = auto_min
-            self.display_max = auto_max
-        self.display_min += 5 * self._get_display_min_step()
-        # Update locked parameters since stretch is always locked
-        self.locked_display_min = self.display_min
-        self.locked_display_max = self.display_max
-        self.update_image_display(keep_zoom=True)
-        self.update_display_minmax_tooltips()
 
-    def decrease_display_min(self):
-        # Make image brighter by decreasing display_min
+
+    def on_brightness_slider_changed(self, value):
+        # Convert slider value (0-100) to brightness adjustment
+        # 50 = neutral, 0 = darkest, 100 = brightest
         if self.display_min is None or self.display_max is None:
             auto_min, auto_max = self._get_auto_display_minmax()
             self.display_min = auto_min
             self.display_max = auto_max
-        self.display_min -= 5 * self._get_display_min_step()
-        # Update locked parameters since stretch is always locked
+        
+        # Calculate the adjustment range based on image statistics
+        step = self._get_display_min_step()
+        adjustment_range = 10 * step  # Allow for significant brightness adjustment
+        
+        # Convert slider value to adjustment
+        # value 50 = no adjustment, value 0 = darkest, value 100 = brightest
+        adjustment = (value - 50) / 50.0 * adjustment_range
+        
+        # Apply adjustment to display_min (lower values = brighter image)
+        adjusted_min = self._get_auto_display_minmax()[0] - adjustment
+        
+        # Update display parameters
+        self.display_min = adjusted_min
         self.locked_display_min = self.display_min
         self.locked_display_max = self.display_max
+        
+        # Update the image display
         self.update_image_display(keep_zoom=True)
-        self.update_display_minmax_tooltips()
+        self.update_brightness_slider_tooltip()
+
+    def update_brightness_slider_tooltip(self):
+        # Update tooltip to show current brightness level
+        if self.display_min is not None:
+            self.brightness_slider.setToolTip(f"Adjust image brightness (min: {self.display_min:.2f})")
+        else:
+            self.brightness_slider.setToolTip("Adjust image brightness")
 
     def _get_auto_display_minmax(self):
         # Compute the default min/max as would be used by create_image_object
@@ -616,9 +624,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         return 4.0
 
     def update_display_minmax_tooltips(self):
-        # Stretch is always locked now
-        self.brightness_minus_button.setToolTip(f"Darken image (min: {self.display_min}) (locked)")
-        self.brightness_plus_button.setToolTip(f"Brighten image (min: {self.display_min}) (locked)")
+        # Update brightness slider tooltip
+        self.update_brightness_slider_tooltip()
 
     def set_linear_stretch(self):
         self.stretch_mode = 'linear'
@@ -628,6 +635,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
+        # Reset brightness slider to neutral position
+        self.brightness_slider.setValue(50)
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
@@ -639,6 +648,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
+        # Reset brightness slider to neutral position
+        self.brightness_slider.setValue(50)
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
@@ -651,6 +662,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
+        # Reset brightness slider to neutral position
+        self.brightness_slider.setValue(50)
         self.update_image_display(keep_zoom=True)
 
     def update_image_display(self, keep_zoom=False):
@@ -769,6 +782,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                         # Use existing locked parameters
                         self.display_min = self.locked_display_min
                         self.display_max = self.locked_display_max
+                    # Reset brightness slider to neutral position for new image
+                    self.brightness_slider.setValue(50)
                 else:
                     self.image_label.setText("FITS file is not a 2D image.")
                     self.image_data = None
