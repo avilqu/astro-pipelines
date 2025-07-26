@@ -236,13 +236,16 @@ def calculate_motion_shifts(files: List[str], object_name: str,
         motion_rate = entry.get('motion_rate')
         motion_pa = entry.get('motionPA')
         if motion_rate is not None and motion_pa is not None:
-            motion_rates.append(float(motion_rate))
+            # Convert motion rate from arcsec/minute to arcsec/hour
+            motion_rate_arcsec_per_hour = float(motion_rate) * 60.0
+            motion_rates.append(motion_rate_arcsec_per_hour)
             motion_pas.append(float(motion_pa))
             ephemeris_data.append({
                 'file_path': file_path,
                 'obs_time': obs_time,
                 'obs_dt': obs_dt_map[file_path],
             })
+            print(f"  Motion rate: {motion_rate:.2f} arcsec/min = {motion_rate_arcsec_per_hour:.2f} arcsec/hour, PA: {motion_pa:.1f}°")
         else:
             print(f"Warning: Missing motion data for {file_path}")
             shifts.append((0.0, 0.0))
@@ -257,6 +260,18 @@ def calculate_motion_shifts(files: List[str], object_name: str,
 
     print(f"\nAverage motion rate: {avg_motion_rate:.2f} arcsec/hour")
     print(f"Average motion position angle: {avg_motion_pa:.1f}°")
+    print(f"Motion PA range: {min(motion_pas):.1f}° to {max(motion_pas):.1f}°")
+    print(f"Motion rate range: {min(motion_rates):.2f} to {max(motion_rates):.2f} arcsec/hour")
+    
+    # Test coordinate system interpretation
+    test_pa_rad = np.radians(avg_motion_pa)
+    test_motion = 100.0  # arcsec
+    test_dra = test_motion * np.cos(test_pa_rad)
+    test_ddec = test_motion * np.sin(test_pa_rad)
+    print(f"Test: For 100 arcsec motion at PA {avg_motion_pa:.1f}°:")
+    print(f"  RA component: {test_dra:.1f} arcsec")
+    print(f"  Dec component: {test_ddec:.1f} arcsec")
+    print(f"  Ratio Dec/RA: {test_ddec/test_dra:.2f}")
 
     # Set reference time
     if reference_time is None:
@@ -285,15 +300,82 @@ def calculate_motion_shifts(files: List[str], object_name: str,
         time_diff_hours = (file_data['obs_dt'] - reference_time_dt).total_seconds() / 3600.0
         angular_motion_arcsec = avg_motion_rate * time_diff_hours
         motion_pa_rad = np.radians(avg_motion_pa)
+        
+        # Try different coordinate system interpretations
+        # Method 1: Standard astronomical PA (North=0°, East=90°)
         dra_arcsec = angular_motion_arcsec * np.cos(motion_pa_rad)
         ddec_arcsec = angular_motion_arcsec * np.sin(motion_pa_rad)
+        
+        # Method 2: Alternative interpretation (if Method 1 doesn't work)
+        # dra_arcsec_alt = angular_motion_arcsec * np.sin(motion_pa_rad)
+        # ddec_arcsec_alt = angular_motion_arcsec * np.cos(motion_pa_rad)
+        
+        # Method 3: Try swapping cos/sin (if PA is defined differently)
+        # dra_arcsec_alt2 = angular_motion_arcsec * np.sin(motion_pa_rad)
+        # ddec_arcsec_alt2 = angular_motion_arcsec * np.cos(motion_pa_rad)
+        
+        # For now, use Method 1 but add debugging
+        if len(shifts) < 3:
+            print(f"  Using standard PA interpretation: cos({avg_motion_pa:.1f}°) for RA, sin({avg_motion_pa:.1f}°) for Dec")
+        
         try:
             wcs = WCS(fits.getheader(file_path, ext=0))
             if wcs.is_celestial:
+                # Get pixel scale for debugging
                 pixel_scale = wcs.pixel_scale_matrix.diagonal()
                 pixel_scale_arcsec = (pixel_scale * u.deg).to(u.arcsec).value
-                dx_pix = -dra_arcsec / pixel_scale_arcsec[0]
-                dy_pix = -ddec_arcsec / pixel_scale_arcsec[1]
+                
+                # Debug output for first few images
+                if len(shifts) < 3:
+                    print(f"  Motion PA: {avg_motion_pa:.1f}° ({motion_pa_rad:.3f} rad)")
+                    print(f"  RA component: {dra_arcsec:.2f} arcsec")
+                    print(f"  Dec component: {ddec_arcsec:.2f} arcsec")
+                    print(f"  Pixel scale: {pixel_scale_arcsec[0]:.3f} arcsec/pix (RA), {pixel_scale_arcsec[1]:.3f} arcsec/pix (Dec)")
+                    print(f"  Using WCS transformation for shift calculation")
+                
+                # Convert celestial motion to pixel shifts using WCS transformation
+                # We need to calculate where the object should be in this image
+                # and shift it to a fixed reference position
+                
+                # Get the object's predicted position for this image from the ephemeris
+                obs_time = file_data['obs_time']
+                if obs_time in result:
+                    object_entry = result[obs_time]
+                    object_ra = object_entry.get('RA')
+                    object_dec = object_entry.get('Dec')
+                    
+                    if object_ra is not None and object_dec is not None:
+                        # Convert object position to pixel coordinates
+                        object_pixel = wcs.wcs_world2pix([[object_ra, object_dec]], 0)[0]
+                        
+                        # Use the first image's object position as the reference
+                        if len(shifts) == 0:
+                            # This is the reference image - no shift needed
+                            reference_object_pixel = object_pixel
+                            dx_pix = 0.0
+                            dy_pix = 0.0
+                        else:
+                            # Calculate shift to move object to reference position
+                            dx_pix = reference_object_pixel[0] - object_pixel[0]
+                            dy_pix = reference_object_pixel[1] - object_pixel[1]
+                        
+                        # Additional debug for first few images
+                        if len(shifts) < 3:
+                            print(f"  Object RA/Dec: {object_ra:.6f}°, {object_dec:.6f}°")
+                            print(f"  Object pixel: ({object_pixel[0]:.2f}, {object_pixel[1]:.2f})")
+                            if len(shifts) == 0:
+                                print(f"  Reference object pixel: ({reference_object_pixel[0]:.2f}, {reference_object_pixel[1]:.2f})")
+                            else:
+                                print(f"  Reference object pixel: ({reference_object_pixel[0]:.2f}, {reference_object_pixel[1]:.2f})")
+                    else:
+                        print(f"Warning: No RA/Dec in ephemeris for {file_path}")
+                        dx_pix = 0.0
+                        dy_pix = 0.0
+                else:
+                    print(f"Warning: No ephemeris entry for {file_path}")
+                    dx_pix = 0.0
+                    dy_pix = 0.0
+                
                 shifts.append((dx_pix, dy_pix))
                 print(f"  Time diff: {time_diff_hours:.3f} hours")
                 print(f"  Angular motion: {angular_motion_arcsec:.2f} arcsec")
@@ -303,6 +385,7 @@ def calculate_motion_shifts(files: List[str], object_name: str,
                 shifts.append((0.0, 0.0))
         except Exception as e:
             print(f"Warning: Error calculating pixel shift for {file_path}: {e}")
+            print(f"Exception details: {type(e).__name__}: {str(e)}")
             shifts.append((0.0, 0.0))
     return shifts
 

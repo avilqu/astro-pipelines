@@ -231,7 +231,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addWidget(self.brightness_slider)
 
         # Add Clipping button
-        self.clipping_action =  QAction(QIcon.fromTheme("arrow-up-double"), "", self)
+        self.clipping_action =  QAction(QIcon.fromTheme("upindicator"), "", self)
         self.clipping_action.setCheckable(True)
         self.clipping_action.setChecked(False) # Default to off
         self.clipping_action.setToolTip(f"Toggle sigma clipping for display stretch (sigma={3.0})")
