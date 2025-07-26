@@ -426,13 +426,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             vbar.setValue(max(0, center_y - viewport_h // 2))
 
     def open_and_add_file(self, fits_path):
-        # Save zoom and center before switching
+        # Save zoom, center, and brightness before switching
         if self.image_data is not None:
             self._last_zoom = self._zoom
             self._last_center = self._get_viewport_center()
+            self._last_brightness = self.brightness_slider.value()
         else:
             self._last_zoom = 1.0
             self._last_center = None
+            self._last_brightness = 50
         # If already loaded, just switch to it
         if fits_path in self.loaded_files:
             self.current_file_index = self.loaded_files.index(fits_path)
@@ -473,13 +475,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._preloaded_fits[fits_path] = (None, None, None)
 
     def show_previous_file(self):
-        # Save zoom and center before switching
+        # Save zoom, center, and brightness before switching
         if self.image_data is not None:
             self._last_zoom = self._zoom
             self._last_center = self._get_viewport_center()
+            self._last_brightness = self.brightness_slider.value()
         else:
             self._last_zoom = 1.0
             self._last_center = None
+            self._last_brightness = 50
         n = len(self.loaded_files)
         if n == 0:
             return
@@ -498,13 +502,15 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._filelist_window.select_row(self.current_file_index)
 
     def show_next_file(self):
-        # Save zoom and center before switching
+        # Save zoom, center, and brightness before switching
         if self.image_data is not None:
             self._last_zoom = self._zoom
             self._last_center = self._get_viewport_center()
+            self._last_brightness = self.brightness_slider.value()
         else:
             self._last_zoom = 1.0
             self._last_center = None
+            self._last_brightness = 50
         n = len(self.loaded_files)
         if n == 0:
             return
@@ -635,8 +641,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
-        # Reset brightness slider to neutral position
-        self.brightness_slider.setValue(50)
+        # Preserve brightness slider position and reapply adjustment
+        current_brightness = self.brightness_slider.value()
+        self.brightness_slider.setValue(current_brightness)
+        self.on_brightness_slider_changed(current_brightness)
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
@@ -648,8 +656,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
-        # Reset brightness slider to neutral position
-        self.brightness_slider.setValue(50)
+        # Preserve brightness slider position and reapply adjustment
+        current_brightness = self.brightness_slider.value()
+        self.brightness_slider.setValue(current_brightness)
+        self.on_brightness_slider_changed(current_brightness)
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
@@ -662,8 +672,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
-        # Reset brightness slider to neutral position
-        self.brightness_slider.setValue(50)
+        # Preserve brightness slider position and reapply adjustment
+        current_brightness = self.brightness_slider.value()
+        self.brightness_slider.setValue(current_brightness)
+        self.on_brightness_slider_changed(current_brightness)
         self.update_image_display(keep_zoom=True)
 
     def update_image_display(self, keep_zoom=False):
@@ -782,8 +794,13 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                         # Use existing locked parameters
                         self.display_min = self.locked_display_min
                         self.display_max = self.locked_display_max
-                    # Reset brightness slider to neutral position for new image
-                    self.brightness_slider.setValue(50)
+                    # Restore brightness slider position and apply adjustment
+                    if hasattr(self, '_last_brightness'):
+                        self.brightness_slider.setValue(self._last_brightness)
+                        # Apply the brightness adjustment to the new image
+                        self.on_brightness_slider_changed(self._last_brightness)
+                    else:
+                        self.brightness_slider.setValue(50)
                 else:
                     self.image_label.setText("FITS file is not a 2D image.")
                     self.image_data = None
@@ -1245,6 +1262,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def toggle_filelist_window(self):
         if not hasattr(self, '_filelist_window') or self._filelist_window is None:
             def on_row_selected(row):
+                # Save current brightness before switching
+                if self.image_data is not None:
+                    self._last_brightness = self.brightness_slider.value()
+                else:
+                    self._last_brightness = 50
                 self.current_file_index = row
                 self.load_fits(self.loaded_files[row], restore_view=True)
                 self.update_navigation_buttons()
@@ -1266,6 +1288,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._filelist_window = None
 
     def on_ephemeris_row_selected(self, row_index, ephemeris):
+        # Save current brightness before switching
+        if self.image_data is not None:
+            self._last_brightness = self.brightness_slider.value()
+        else:
+            self._last_brightness = 50
         # Load the corresponding FITS file and add a marker at the ephemeris position
         if not (0 <= row_index < len(self.loaded_files)):
             return
