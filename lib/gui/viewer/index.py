@@ -242,13 +242,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(self.clipping_action)
         self.toolbar.widgetForAction(self.clipping_action).setFixedSize(32, 32)
 
-        # Add Lock stretch button (only visible if >1 image loaded)
-        self.lock_stretch_action = QAction(QIcon.fromTheme("unlock"), "", self)
-        self.lock_stretch_action.setToolTip("Lock stretch parameters")
-        self.lock_stretch_action.setVisible(False)
-        self.lock_stretch_action.triggered.connect(self.toggle_stretch_lock)
-        self.toolbar.addAction(self.lock_stretch_action)
-        self.toolbar.widgetForAction(self.lock_stretch_action).setFixedSize(32, 32)
+        # Lock stretch functionality is now always enabled by default
+        # (removed the lock stretch button)
         
         self.toolbar.addWidget(make_toolbar_separator(self))
         
@@ -373,8 +368,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.display_min = None
         self.display_max = None
         self.sigma_clip = 3.0
-        # Stretch lock attributes
-        self.stretch_locked = False
+        # Stretch lock attributes - now always locked by default
+        self.stretch_locked = True
         self.locked_display_min = None
         self.locked_display_max = None
         self._sso_highlight_index = None
@@ -557,10 +552,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.display_min = auto_min
             self.display_max = auto_max
         self.display_min += 5 * self._get_display_min_step()
-        # Update locked parameters if stretch is locked
-        if self.stretch_locked:
-            self.locked_display_min = self.display_min
-            self.locked_display_max = self.display_max
+        # Update locked parameters since stretch is always locked
+        self.locked_display_min = self.display_min
+        self.locked_display_max = self.display_max
         self.update_image_display(keep_zoom=True)
         self.update_display_minmax_tooltips()
 
@@ -571,10 +565,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.display_min = auto_min
             self.display_max = auto_max
         self.display_min -= 5 * self._get_display_min_step()
-        # Update locked parameters if stretch is locked
-        if self.stretch_locked:
-            self.locked_display_min = self.display_min
-            self.locked_display_max = self.display_max
+        # Update locked parameters since stretch is always locked
+        self.locked_display_min = self.display_min
+        self.locked_display_max = self.display_max
         self.update_image_display(keep_zoom=True)
         self.update_display_minmax_tooltips()
 
@@ -623,50 +616,41 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         return 4.0
 
     def update_display_minmax_tooltips(self):
-        lock_status = " (locked)" if self.stretch_locked else ""
-        self.brightness_minus_button.setToolTip(f"Darken image (min: {self.display_min}){lock_status}")
-        self.brightness_plus_button.setToolTip(f"Brighten image (min: {self.display_min}){lock_status}")
+        # Stretch is always locked now
+        self.brightness_minus_button.setToolTip(f"Darken image (min: {self.display_min}) (locked)")
+        self.brightness_plus_button.setToolTip(f"Brighten image (min: {self.display_min}) (locked)")
 
     def set_linear_stretch(self):
         self.stretch_mode = 'linear'
-        if not self.stretch_locked:
-            self.display_min = None
-            self.display_max = None
-        else:
-            # Recalculate locked parameters with new stretch mode
-            auto_min, auto_max = self._get_auto_display_minmax()
-            self.locked_display_min = auto_min
-            self.locked_display_max = auto_max
-            self.display_min = self.locked_display_min
-            self.display_max = self.locked_display_max
+        # Recalculate locked parameters with new stretch mode since stretch is always locked
+        auto_min, auto_max = self._get_auto_display_minmax()
+        self.locked_display_min = auto_min
+        self.locked_display_max = auto_max
+        self.display_min = self.locked_display_min
+        self.display_max = self.locked_display_max
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
     def set_log_stretch(self):
         self.stretch_mode = 'log'
-        if not self.stretch_locked:
-            self.display_min = None
-            self.display_max = None
-        else:
-            # Recalculate locked parameters with new stretch mode
-            auto_min, auto_max = self._get_auto_display_minmax()
-            self.locked_display_min = auto_min
-            self.locked_display_max = auto_max
-            self.display_min = self.locked_display_min
-            self.display_max = self.locked_display_max
+        # Recalculate locked parameters with new stretch mode since stretch is always locked
+        auto_min, auto_max = self._get_auto_display_minmax()
+        self.locked_display_min = auto_min
+        self.locked_display_max = auto_max
+        self.display_min = self.locked_display_min
+        self.display_max = self.locked_display_max
         self.update_image_display(keep_zoom=True)
         self.zoom_to_fit()
 
     def toggle_clipping(self):
         self.clipping_enabled = not self.clipping_enabled
         self.clipping_action.setChecked(self.clipping_enabled)
-        if self.stretch_locked:
-            # Recalculate locked parameters with new clipping setting
-            auto_min, auto_max = self._get_auto_display_minmax()
-            self.locked_display_min = auto_min
-            self.locked_display_max = auto_max
-            self.display_min = self.locked_display_min
-            self.display_max = self.locked_display_max
+        # Recalculate locked parameters with new clipping setting since stretch is always locked
+        auto_min, auto_max = self._get_auto_display_minmax()
+        self.locked_display_min = auto_min
+        self.locked_display_max = auto_max
+        self.display_min = self.locked_display_min
+        self.display_max = self.locked_display_max
         self.update_image_display(keep_zoom=True)
 
     def update_image_display(self, keep_zoom=False):
@@ -773,12 +757,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
-                    # Only reset display parameters if stretch is not locked
-                    if not self.stretch_locked:
-                        self.display_min = None
-                        self.display_max = None
+                    # Since stretch is always locked, initialize locked parameters on first load
+                    if self.locked_display_min is None or self.locked_display_max is None:
+                        # First time loading - calculate and store locked parameters
+                        auto_min, auto_max = self._get_auto_display_minmax()
+                        self.locked_display_min = auto_min
+                        self.locked_display_max = auto_max
+                        self.display_min = self.locked_display_min
+                        self.display_max = self.locked_display_max
                     else:
-                        # Use locked parameters
+                        # Use existing locked parameters
                         self.display_min = self.locked_display_min
                         self.display_max = self.locked_display_max
                 else:
@@ -1033,7 +1021,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Hide align button if only one or no files loaded
         visible = len(self.loaded_files) > 1
         self.align_action.setVisible(visible)
-        self.lock_stretch_action.setVisible(visible)
         self.filelist_action.setVisible(visible)
 
     def align_images(self):
@@ -1098,37 +1085,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._align_thread.start()
 
     def toggle_stretch_lock(self):
-        self.stretch_locked = not self.stretch_locked
-        
-        # Update button icon
-        if self.stretch_locked:
-            lock_icon = QIcon.fromTheme("lock")
-            if lock_icon.isNull():
-                lock_icon = QIcon.fromTheme("object-locked")
-            self.lock_stretch_action.setIcon(lock_icon)
-            self.lock_stretch_action.setToolTip("Unlock stretch parameters")
-            # Store current display parameters
-            if self.display_min is None or self.display_max is None:
-                # Calculate current auto parameters if not set
-                auto_min, auto_max = self._get_auto_display_minmax()
-                self.locked_display_min = auto_min
-                self.locked_display_max = auto_max
-            else:
-                self.locked_display_min = self.display_min
-                self.locked_display_max = self.display_max
-        else:
-            unlock_icon = QIcon.fromTheme("unlock")
-            if unlock_icon.isNull():
-                unlock_icon = QIcon.fromTheme("object-unlocked")
-            self.lock_stretch_action.setIcon(unlock_icon)
-            self.lock_stretch_action.setToolTip("Lock stretch parameters")
-            # Restore locked parameters
-            self.display_min = self.locked_display_min
-            self.display_max = self.locked_display_max
-        
-        # Update display with new parameters
-        self.update_image_display(keep_zoom=True)
-        self.update_display_minmax_tooltips()
+        # This method is no longer used since stretch is always locked by default
+        pass
 
     def update_platesolve_button_visibility(self):
         # Enable if at least one file is loaded
