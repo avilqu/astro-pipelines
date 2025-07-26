@@ -29,7 +29,7 @@ CHUNK_SIZE = INTEGRATION_CHUNK_SIZE
 ENABLE_CHUNKED_PROCESSING = INTEGRATION_ENABLE_CHUNKED
 
 # Import ephemeris functionality
-from lib.astrometry.orbit import predict_position_findorb, get_neofixer_orbit
+from lib.astrometry.orbit import predict_position_findorb
 
 
 class MotionTrackingIntegrationError(Exception):

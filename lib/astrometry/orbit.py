@@ -505,11 +505,13 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
         object_designation (str): The object name (e.g., '2025 BC').
         dates_obs (list): List of observation dates/times in ISO format (e.g., ['2025-01-22T11:36:18', '2025-01-22T12:36:18']).
     Returns:
-        dict: Dictionary with date_obs as keys and interpolated positions as values.
+        dict: Dictionary with date_obs as keys and interpolated positions as values, plus "pseudo_mpec" key with HTML text content.
     """
     import requests
     from datetime import datetime
     import json
+    import re
+    from bs4 import BeautifulSoup
     
     if not dates_obs:
         return {}
@@ -572,11 +574,38 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
     try:
         resp = requests.post(findorb_url, data=data, files=files, headers=headers, timeout=60)
         resp.raise_for_status()
+        
+        # Make second API call with file_no=0 to get HTML output
+        data_html = data.copy()
+        data_html['file_no'] = "0"  # HTML output
+        
+        print(f"[DEBUG] Making second Find_Orb API call for HTML output")
+        resp_html = requests.post(findorb_url, data=data_html, files=files, headers=headers, timeout=60)
+        resp_html.raise_for_status()
+        
+        # Extract text from <pre> tags in HTML response
+        pseudo_mpec_text = ""
+        try:
+            soup = BeautifulSoup(resp_html.text, 'html.parser')
+            pre_tags = soup.find_all('pre')
+            if len(pre_tags) >= 2:
+                # Combine text from both <pre> tags
+                for pre_tag in pre_tags[:2]:
+                    # Remove <b> and <a> tags while preserving text content
+                    for tag in pre_tag.find_all(['b', 'a']):
+                        tag.unwrap()  # This removes the tag but keeps its content
+                    pseudo_mpec_text += pre_tag.get_text() + "\n"
+                print(f"[DEBUG] Extracted {len(pseudo_mpec_text)} characters from HTML <pre> tags")
+            else:
+                print(f"[DEBUG] Found {len(pre_tags)} <pre> tags, expected at least 2")
+        except Exception as e:
+            print(f"[DEBUG] Failed to parse HTML response: {e}")
+            pseudo_mpec_text = ""
+        
         try:
             result_json = resp.json()
         except Exception as e:
             # Try to extract JSON from the response text even if resp.json() fails
-            import re
             print(f"[DEBUG] resp.json() failed: {e}, attempting to extract JSON from text...")
             text = resp.text
             # Find the first '{' and last '}'
@@ -589,21 +618,21 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
                 except Exception as e2:
                     print(f"[DEBUG] Failed to parse JSON from response text: {e2}")
                     print(text[:2000])
-                    return {}
+                    return {'pseudo_mpec': pseudo_mpec_text}
             else:
                 print("[DEBUG] Could not find JSON object in response text.")
                 print(text[:2000])
-                return {}
+                return {'pseudo_mpec': pseudo_mpec_text}
         
         # Parse ephemeris entries
         if 'ephemeris' not in result_json or 'entries' not in result_json['ephemeris']:
             print("No ephemeris data found in response")
-            return {}
+            return {'pseudo_mpec': pseudo_mpec_text}
         
         entries = result_json['ephemeris']['entries']
         if len(entries) < 2:
             print(f"Expected at least 2 ephemeris entries, got {len(entries)}")
-            return {}
+            return {'pseudo_mpec': pseudo_mpec_text}
         
         # Convert entries to list and sort by time
         ephemeris_entries = []
@@ -719,13 +748,16 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
             
             print(f"Interpolated position at {obs_dt}: RA={interpolated_result['RA']:.6f}, Dec={interpolated_result['Dec']:.6f}")
         
+        # Add pseudo_mpec text to the results
+        results['pseudo_mpec'] = pseudo_mpec_text
+        
         return results
         
     except Exception as e:
         print(f"Failed to query Find_Orb or parse JSON: {e}")
         if 'resp' in locals():
             print(resp.text[:2000])
-        return {}
+        return {'pseudo_mpec': ''}
 
 
 def test_findorb_ephemeris():

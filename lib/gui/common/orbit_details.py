@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, 
                              QTextEdit, QHBoxLayout, QPushButton, QLineEdit, QMessageBox, 
                              QProgressDialog, QAbstractItemView, QMenuBar, QMenu, QMainWindow,
-                             QWidget, QFileDialog)
+                             QWidget, QFileDialog, QTabWidget)
 from PyQt6.QtGui import QFont, QColor, QBrush, QTextCursor, QAction
 from PyQt6.QtCore import pyqtSignal, QThread, QObject, Qt
 from astropy.coordinates import Angle
@@ -11,15 +11,15 @@ import os
 
 class OrbitDataWindow(QMainWindow):
     row_selected = pyqtSignal(int, object)  # row index, ephemeris tuple
-    def __init__(self, object_name, orbit_data, predicted_positions, parent=None):
+    def __init__(self, object_name, predicted_positions, pseudo_mpec_text="", parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Orbital elements - {object_name}")
-        self.setGeometry(300, 200, 800, 600)
+        self.setWindowTitle(f"Orbit Details - {object_name}")
+        self.setGeometry(300, 200, 1000, 700)
         
         # Store data for stacking
         self.object_name = object_name
-        self.orbit_data = orbit_data
         self.predicted_positions = predicted_positions
+        self.pseudo_mpec_text = pseudo_mpec_text
         self.parent_viewer = parent
         
         # Create central widget
@@ -31,18 +31,27 @@ class OrbitDataWindow(QMainWindow):
         # Create menu bar
         self._create_menu_bar()
         
-        # Title
-        self.elements_text = QTextEdit()
-        self.elements_text.setReadOnly(True)
-        self.elements_text.setMaximumHeight(200)
-        self.elements_text.setFont(QFont("Courier New", 10))
-        layout.addWidget(self.elements_text)
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        layout.addWidget(self.tab_widget)
+        
+        # Create Positions tab
+        self._create_positions_tab()
+        
+        # Create Pseudo MPEC tab
+        self._create_pseudo_mpec_tab()
+        
+        # Populate data
+        self._populate_predicted_positions(predicted_positions)
+        self._populate_pseudo_mpec(pseudo_mpec_text)
+    
+    def _create_positions_tab(self):
+        """Create the Positions tab with the predicted positions table."""
+        positions_widget = QWidget()
+        positions_layout = QVBoxLayout()
+        positions_widget.setLayout(positions_layout)
         
         # Predicted positions table
-        positions_label = QLabel("Predicted Positions:")
-        positions_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        layout.addWidget(positions_label)
-        
         self.positions_table = QTableWidget()
         self.positions_table.setColumnCount(5)
         self.positions_table.setHorizontalHeaderLabels([
@@ -51,55 +60,28 @@ class OrbitDataWindow(QMainWindow):
         self.positions_table.setFont(QFont("Courier New", 10))
         self.positions_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.positions_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        layout.addWidget(self.positions_table)
+        positions_layout.addWidget(self.positions_table)
         
-        # Populate data
-        self._populate_orbital_elements(orbit_data)
-        self._populate_predicted_positions(predicted_positions)
-        
-        self.predicted_positions = predicted_positions  # Store for access on click
+        # Connect the table click event
         self.positions_table.cellClicked.connect(self._on_row_clicked)
+        
+        # Add the tab
+        self.tab_widget.addTab(positions_widget, "Positions")
     
-    def _populate_orbital_elements(self, orbit_data):
-        """Populate the orbital elements text area."""
-        elements = orbit_data.get('elements', {})
+    def _create_pseudo_mpec_tab(self):
+        """Create the Pseudo MPEC tab with text display."""
+        pseudo_mpec_widget = QWidget()
+        pseudo_mpec_layout = QVBoxLayout()
+        pseudo_mpec_widget.setLayout(pseudo_mpec_layout)
         
-        def format_value(value, format_str="{}"):
-            """Safely format a value, handling None and non-numeric values."""
-            if value is None or value == 'Unknown':
-                return 'Unknown'
-            try:
-                return format_str.format(value)
-            except (ValueError, TypeError):
-                return str(value)
+        # Pseudo MPEC text area
+        self.pseudo_mpec_text_edit = QTextEdit()
+        self.pseudo_mpec_text_edit.setReadOnly(True)
+        self.pseudo_mpec_text_edit.setFont(QFont("Courier New", 10))
+        pseudo_mpec_layout.addWidget(self.pseudo_mpec_text_edit)
         
-        text = f"""Epoch: {elements.get('epoch_iso', 'Unknown')}
-Semi-major axis (a): {format_value(elements.get('a'), '{:.6f}')} AU
-Eccentricity (e): {format_value(elements.get('e'), '{:.6f}')}
-Inclination (i): {format_value(elements.get('i'), '{:.3f}')}°
-Argument of perihelion (ω): {format_value(elements.get('arg_per'), '{:.3f}')}°
-Longitude of ascending node (Ω): {format_value(elements.get('asc_node'), '{:.3f}')}°
-Mean anomaly at epoch (M): {format_value(elements.get('M'), '{:.3f}')}°
-
-Additional Information:
-Period: {format_value(elements.get('P'), '{:.3f}')} days
-Perihelion distance (q): {format_value(elements.get('q'), '{:.6f}')} AU
-Aphelion distance (Q): {format_value(elements.get('Q'), '{:.6f}')} AU
-Absolute magnitude (H): {format_value(elements.get('H'), '{:.2f}')}
-Phase parameter (G): {format_value(elements.get('G'), '{:.2f}')}
-
-MOID (Minimum Orbit Intersection Distance):
-- Earth: {format_value(elements.get('MOIDs', {}).get('Earth'), '{:.6f}')} AU
-- Venus: {format_value(elements.get('MOIDs', {}).get('Venus'), '{:.6f}')} AU
-- Mars: {format_value(elements.get('MOIDs', {}).get('Mars'), '{:.6f}')} AU
-
-Orbit Quality:
-- RMS residual: {format_value(elements.get('rms_residual'), '{:.5f}')} arcsec
-- Weighted RMS: {format_value(elements.get('weighted_rms_residual'), '{:.4f}')} arcsec
-- Number of residuals: {elements.get('n_resids', 'Unknown')}
-- Uncertainty parameter (U): {format_value(elements.get('U'), '{:.4f}')}"""
-        
-        self.elements_text.setPlainText(text)
+        # Add the tab
+        self.tab_widget.addTab(pseudo_mpec_widget, "Pseudo MPEC")
     
     def _populate_predicted_positions(self, predicted_positions):
         """Populate the predicted positions table with all fields from the ephemeris entry, except ISO_time, JD, and date_obs."""
@@ -117,6 +99,13 @@ Orbit Quality:
                 value = entry.get(key, "")
                 self.positions_table.setItem(i, j, QTableWidgetItem(str(value)))
         self.positions_table.resizeColumnsToContents()
+
+    def _populate_pseudo_mpec(self, pseudo_mpec_text):
+        """Populate the pseudo MPEC text area."""
+        if pseudo_mpec_text:
+            self.pseudo_mpec_text_edit.setPlainText(pseudo_mpec_text)
+        else:
+            self.pseudo_mpec_text_edit.setPlainText("No pseudo MPEC data available.")
 
     def _on_row_clicked(self, row, col):
         if 0 <= row < len(self.predicted_positions):
@@ -245,7 +234,7 @@ class OrbitComputationDialog(QDialog):
         return self.object_input.text().strip()
 
 class OrbitComputationWorker(QObject):
-    finished = pyqtSignal(dict, list)  # orbit_data, predicted_positions
+    finished = pyqtSignal(list, str)  # predicted_positions, pseudo_mpec_text
     error = pyqtSignal(str)
     console_output = pyqtSignal(str)
     
@@ -264,16 +253,9 @@ class OrbitComputationWorker(QObject):
             rtio = RealTimeStringIO(self.console_output.emit)
             old_stdout, old_stderr = sys.stdout, sys.stderr
             sys.stdout = sys.stderr = rtio
-            from lib.astrometry.orbit import predict_position_findorb, get_neofixer_orbit
+            from lib.astrometry.orbit import predict_position_findorb
             predicted_positions = []
-            orbit_data = None
-            
-            # Get orbital elements from NEOfixer
-            try:
-                orbit_data = get_neofixer_orbit(self.object_name)
-            except Exception as e:
-                print(f"Failed to get orbital elements for {self.object_name}: {e}")
-                orbit_data = None
+            pseudo_mpec_text = ""
             
             # Collect all observation dates from FITS files
             dates_obs = []
@@ -335,6 +317,10 @@ class OrbitComputationWorker(QObject):
                 try:
                     result = predict_position_findorb(self.object_name, dates_obs)
                     if result:
+                        # Extract pseudo_mpec data
+                        pseudo_mpec_text = result.get('pseudo_mpec', '')
+                        print(f"[DEBUG] Extracted pseudo_mpec data: {len(pseudo_mpec_text)} characters")
+                        
                         # Convert the result dictionary to a list of positions
                         for date_obs_fmt in dates_obs:
                             if date_obs_fmt in result:
@@ -360,7 +346,7 @@ class OrbitComputationWorker(QObject):
                 self.error.emit("No DATE-OBS found in loaded FITS files. Cannot compute predicted positions.")
                 return
             
-            self.finished.emit(orbit_data, predicted_positions)
+            self.finished.emit(predicted_positions, pseudo_mpec_text)
         except Exception as e:
             print(traceback.format_exc())
             self.error.emit(str(e))

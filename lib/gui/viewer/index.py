@@ -1003,14 +1003,14 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._orbit_worker.console_output.connect(console_window.append_text)
             self._orbit_thread.started.connect(self._orbit_worker.run)
             
-            def on_finished(orbit_data, predicted_positions):
+            def on_finished(predicted_positions, pseudo_mpec_text):
                 console_window.append_text("\nComputation finished.\n")
                 self._orbit_thread.quit()
                 self._orbit_thread.wait()
                 
                 # Show orbit data window
                 from lib.gui.common.orbit_details import OrbitDataWindow
-                dlg = OrbitDataWindow(object_name, orbit_data, predicted_positions, self)
+                dlg = OrbitDataWindow(object_name, predicted_positions, pseudo_mpec_text, self)
                 dlg.row_selected.connect(self.on_ephemeris_row_selected)
                 self._ephemeris_predicted_positions = predicted_positions
                 self._ephemeris_object_name = object_name
