@@ -32,6 +32,11 @@ class NoWheelScrollArea(QScrollArea):
         # Ignore wheel events so they are not used for scrolling
         event.ignore()
 
+class NoContextToolBar(QToolBar):
+    def contextMenuEvent(self, event):
+        # Completely ignore context menu events
+        event.ignore()
+
 class AlignmentWorker(QObject):
     progress = pyqtSignal(float)
     finished = pyqtSignal(list, object, int, int, list)  # aligned_datas, common_wcs, new_nx, new_ny, headers
@@ -71,9 +76,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.wcs = None    # For ImageLabel compatibility
         self.image_data = None  # Store current image data
         self.stretch_mode = 'linear'  # 'linear' or 'log', default to linear
-        self.toolbar = QToolBar("Main Toolbar")
+        self.toolbar = NoContextToolBar("Main Toolbar")
         self.toolbar.setMovable(False)  # Disable moving the toolbar
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)  # Remove handle visual
+        # Also disable context menu on the main window
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.toolbar.setStyleSheet("""
             QToolBar { background: #222222; }
             QToolButton { 
@@ -364,7 +371,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(self.align_action)
         self.toolbar.widgetForAction(self.align_action).setFixedSize(32, 32)
 
-        # Add File List toggle button (only visible if >1 image loaded)
+        self.toolbar.addWidget(nav_widget)
+
+        # Add File List toggle button (only visible if >1 image loaded) - pushed to the far right
         self.filelist_action = QAction(QIcon.fromTheme("view-list-details"), "", self)
         self.filelist_action.setToolTip("Show list of loaded FITS files")
         self.filelist_action.setVisible(False)
@@ -373,8 +382,6 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.filelist_action.triggered.connect(self.toggle_filelist_window)
         self.toolbar.addAction(self.filelist_action)
         self.toolbar.widgetForAction(self.filelist_action).setFixedSize(32, 32)
-
-        self.toolbar.addWidget(nav_widget)
         # Remove sidebar and use only scroll_area as central widget
         self.scroll_area = NoWheelScrollArea()
         self.scroll_area.setWidgetResizable(False)
