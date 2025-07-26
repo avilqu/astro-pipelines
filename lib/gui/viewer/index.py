@@ -319,6 +319,38 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(self.header_button)
         self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
 
+        self.toolbar.addWidget(make_toolbar_separator(self))
+
+        # Add Integration button with dropdown (QToolButton to remove arrow)
+        integration_icon = QIcon.fromTheme("black_sum")
+        if integration_icon.isNull():
+            integration_icon = QIcon.fromTheme("applications-science")
+        self.integration_button = QToolButton(self)
+        self.integration_button.setIcon(integration_icon)
+        self.integration_button.setToolTip("Integration")
+        self.integration_button.setEnabled(False)  # Initially disabled
+        self.integration_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.integration_button.setFixedSize(32, 32)
+        
+        # Create dropdown menu
+        integration_menu = QMenu(self.integration_button)
+        stack_wcs_action = QAction("Stack on WCS", self)
+        stack_wcs_action.triggered.connect(self.stack_align_wcs)
+        integration_menu.addAction(stack_wcs_action)
+        stack_ephemeris_action = QAction("Stack on ephemeris", self)
+        stack_ephemeris_action.triggered.connect(self.stack_align_ephemeris)
+        integration_menu.addAction(stack_ephemeris_action)
+        
+        self.integration_button.setMenu(integration_menu)
+        # Remove the dropdown arrow via stylesheet
+        self.integration_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.integration_button)
+
+        # Add a simple test label to see if widgets are being added correctly
+        # test_label = QLabel("TEST", self)
+        # test_label.setStyleSheet("QLabel { background-color: red; color: white; padding: 2px; }")
+        # self.toolbar.addWidget(test_label)
+
         # Add a spacer to push navigation elements to the right
         spacer = QWidget(self)
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -1054,6 +1086,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         visible = len(self.loaded_files) > 1
         self.align_action.setVisible(visible)
         self.filelist_action.setVisible(visible)
+        # For QToolButton, always keep visible, but enable/disable
+        if hasattr(self, 'integration_button'):
+            self.integration_button.setEnabled(visible)
+            self.toolbar.update()
+            self.toolbar.repaint()
 
     def align_images(self):
         # Remove overlays before aligning
@@ -1320,6 +1357,83 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self._overlay_visible = True
         self.update_overlay_button_visibility()
         self.image_label.update()
+
+    def stack_align_wcs(self):
+        # TODO: Implement stack alignment on WCS
+        pass
+
+    def stack_align_ephemeris(self):
+        """Perform motion tracking integration using ephemeris data."""
+        if not hasattr(self, '_ephemeris_predicted_positions') or not self._ephemeris_predicted_positions:
+            QMessageBox.warning(self, "No Ephemeris Data", 
+                              "No ephemeris data available. Please compute orbit data first using the Solar System Objects menu.")
+            return
+        
+        if not self.loaded_files:
+            QMessageBox.warning(self, "No Files", "No FITS files are currently loaded in the viewer.")
+            return
+        
+        if len(self.loaded_files) < 2:
+            QMessageBox.warning(self, "Insufficient Files", "At least 2 FITS files are required for stacking.")
+            return
+        
+        # Create output directory if it doesn't exist
+        import os
+        output_dir = "/tmp/astropipes-stacked"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate output filename
+        import time
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        safe_object_name = self._ephemeris_object_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        output_file = os.path.join(output_dir, f"motion_tracked_{safe_object_name}_{timestamp}.fits")
+        
+        # Create console window for output
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        console_window = ConsoleOutputWindow("Motion Tracking Integration", self)
+        console_window.show_and_raise()
+        
+        # Start stacking in background thread
+        self._stack_thread = QThread()
+        from lib.gui.common.orbit_details import MotionTrackingStackWorker
+        self._stack_worker = MotionTrackingStackWorker(
+            self.loaded_files, 
+            self._ephemeris_object_name, 
+            output_file,
+            console_window
+        )
+        self._stack_worker.moveToThread(self._stack_thread)
+        self._stack_thread.started.connect(self._stack_worker.run)
+        
+        def on_console_output(text):
+            console_window.append_text(text)
+        
+        def on_finished(success, message):
+            if success:
+                console_window.append_text(f"\n\033[1;32mMotion tracking integration completed successfully!\033[0m\n\n{message}\n")
+                # Add the result to the loaded files in the viewer
+                self.loaded_files.append(output_file)
+                # Load the file in the viewer
+                self.open_and_add_file(output_file)
+                # Update navigation buttons and file count
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+            else:
+                console_window.append_text(f"\n\033[1;31mMotion tracking integration failed:\033[0m\n\n{message}\n")
+            
+            self._stack_thread.quit()
+            self._stack_thread.wait()
+        
+        def on_cancel():
+            console_window.append_text("\n\033[1;31mCancelling motion tracking integration...\033[0m\n")
+            self._stack_thread.quit()
+            self._stack_thread.wait()
+            console_window.close()
+        
+        self._stack_worker.console_output.connect(on_console_output)
+        self._stack_worker.finished.connect(on_finished)
+        console_window.cancel_requested.connect(on_cancel)
+        self._stack_thread.start()
 
     def on_zoom_region_toggled(self, checked):
         self._zoom_region_mode = checked
