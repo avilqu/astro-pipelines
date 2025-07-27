@@ -398,8 +398,15 @@ class ToolbarController:
         
         # Create integration dropdown menu
         integration_menu = QMenu(self.integration_button)
-        align_wcs_action = QAction("Align on WCS", self.parent)
-        align_wcs_action.triggered.connect(self.parent.align_images)
+        
+        # Fast alignment option
+        align_fast_action = QAction("Align images (Astroalign)", self.parent)
+        align_fast_action.triggered.connect(self.parent.align_images_fast)
+        integration_menu.addAction(align_fast_action)
+        
+        # WCS alignment option
+        align_wcs_action = QAction("Align images (WCS reprojection)", self.parent)
+        align_wcs_action.triggered.connect(self.parent.align_images_wcs)
         integration_menu.addAction(align_wcs_action)
         
         integration_menu.addSeparator()

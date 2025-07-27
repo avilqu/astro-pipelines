@@ -1,5 +1,6 @@
 astropy==7.1.0
 astropy-iers-data==0.2025.6.2.0.38.23
+astroalign==2.0.2
 astropy_healpix==1.1.2
 astroquery==0.4.10
 astroscrappy==1.2.0

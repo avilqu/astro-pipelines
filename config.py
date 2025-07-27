@@ -42,6 +42,16 @@ SOLVER_ONLINE_POLL_INTERVAL = 5  # How often to check online solver status
 SOLVER_MAX_RETRIES = 3  # Maximum number of retries for failed solves
 SOLVER_VALIDATE_IMAGES = True  # Whether to validate images before attempting to solve
 
+# Image alignment settings
+# Default alignment method: "astroalign" (fast, asterism-based) or "wcs_reprojection" (slow, WCS-based)
+DEFAULT_ALIGNMENT_METHOD = "astroalign"
+# Fallback alignment method if the default method fails or is not available
+FALLBACK_ALIGNMENT_METHOD = "wcs_reprojection"
+# Whether to show alignment method selection dialog to user
+SHOW_ALIGNMENT_METHOD_DIALOG = False
+# Maximum number of images to align at once (for memory management)
+MAX_ALIGNMENT_IMAGES = 50
+
 # Sigma values for pixel rejection are found below. These values are
 # used to reject outstanding pixels during image integration. It is used
 # for both integrating light frames and creating calibration masters.

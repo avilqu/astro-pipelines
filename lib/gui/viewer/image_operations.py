@@ -1,5 +1,91 @@
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, Qt
-from PyQt6.QtWidgets import QMessageBox, QProgressDialog, QApplication
+from PyQt6.QtWidgets import QMessageBox, QProgressDialog, QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QCheckBox
+
+# Import configuration
+from config import DEFAULT_ALIGNMENT_METHOD, FALLBACK_ALIGNMENT_METHOD, SHOW_ALIGNMENT_METHOD_DIALOG, MAX_ALIGNMENT_IMAGES
+
+
+class AlignmentMethodDialog(QDialog):
+    """Dialog for selecting alignment method."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Alignment Method")
+        self.setModal(True)
+        self.setFixedSize(400, 200)
+        
+        # Get available methods
+        from lib.fits.align import get_alignment_methods
+        self.available_methods = get_alignment_methods()
+        
+        self.init_ui()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # Description
+        desc_label = QLabel("Choose the alignment method to use:")
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
+        
+        # Method selection
+        method_layout = QHBoxLayout()
+        method_layout.addWidget(QLabel("Method:"))
+        
+        self.method_combo = QComboBox()
+        for method in self.available_methods:
+            if method == "astroalign":
+                self.method_combo.addItem("Astroalign (Fast - Asterism-based)", method)
+            elif method == "wcs_reprojection":
+                self.method_combo.addItem("WCS Reprojection (Slow - Precise)", method)
+            else:
+                self.method_combo.addItem(method, method)
+        
+        # Set default selection
+        default_index = self.method_combo.findData(DEFAULT_ALIGNMENT_METHOD)
+        if default_index >= 0:
+            self.method_combo.setCurrentIndex(default_index)
+        else:
+            # Set to first available method as fallback
+            if self.method_combo.count() > 0:
+                self.method_combo.setCurrentIndex(0)
+        
+        method_layout.addWidget(self.method_combo)
+        layout.addLayout(method_layout)
+        
+        # Remember choice checkbox
+        self.remember_checkbox = QCheckBox("Remember this choice")
+        self.remember_checkbox.setChecked(False)
+        layout.addWidget(self.remember_checkbox)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.ok_button = QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept)
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def get_selected_method(self):
+        """Get the selected alignment method."""
+        method = self.method_combo.currentData()
+        
+        # Safety check - if method is None or invalid, use default
+        if method is None or method not in self.available_methods:
+            method = DEFAULT_ALIGNMENT_METHOD
+        
+        return method
+    
+    def should_remember_choice(self):
+        """Check if the user wants to remember this choice."""
+        return self.remember_checkbox.isChecked()
 
 
 class AlignmentWorker(QObject):
@@ -8,21 +94,47 @@ class AlignmentWorker(QObject):
     finished = pyqtSignal(list, object, int, int, list)  # aligned_datas, common_wcs, new_nx, new_ny, headers
     error = pyqtSignal(str)
 
-    def __init__(self, image_datas, headers, pad_x, pad_y):
+    def __init__(self, image_datas, headers, pad_x, pad_y, method="astroalign"):
         super().__init__()
         self.image_datas = image_datas
         self.headers = headers
         self.pad_x = pad_x
         self.pad_y = pad_y
+        self.method = method
 
     def run(self):
         """Execute the image alignment."""
         try:
-            from lib.fits.align import compute_padded_reference_wcs, reproject_images_to_common_wcs
-            common_wcs, (new_nx, new_ny) = compute_padded_reference_wcs(self.headers, paddings=(self.pad_x, self.pad_y))
-            aligned_datas = reproject_images_to_common_wcs(
-                self.image_datas, self.headers, common_wcs, (new_ny, new_nx), progress_callback=self.progress.emit
-            )
+            if self.method == "astroalign":
+                from lib.fits.align import align_images_with_astroalign, check_astroalign_available
+                
+                if not check_astroalign_available():
+                    raise ImportError("astroalign package is not available. Please install it with: pip install astroalign")
+                
+                aligned_datas = align_images_with_astroalign(
+                    self.image_datas, reference_index=0, progress_callback=self.progress.emit
+                )
+                
+                # For astroalign, we keep the original WCS of the reference image
+                common_wcs = None
+                if self.headers:
+                    from astropy.wcs import WCS
+                    try:
+                        common_wcs = WCS(self.headers[0])
+                    except:
+                        pass
+                
+                # Use reference image dimensions
+                new_nx = self.headers[0]['NAXIS1'] if self.headers else aligned_datas[0].shape[1]
+                new_ny = self.headers[0]['NAXIS2'] if self.headers else aligned_datas[0].shape[0]
+                
+            else:  # WCS reprojection method
+                from lib.fits.align import compute_padded_reference_wcs, reproject_images_to_common_wcs
+                common_wcs, (new_nx, new_ny) = compute_padded_reference_wcs(self.headers, paddings=(self.pad_x, self.pad_y))
+                aligned_datas = reproject_images_to_common_wcs(
+                    self.image_datas, self.headers, common_wcs, (new_ny, new_nx), progress_callback=self.progress.emit
+                )
+            
             self.finished.emit(aligned_datas, common_wcs, new_nx, new_ny, self.headers)
         except Exception as e:
             self.error.emit(str(e))
@@ -31,9 +143,16 @@ class AlignmentWorker(QObject):
 class ImageOperationsMixin:
     """Mixin class providing image calibration, platesolving, and alignment functionality."""
     
-    def align_images(self):
-        """Align all loaded images using WCS information."""
-        from lib.fits.align import check_all_have_wcs, check_pixel_scales_match
+    def align_images(self, method=None):
+        """Align all loaded images using the specified method or configuration default.
+        
+        Parameters:
+        -----------
+        method : str, optional
+            Alignment method: "astroalign" (fast, asterism-based) or "wcs_reprojection" (slow, WCS-based)
+            If None, uses the method from configuration or shows dialog if enabled.
+        """
+        from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, check_astroalign_available, get_alignment_methods
         
         # Remove overlays before aligning
         self._simbad_overlay = None
@@ -51,20 +170,67 @@ class ImageOperationsMixin:
             image_datas.append(img)
             headers.append(hdr)
         
-        # Check all have WCS
-        if not check_all_have_wcs(headers):
-            QMessageBox.critical(self, "Alignment Error", "One or more images is not platesolved (missing WCS). Alignment aborted.")
-            return
+        # Check image count limit
+        if len(image_datas) > MAX_ALIGNMENT_IMAGES:
+            reply = QMessageBox.question(
+                self, "Many Images", 
+                f"You are trying to align {len(image_datas)} images. This may take a long time and use significant memory. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
         
-        # Check pixel scales match
-        if not check_pixel_scales_match(headers):
-            QMessageBox.critical(self, "Alignment Error", "Pixel scales do not match between images. Alignment aborted.")
-            return
+        # Determine alignment method
+        if method is None:
+            if SHOW_ALIGNMENT_METHOD_DIALOG:
+                # Show method selection dialog
+                dialog = AlignmentMethodDialog(self)
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    method = dialog.get_selected_method()
+                    # TODO: If dialog.should_remember_choice(), save to user preferences
+                else:
+                    return  # User cancelled
+            else:
+                # Use configuration default
+                method = DEFAULT_ALIGNMENT_METHOD
+        
+        # Validate method
+        available_methods = get_alignment_methods()
+        
+        if method not in available_methods:
+            # Try fallback method
+            if FALLBACK_ALIGNMENT_METHOD in available_methods:
+                QMessageBox.warning(self, "Alignment Method Unavailable", 
+                                  f"Requested method '{method}' not available. Using fallback method '{FALLBACK_ALIGNMENT_METHOD}'.")
+                method = FALLBACK_ALIGNMENT_METHOD
+            else:
+                QMessageBox.critical(self, "Alignment Error", 
+                                   f"Alignment method '{method}' not available. Available methods: {', '.join(available_methods)}")
+                return
+        
+        # Method-specific validation
+        if method == "wcs_reprojection":
+            # Check all have WCS
+            if not check_all_have_wcs(headers):
+                QMessageBox.critical(self, "Alignment Error", "One or more images is not platesolved (missing WCS). Alignment aborted.")
+                return
+            
+            # Check pixel scales match
+            if not check_pixel_scales_match(headers):
+                QMessageBox.critical(self, "Alignment Error", "Pixel scales do not match between images. Alignment aborted.")
+                return
+        
+        elif method == "astroalign":
+            if not check_astroalign_available():
+                QMessageBox.critical(self, "Alignment Error", 
+                                   "astroalign package is not available. Please install it with: pip install astroalign")
+                return
         
         pad_x, pad_y = 100, 100
         
         # Progress dialog
-        progress = QProgressDialog("Aligning images...", None, 0, len(image_datas), self)
+        method_name = "Asterism-based" if method == "astroalign" else "WCS reprojection"
+        progress = QProgressDialog(f"Aligning images using {method_name}...", None, 0, len(image_datas), self)
         progress.setWindowTitle("Aligning")
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.setMinimumDuration(0)
@@ -74,7 +240,7 @@ class ImageOperationsMixin:
         
         # Start worker thread
         self._align_thread = QThread()
-        self._align_worker = AlignmentWorker(image_datas, headers, pad_x, pad_y)
+        self._align_worker = AlignmentWorker(image_datas, headers, pad_x, pad_y, method)
         self._align_worker.moveToThread(self._align_thread)
         self._align_thread.started.connect(self._align_worker.run)
         self._align_worker.progress.connect(lambda frac: (progress.setValue(int(frac * len(image_datas))), QApplication.processEvents()))
@@ -85,6 +251,13 @@ class ImageOperationsMixin:
                 new_header = headers[0].copy()
                 new_header['NAXIS1'] = new_nx
                 new_header['NAXIS2'] = new_ny
+                # Add alignment method info to header
+                new_header['ALIGN_MTH'] = method
+                if method == "astroalign":
+                    new_header['COMMENT'] = 'Aligned using astroalign asterism matching'
+                else:
+                    new_header['COMMENT'] = 'Aligned using WCS reprojection'
+                
                 self._preloaded_fits[path] = (aligned_datas[i], new_header, common_wcs)
             self.current_file_index = 0
             self.load_fits(self.loaded_files[0], restore_view=False)
@@ -103,6 +276,14 @@ class ImageOperationsMixin:
         self._align_worker.finished.connect(on_finished)
         self._align_worker.error.connect(on_error)
         self._align_thread.start()
+
+    def align_images_fast(self):
+        """Align images using the fast astroalign method."""
+        self.align_images(method="astroalign")
+
+    def align_images_wcs(self):
+        """Align images using the slow WCS reprojection method."""
+        self.align_images(method="wcs_reprojection")
 
     def _format_platesolving_result(self, result):
         """Format platesolving results for display."""
