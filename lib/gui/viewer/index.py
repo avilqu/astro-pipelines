@@ -311,7 +311,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         sso_menu.addSeparator()
         
         # Add Compute orbit data action
-        compute_orbit_action = QAction("Compute orbital elements", self)
+        compute_orbit_action = QAction("Get orbital elements", self)
         compute_orbit_action.triggered.connect(self.open_orbit_computation_dialog)
         sso_menu.addAction(compute_orbit_action)
         
