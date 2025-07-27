@@ -18,15 +18,7 @@ from lib.gui.viewer.histogram import HistogramController
 from lib.gui.viewer.toolbar import ToolbarController
 from lib.fits.catalogs import AstrometryCatalog
 
-class NoWheelScrollArea(QScrollArea):
-    def wheelEvent(self, event):
-        # Ignore wheel events so they are not used for scrolling
-        event.ignore()
 
-class NoContextToolBar(QToolBar):
-    def contextMenuEvent(self, event):
-        # Completely ignore context menu events
-        event.ignore()
 
 class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, FileOperationsMixin, OverlayMixin, IntegrationMixin, DisplayMixin, QMainWindow):
     def __init__(self, fits_path=None):
@@ -91,8 +83,10 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         self.play_icon = self.toolbar_controller.play_icon
         self.pause_icon = self.toolbar_controller.pause_icon
         # Remove sidebar and use only scroll_area as central widget
-        self.scroll_area = NoWheelScrollArea()
+        self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(False)
+        # Ignore wheel events so they are not used for scrolling
+        self.scroll_area.wheelEvent = lambda event: event.ignore()
         self.setCentralWidget(self.scroll_area)
         self.image_label = ImageLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

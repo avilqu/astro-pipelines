@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from PyQt6.QtWidgets import (
     QToolButton, QMenu, QWidget, QGridLayout, 
-    QLabel, QSizePolicy, QSpacerItem
+    QLabel, QSizePolicy, QSpacerItem, QToolBar
 )
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
@@ -69,9 +69,9 @@ class ToolbarController:
     
     def _create_toolbar(self):
         """Create and configure the main toolbar."""
-        from lib.gui.viewer.index import NoContextToolBar
-        
-        self.toolbar = NoContextToolBar("Main Toolbar")
+        self.toolbar = QToolBar("Main Toolbar")
+        # Ignore context menu events
+        self.toolbar.contextMenuEvent = lambda event: event.ignore()
         self.toolbar.setMovable(False)  # Disable moving the toolbar
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         
