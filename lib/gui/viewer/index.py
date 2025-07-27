@@ -65,6 +65,19 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         super().__init__()
         self.setWindowTitle("Astropipes FITS Viewer")
         self.setGeometry(100, 100, 1000, 800)
+        
+        # Set global stylesheet for better disabled state visibility
+        self.setStyleSheet("""
+            QAction:disabled {
+                color: #333333;
+            }
+            QPushButton:disabled {
+                color: #333333;
+            }
+            QLabel:disabled {
+                color: #333333;
+            }
+        """)
 
         # --- Multi-file support ---
         self.loaded_files = []  # List of file paths
@@ -102,6 +115,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 border: 1px solid #777777;
                 background: #444444;
                 border-radius: 4px;
+            }
+            QToolButton:disabled {
+                color: #333333;
             }
         """)
         self.addToolBar(self.toolbar)
@@ -190,18 +206,29 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.toolbar.addAction(load_action)
         self.toolbar.widgetForAction(load_action).setFixedSize(32, 32)
 
+        # Add Close button next to Open button
+        close_icon = QIcon.fromTheme("dialog-close")
+        if close_icon.isNull():
+            close_icon = QIcon.fromTheme("window-close")
+        self.close_action = QAction(close_icon, "Close FITS", self)
+        self.close_action.setToolTip("Close current FITS file")
+        self.close_action.setEnabled(False)  # Initially disabled until a file is loaded
+        self.close_action.triggered.connect(self.close_current_file)
+        self.toolbar.addAction(self.close_action)
+        self.toolbar.widgetForAction(self.close_action).setFixedSize(32, 32)
+
         self.toolbar.addWidget(make_toolbar_separator(self))
 
-        reset_zoom_action = QAction(QIcon.fromTheme("zoom-original"), "", self)
-        reset_zoom_action.setToolTip("Reset zoom to 1:1")
-        reset_zoom_action.triggered.connect(self.reset_zoom)
-        self.toolbar.addAction(reset_zoom_action)
-        self.toolbar.widgetForAction(reset_zoom_action).setFixedSize(32, 32)
-        zoom_to_fit_action = QAction(QIcon.fromTheme("zoom-fit-width"), "", self)
-        zoom_to_fit_action.setToolTip("Zoom to fit image in viewport")
-        zoom_to_fit_action.triggered.connect(self.zoom_to_fit)
-        self.toolbar.addAction(zoom_to_fit_action)
-        self.toolbar.widgetForAction(zoom_to_fit_action).setFixedSize(32, 32)
+        self.reset_zoom_action = QAction(QIcon.fromTheme("zoom-original"), "", self)
+        self.reset_zoom_action.setToolTip("Reset zoom to 1:1")
+        self.reset_zoom_action.triggered.connect(self.reset_zoom)
+        self.toolbar.addAction(self.reset_zoom_action)
+        self.toolbar.widgetForAction(self.reset_zoom_action).setFixedSize(32, 32)
+        self.zoom_to_fit_action = QAction(QIcon.fromTheme("zoom-fit-width"), "", self)
+        self.zoom_to_fit_action.setToolTip("Zoom to fit image in viewport")
+        self.zoom_to_fit_action.triggered.connect(self.zoom_to_fit)
+        self.toolbar.addAction(self.zoom_to_fit_action)
+        self.toolbar.widgetForAction(self.zoom_to_fit_action).setFixedSize(32, 32)
 
         # Add Zoom to Region button
         self.zoom_region_action = QAction(QIcon.fromTheme("page-zoom"), "", self)
@@ -214,16 +241,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
         self.toolbar.addWidget(make_toolbar_separator(self))
 
-        linear_action = QAction(QIcon.fromTheme("view-object-histogram-linear-symbolic"), "", self)
-        linear_action.setToolTip("Linear histogram stretch")
-        linear_action.triggered.connect(self.set_linear_stretch)
-        self.toolbar.addAction(linear_action)
-        self.toolbar.widgetForAction(linear_action).setFixedSize(32, 32)
-        log_action = QAction(QIcon.fromTheme("view-object-histogram-logarithmic"), "", self)
-        log_action.setToolTip("Logarithmic histogram stretch")
-        log_action.triggered.connect(self.set_log_stretch)
-        self.toolbar.addAction(log_action)
-        self.toolbar.widgetForAction(log_action).setFixedSize(32, 32)
+        self.linear_action = QAction(QIcon.fromTheme("view-object-histogram-linear-symbolic"), "", self)
+        self.linear_action.setToolTip("Linear histogram stretch")
+        self.linear_action.triggered.connect(self.set_linear_stretch)
+        self.toolbar.addAction(self.linear_action)
+        self.toolbar.widgetForAction(self.linear_action).setFixedSize(32, 32)
+        self.log_action = QAction(QIcon.fromTheme("view-object-histogram-logarithmic"), "", self)
+        self.log_action.setToolTip("Logarithmic histogram stretch")
+        self.log_action.triggered.connect(self.set_log_stretch)
+        self.toolbar.addAction(self.log_action)
+        self.toolbar.widgetForAction(self.log_action).setFixedSize(32, 32)
 
         # Add brightness slider (not related to sigma clipping)
         from PyQt6.QtWidgets import QSlider, QLabel
@@ -235,6 +262,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.brightness_slider.setFixedWidth(120)
         self.brightness_slider.setToolTip("Adjust image brightness")
         self.brightness_slider.valueChanged.connect(self.on_brightness_slider_changed)
+        self.brightness_slider.setStyleSheet("""
+            QSlider:disabled {
+                color: #333333;
+            }
+        """)
         self.toolbar.addWidget(self.brightness_slider)
 
         # Add Clipping button
@@ -420,6 +452,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_align_button_visibility()
         self.update_display_minmax_tooltips() # Initialize tooltips
         self.update_platesolve_button_visibility()
+        self.update_close_button_visibility()
+        
+        # Set initial button states (disabled if no image loaded)
+        if not fits_path:
+            self.update_button_states_for_no_image()
         # Status bar: coordinates (left), pixel value (right)
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -438,6 +475,80 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def open_file(self):
         """Alias for open_file_dialog for keyboard shortcuts"""
         self.open_file_dialog()
+
+    def close_current_file(self):
+        """Close the currently displayed FITS file and remove it from the image list"""
+        if not self.loaded_files or self.current_file_index < 0:
+            return
+        
+        # Remove the current file from the list
+        removed_file = self.loaded_files.pop(self.current_file_index)
+        
+        # Remove from preloaded data
+        if removed_file in self._preloaded_fits:
+            del self._preloaded_fits[removed_file]
+        
+        # Update current file index
+        if not self.loaded_files:
+            # No files left - completely reset the viewer state
+            self.current_file_index = -1
+            self.image_data = None
+            self.wcs = None
+            self._current_header = None
+            self.pixmap = None
+            self._orig_pixmap = None
+            
+            # Clear the image label and set proper styling for text display
+            self.image_label.clear()
+            self.image_label.setText("No image loaded")
+            self.image_label.setStyleSheet("QLabel { background-color: #f0f0f0; color: #333333; font-size: 14px; }")
+            self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            # Reset the label size to allow proper text display
+            self.image_label.setFixedSize(400, 300)
+            
+            # Center the label in the scroll area
+            self.scroll_area.setWidgetResizable(True)
+            self.scroll_area.ensureWidgetVisible(self.image_label)
+            
+            self.setWindowTitle("Astropipes FITS Viewer")
+            self.header_button.setEnabled(False)
+            self.close_action.setEnabled(False)
+            
+            # Disable all image-dependent buttons
+            self.update_button_states_for_no_image()
+            
+            # Clear any overlays
+            self._simbad_overlay = None
+            self._sso_overlay = None
+            self._ephemeris_overlay = None
+            self._overlay_visible = False
+            self.update_overlay_button_visibility()
+        else:
+            # Adjust current index if necessary
+            if self.current_file_index >= len(self.loaded_files):
+                self.current_file_index = len(self.loaded_files) - 1
+            
+            # Load the new current file
+            self.load_fits(self.loaded_files[self.current_file_index], restore_view=False)
+        
+        # Update UI elements
+        self.update_navigation_buttons()
+        self.update_image_count_label()
+        self.update_align_button_visibility()
+        self.update_platesolve_button_visibility()
+        self.update_close_button_visibility()
+        
+        # Update file list window if open
+        if hasattr(self, '_filelist_window') and self._filelist_window is not None:
+            self._filelist_window.table.setRowCount(len(self.loaded_files))
+            for i, path in enumerate(self.loaded_files):
+                item = QTableWidgetItem(os.path.basename(path))
+                item.setToolTip(path)
+                self._filelist_window.table.setItem(i, 0, item)
+            self._filelist_window.file_paths = list(self.loaded_files)
+            if self.current_file_index >= 0:
+                self._filelist_window.select_row(self.current_file_index)
 
     def _get_viewport_center(self):
         # Returns the center of the viewport in image coordinates (x, y)
@@ -576,6 +687,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_count_label()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()
+        self.update_close_button_visibility()
         # Update file list window if open
         if hasattr(self, '_filelist_window') and self._filelist_window is not None:
             self._filelist_window.table.setRowCount(len(self.loaded_files))
@@ -625,6 +737,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_count_label()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()
+        self.update_close_button_visibility()
         # Update highlight in file list window
         if hasattr(self, '_filelist_window') and self._filelist_window is not None:
             self._filelist_window.select_row(self.current_file_index)
@@ -652,6 +765,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.update_image_count_label()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()
+        self.update_close_button_visibility()
         # Update highlight in file list window
         if hasattr(self, '_filelist_window') and self._filelist_window is not None:
             self._filelist_window.select_row(self.current_file_index)
@@ -928,6 +1042,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             if image_data is not None:
                 if image_data.ndim == 2:
                     self.image_data = image_data
+                    
+                    # Restore proper image display styling
+                    self.image_label.setStyleSheet("QLabel { background-color: black; }")
+                    self.scroll_area.setWidgetResizable(False)
+                    
                     # Restore zoom and center if requested
                     if restore_view and hasattr(self, '_last_zoom') and self._last_zoom:
                         self._zoom = self._last_zoom
@@ -938,6 +1057,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
+                    
+                    # Enable all image-dependent buttons
+                    self.update_button_states_for_image_loaded()
                     # Since stretch is always locked, initialize locked parameters on first load
                     if self.locked_display_min is None or self.locked_display_max is None:
                         # First time loading - calculate and store locked parameters
@@ -982,6 +1104,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.update_overlay_button_visibility()
         self.update_navigation_buttons()
         self.update_image_count_label()
+        self.update_close_button_visibility()
         # After loading, update ephemeris marker if present
         if hasattr(self, '_ephemeris_predicted_positions') and self._ephemeris_predicted_positions:
             idx = self.current_file_index
@@ -1291,6 +1414,72 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Enable if at least one file is loaded
         self.platesolve_action.setEnabled(len(self.loaded_files) > 0)
 
+    def update_close_button_visibility(self):
+        """Update the close button enabled state based on whether files are loaded"""
+        self.close_action.setEnabled(len(self.loaded_files) > 0)
+
+    def update_button_states_for_no_image(self):
+        """Disable all buttons that require an image to be loaded"""
+        # Disable image-dependent buttons
+        self.reset_zoom_action.setEnabled(False)
+        self.zoom_to_fit_action.setEnabled(False)
+        self.zoom_region_action.setEnabled(False)
+        
+        # Disable stretch buttons
+        self.linear_action.setEnabled(False)
+        self.log_action.setEnabled(False)
+        
+        # Disable brightness slider
+        self.brightness_slider.setEnabled(False)
+        
+        # Disable clipping button
+        self.clipping_action.setEnabled(False)
+        
+        # Disable search buttons
+        self.simbad_button.setEnabled(False)
+        self.sso_button.setEnabled(False)
+        
+        # Disable overlay toggle
+        self.overlay_toggle_action.setEnabled(False)
+        
+        # Disable calibration and platesolve buttons
+        self.calibrate_action.setEnabled(False)
+        self.platesolve_action.setEnabled(False)
+        
+        # Disable integration button
+        self.integration_button.setEnabled(False)
+
+    def update_button_states_for_image_loaded(self):
+        """Enable all buttons that require an image to be loaded"""
+        # Enable image-dependent buttons
+        self.reset_zoom_action.setEnabled(True)
+        self.zoom_to_fit_action.setEnabled(True)
+        self.zoom_region_action.setEnabled(True)
+        
+        # Enable stretch buttons
+        self.linear_action.setEnabled(True)
+        self.log_action.setEnabled(True)
+        
+        # Enable brightness slider
+        self.brightness_slider.setEnabled(True)
+        
+        # Enable clipping button
+        self.clipping_action.setEnabled(True)
+        
+        # Enable search buttons
+        self.simbad_button.setEnabled(True)
+        self.sso_button.setEnabled(True)
+        
+        # Overlay toggle is managed separately based on overlay availability
+        # self.overlay_toggle_action.setEnabled(True)
+        
+        # Enable calibration and platesolve buttons
+        self.calibrate_action.setEnabled(True)
+        self.platesolve_action.setEnabled(True)
+        
+        # Integration button is managed separately based on number of files
+        # self.integration_button.setEnabled(True)
+
     def _format_platesolving_result(self, result):
         if hasattr(result, 'success') and result.success:
             success_msg = "Image successfully solved!\n\n"
@@ -1444,6 +1633,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                 self.update_image_count_label()
                 self.update_align_button_visibility()
                 self.update_platesolve_button_visibility()
+                self.update_close_button_visibility()
                 # Update highlight in file list window
                 if hasattr(self, '_filelist_window') and self._filelist_window is not None:
                     self._filelist_window.select_row(row)
@@ -1473,6 +1663,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             return
         self.current_file_index = row_index
         self.load_fits(self.loaded_files[row_index], restore_view=True)
+        self.update_close_button_visibility()
         # Set marker overlay for ephemeris position
         ra = ephemeris.get("RA", 0.0)
         dec = ephemeris.get("Dec", 0.0)
