@@ -1,0 +1,475 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+
+from PyQt6.QtWidgets import (
+    QToolButton, QMenu, QWidget, QGridLayout, 
+    QLabel, QSizePolicy, QSpacerItem
+)
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtCore import Qt, QTimer
+
+
+def make_toolbar_separator(parent):
+    """Create a visual separator for the toolbar."""
+    from PyQt6.QtWidgets import QFrame
+    sep = QFrame(parent)
+    sep.setFixedWidth(8)  # Give it a little width for margin
+    sep.setFixedHeight(32)  # Match your toolbar height
+    sep.setStyleSheet("QFrame { margin-left: 5px; border-left: 1px solid #777777; background: transparent; }")
+    return sep
+
+
+class ToolbarController:
+    """
+    Handles all toolbar button creation and management for the FITS viewer.
+    """
+    
+    def __init__(self, parent_viewer):
+        self.parent = parent_viewer
+        self.toolbar = None
+        self.nav_widget = None
+        
+        # Initialize all button references
+        self.prev_action = None
+        self.next_action = None
+        self.prev_button = None
+        self.next_button = None
+        self.play_pause_button = None
+        self.image_count_label = None
+        self.load_action = None
+        self.close_action = None
+        self.reset_zoom_action = None
+        self.zoom_to_fit_action = None
+        self.zoom_region_action = None
+        self.simbad_button = None
+        self.sso_button = None
+        self.overlay_toggle_action = None
+        self.calibrate_action = None
+        self.platesolve_action = None
+        self.header_button = None
+        self.integration_button = None
+        self.filelist_action = None
+        
+        # Navigation state
+        self.playing = False
+        self.blink_timer = None
+        self.play_icon = None
+        self.pause_icon = None
+        
+        # Create the toolbar
+        self._create_toolbar()
+        self._create_navigation_controls()
+        self._create_file_controls()
+        self._create_zoom_controls()
+        self._create_search_controls()
+        self._create_processing_controls()
+        self._create_integration_controls()
+        self._create_filelist_control()
+    
+    def _create_toolbar(self):
+        """Create and configure the main toolbar."""
+        from lib.gui.viewer.index import NoContextToolBar
+        
+        self.toolbar = NoContextToolBar("Main Toolbar")
+        self.toolbar.setMovable(False)  # Disable moving the toolbar
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        
+        # Disable context menu on the main window
+        self.parent.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        
+        # Set toolbar styling
+        self.toolbar.setStyleSheet("""
+            QToolBar { background: #222222; }
+            QToolButton { 
+                border: none; 
+                background: transparent; 
+                padding: 4px;
+            }
+            QToolButton:hover { 
+                border: 1px solid #555555; 
+                background: #333333; 
+                border-radius: 4px;
+            }
+            QToolButton:pressed { 
+                border: 1px solid #777777; 
+                background: #444444; 
+                border-radius: 4px;
+            }
+            QToolButton:checked {
+                border: 1px solid #777777;
+                background: #444444;
+                border-radius: 4px;
+            }
+            QToolButton:disabled {
+                color: #333333;
+            }
+        """)
+        
+        self.parent.addToolBar(self.toolbar)
+    
+    def _create_navigation_controls(self):
+        """Create navigation controls (previous, next, play/pause, image count)."""
+        # Previous/Next actions
+        left_icon = QIcon.fromTheme("go-previous")
+        if left_icon.isNull():
+            left_icon = QIcon.fromTheme("arrow-left")
+        self.prev_action = QAction(left_icon, "Previous", self.parent)
+        self.prev_action.setToolTip("Show previous FITS file")
+        self.prev_action.triggered.connect(self.parent.show_previous_file)
+        
+        right_icon = QIcon.fromTheme("go-next")
+        if right_icon.isNull():
+            right_icon = QIcon.fromTheme("arrow-right")
+        self.next_action = QAction(right_icon, "Next", self.parent)
+        self.next_action.setToolTip("Show next FITS file")
+        self.next_action.triggered.connect(self.parent.show_next_file)
+        
+        # Image count label
+        self.image_count_label = QLabel("- / -", self.parent)
+        self.image_count_label.setMinimumWidth(50)
+        
+        # Create navigation widget
+        self.nav_widget = QWidget(self.parent)
+        nav_layout = QGridLayout()
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setHorizontalSpacing(4)
+        
+        # Previous button
+        self.prev_button = QToolButton(self.parent)
+        self.prev_button.setDefaultAction(self.prev_action)
+        self.prev_button.setFixedSize(32, 32)
+        nav_layout.addWidget(self.prev_button, 0, 0)
+        
+        # Image count label
+        self.image_count_label.setFixedWidth(60)
+        nav_layout.addWidget(self.image_count_label, 0, 1, 
+                           alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
+        
+        # Play/Pause button
+        self.playing = False
+        self.blink_timer = QTimer(self.parent)
+        # Import config locally to avoid dependency issues
+        try:
+            import config
+            self.blink_timer.setInterval(config.BLINK_PERIOD_MS)
+        except ImportError:
+            # Default to 1000ms if config is not available
+            self.blink_timer.setInterval(1000)
+        self.blink_timer.timeout.connect(self.parent._blink_next_image)
+        
+        self.play_pause_button = QToolButton(self.parent)
+        self.play_icon = QIcon.fromTheme("media-playback-start")
+        self.pause_icon = QIcon.fromTheme("media-playback-pause")
+        if self.play_icon.isNull():
+            self.play_icon = QIcon.fromTheme("play")
+        if self.pause_icon.isNull():
+            self.pause_icon = QIcon.fromTheme("pause")
+        
+        self.play_pause_button.setIcon(self.play_icon)
+        self.play_pause_button.setToolTip("Play slideshow")
+        self.play_pause_button.setFixedSize(32, 32)
+        self.play_pause_button.clicked.connect(self.parent.toggle_play_pause)
+        nav_layout.addWidget(self.play_pause_button, 0, 2)
+        
+        # Next button
+        self.next_button = QToolButton(self.parent)
+        self.next_button.setDefaultAction(self.next_action)
+        self.next_button.setFixedSize(32, 32)
+        nav_layout.addWidget(self.next_button, 0, 3)
+        
+        self.nav_widget.setLayout(nav_layout)
+        self.nav_widget.setStyleSheet("""
+            QToolButton { 
+                border: none; 
+                background: transparent; 
+                padding: 4px;
+            }
+            QToolButton:hover { 
+                border: 1px solid #555555; 
+                background: #333333; 
+                border-radius: 4px;
+            }
+            QToolButton:pressed { 
+                border: 1px solid #777777; 
+                background: #444444; 
+                border-radius: 4px;
+            }
+        """)
+    
+    def _create_file_controls(self):
+        """Create file operation controls (open, close)."""
+        # Open button
+        open_icon = QIcon.fromTheme("document-open")
+        if open_icon.isNull():
+            open_icon = QIcon.fromTheme("folder-open")
+        self.load_action = QAction(open_icon, "Open FITS", self.parent)
+        self.load_action.setToolTip("Open FITS file")
+        self.load_action.triggered.connect(self.parent.open_file_dialog)
+        self.toolbar.addAction(self.load_action)
+        self.toolbar.widgetForAction(self.load_action).setFixedSize(32, 32)
+
+        # Close button
+        close_icon = QIcon.fromTheme("dialog-close")
+        if close_icon.isNull():
+            close_icon = QIcon.fromTheme("window-close")
+        self.close_action = QAction(close_icon, "Close FITS", self.parent)
+        self.close_action.setToolTip("Close current FITS file")
+        self.close_action.setEnabled(False)  # Initially disabled until a file is loaded
+        self.close_action.triggered.connect(self.parent.close_current_file)
+        self.toolbar.addAction(self.close_action)
+        self.toolbar.widgetForAction(self.close_action).setFixedSize(32, 32)
+
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+    
+    def _create_zoom_controls(self):
+        """Create zoom-related controls."""
+        # Reset zoom
+        self.reset_zoom_action = QAction(QIcon.fromTheme("zoom-original"), "", self.parent)
+        self.reset_zoom_action.setToolTip("Reset zoom to 1:1")
+        self.reset_zoom_action.triggered.connect(self.parent.reset_zoom)
+        self.toolbar.addAction(self.reset_zoom_action)
+        self.toolbar.widgetForAction(self.reset_zoom_action).setFixedSize(32, 32)
+        
+        # Zoom to fit
+        self.zoom_to_fit_action = QAction(QIcon.fromTheme("zoom-fit-width"), "", self.parent)
+        self.zoom_to_fit_action.setToolTip("Zoom to fit image in viewport")
+        self.zoom_to_fit_action.triggered.connect(self.parent.zoom_to_fit)
+        self.toolbar.addAction(self.zoom_to_fit_action)
+        self.toolbar.widgetForAction(self.zoom_to_fit_action).setFixedSize(32, 32)
+
+        # Zoom to region
+        self.zoom_region_action = QAction(QIcon.fromTheme("page-zoom"), "", self.parent)
+        self.zoom_region_action.setCheckable(True)
+        self.zoom_region_action.setChecked(False)
+        self.zoom_region_action.setToolTip("Zoom to selected region (draw rectangle)")
+        self.zoom_region_action.toggled.connect(self.parent.on_zoom_region_toggled)
+        self.toolbar.addAction(self.zoom_region_action)
+        self.toolbar.widgetForAction(self.zoom_region_action).setFixedSize(32, 32)
+    
+    def _create_search_controls(self):
+        """Create search and overlay controls."""
+        # SIMBAD search button
+        self.simbad_button = QAction(QIcon.fromTheme("file-search-symbolic"), "", self.parent)
+        self.simbad_button.setToolTip("Search for an object in SIMBAD and overlay on image")
+        self.simbad_button.setEnabled(True)
+        self.simbad_button.triggered.connect(self.parent.open_simbad_search_dialog)
+        self.toolbar.addAction(self.simbad_button)
+        self.toolbar.widgetForAction(self.simbad_button).setFixedSize(32, 32)
+        
+        # Solar System Objects button
+        sso_icon = QIcon.fromTheme("kstars_planets")
+        if sso_icon.isNull():
+            sso_icon = QIcon.fromTheme("applications-science")
+        
+        self.sso_button = QToolButton(self.parent)
+        self.sso_button.setIcon(sso_icon)
+        self.sso_button.setToolTip("Solar System Objects")
+        self.sso_button.setEnabled(True)
+        self.sso_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.sso_button.setFixedSize(32, 32)
+        
+        # Create SSO dropdown menu
+        sso_menu = QMenu(self.sso_button)
+        find_sso_action = QAction("Find SSO in field", self.parent)
+        find_sso_action.triggered.connect(self.parent.open_sso_search_dialog)
+        sso_menu.addAction(find_sso_action)
+        
+        sso_menu.addSeparator()
+        
+        compute_orbit_action = QAction("Get orbital elements", self.parent)
+        compute_orbit_action.triggered.connect(self.parent.open_orbit_computation_dialog)
+        sso_menu.addAction(compute_orbit_action)
+        
+        self.sso_button.setMenu(sso_menu)
+        self.sso_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.sso_button)
+        
+        # Overlay toggle action
+        self.overlay_toggle_action = QAction(QIcon.fromTheme("shapes"), "", self.parent)
+        self.overlay_toggle_action.setCheckable(True)
+        self.overlay_toggle_action.setChecked(True)
+        self.overlay_toggle_action.setVisible(False)
+        self.overlay_toggle_action.triggered.connect(self.parent.toggle_overlay_visibility)
+        self.toolbar.addAction(self.overlay_toggle_action)
+        self.toolbar.widgetForAction(self.overlay_toggle_action).setFixedSize(32, 32)
+    
+    def _create_processing_controls(self):
+        """Create image processing controls (calibrate, platesolve, header)."""
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+        
+        # Calibrate button
+        calibrate_icon = QIcon.fromTheme("blur")
+        if calibrate_icon.isNull():
+            calibrate_icon = QIcon.fromTheme("edit-blur")
+        self.calibrate_action = QAction(calibrate_icon, "", self.parent)
+        self.calibrate_action.setToolTip("Calibrate all loaded images")
+        self.calibrate_action.setEnabled(True)
+        self.calibrate_action.triggered.connect(self.parent.calibrate_all_images)
+        self.toolbar.addAction(self.calibrate_action)
+        self.toolbar.widgetForAction(self.calibrate_action).setFixedSize(32, 32)
+
+        # Platesolve button
+        self.platesolve_action = QAction(QIcon.fromTheme("map-globe"), "", self.parent)
+        self.platesolve_action.setToolTip("Platesolve all loaded images")
+        self.platesolve_action.setEnabled(False)
+        self.platesolve_action.triggered.connect(self.parent.platesolve_all_images)
+        self.toolbar.addAction(self.platesolve_action)
+        self.toolbar.widgetForAction(self.platesolve_action).setFixedSize(32, 32)
+
+        # Header button
+        self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self.parent)
+        self.header_button.setToolTip("Show FITS header")
+        self.header_button.setEnabled(False)
+        self.header_button.triggered.connect(self.parent.show_header_dialog)
+        self.toolbar.addAction(self.header_button)
+        self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
+    
+    def _create_integration_controls(self):
+        """Create integration controls."""
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+
+        # Integration button with dropdown
+        integration_icon = QIcon.fromTheme("black_sum")
+        if integration_icon.isNull():
+            integration_icon = QIcon.fromTheme("applications-science")
+        
+        self.integration_button = QToolButton(self.parent)
+        self.integration_button.setIcon(integration_icon)
+        self.integration_button.setToolTip("Integration")
+        self.integration_button.setEnabled(False)  # Initially disabled
+        self.integration_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.integration_button.setFixedSize(32, 32)
+        
+        # Create integration dropdown menu
+        integration_menu = QMenu(self.integration_button)
+        align_wcs_action = QAction("Align on WCS", self.parent)
+        align_wcs_action.triggered.connect(self.parent.align_images)
+        integration_menu.addAction(align_wcs_action)
+        
+        integration_menu.addSeparator()
+        
+        stack_wcs_action = QAction("Stack aligned images", self.parent)
+        stack_wcs_action.triggered.connect(self.parent.stack_align_wcs)
+        integration_menu.addAction(stack_wcs_action)
+        
+        stack_ephemeris_action = QAction("Stack on ephemeris", self.parent)
+        stack_ephemeris_action.triggered.connect(self.parent.stack_align_ephemeris)
+        integration_menu.addAction(stack_ephemeris_action)
+        
+        self.integration_button.setMenu(integration_menu)
+        self.integration_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.integration_button)
+    
+    def _create_filelist_control(self):
+        """Create file list control and add navigation widget."""
+        # Add spacer to push navigation elements to the right
+        spacer = QWidget(self.parent)
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.toolbar.addWidget(spacer)
+
+        # Add navigation widget
+        self.toolbar.addWidget(self.nav_widget)
+
+        # File List toggle button
+        self.filelist_action = QAction(QIcon.fromTheme("view-list-details"), "", self.parent)
+        self.filelist_action.setToolTip("Show list of loaded FITS files")
+        self.filelist_action.setVisible(False)
+        self.filelist_action.setCheckable(True)
+        self.filelist_action.setChecked(False)
+        self.filelist_action.triggered.connect(self.parent.toggle_filelist_window)
+        self.toolbar.addAction(self.filelist_action)
+        self.toolbar.widgetForAction(self.filelist_action).setFixedSize(32, 32)
+    
+    def update_navigation_buttons(self):
+        """Update navigation button visibility based on number of loaded files."""
+        n = len(self.parent.loaded_files)
+        # Hide navigation elements if only one or no files loaded
+        visible = n > 1
+        self.prev_action.setVisible(visible)
+        self.next_action.setVisible(visible)
+        self.prev_button.setVisible(visible)
+        self.next_button.setVisible(visible)
+        self.play_pause_button.setVisible(visible)
+        self.image_count_label.setVisible(visible)
+        self.update_image_count_label()
+    
+    def update_image_count_label(self):
+        """Update the image count label text."""
+        n = len(self.parent.loaded_files)
+        if n == 0:
+            self.image_count_label.setText("- / -")
+        else:
+            # Displayed as 1-based index
+            self.image_count_label.setText(f"{self.parent.current_file_index + 1} / {n}")
+    
+    def update_button_states_for_no_image(self):
+        """Disable all buttons that require an image to be loaded."""
+        # Disable image-dependent buttons
+        self.reset_zoom_action.setEnabled(False)
+        self.zoom_to_fit_action.setEnabled(False)
+        self.zoom_region_action.setEnabled(False)
+        
+        # Disable search buttons
+        self.simbad_button.setEnabled(False)
+        self.sso_button.setEnabled(False)
+        
+        # Disable overlay toggle
+        self.overlay_toggle_action.setEnabled(False)
+        
+        # Disable calibration and platesolve buttons
+        self.calibrate_action.setEnabled(False)
+        self.platesolve_action.setEnabled(False)
+        
+        # Disable integration button
+        self.integration_button.setEnabled(False)
+    
+    def update_button_states_for_image_loaded(self):
+        """Enable all buttons that require an image to be loaded."""
+        # Enable image-dependent buttons
+        self.reset_zoom_action.setEnabled(True)
+        self.zoom_to_fit_action.setEnabled(True)
+        self.zoom_region_action.setEnabled(True)
+        
+        # Enable search buttons
+        self.simbad_button.setEnabled(True)
+        self.sso_button.setEnabled(True)
+        
+        # Overlay toggle is managed separately based on overlay availability
+        # self.overlay_toggle_action.setEnabled(True)
+        
+        # Enable calibration and platesolve buttons
+        self.calibrate_action.setEnabled(True)
+        self.platesolve_action.setEnabled(True)
+        
+        # Integration button is managed separately based on number of files
+        # self.integration_button.setEnabled(True)
+    
+    def update_align_button_visibility(self):
+        """Update integration button visibility based on number of loaded files."""
+        visible = len(self.parent.loaded_files) > 1
+        self.filelist_action.setVisible(visible)
+        # For QToolButton, always keep visible, but enable/disable
+        if hasattr(self, 'integration_button'):
+            self.integration_button.setEnabled(visible)
+            self.toolbar.update()
+            self.toolbar.repaint()
+    
+    def update_platesolve_button_visibility(self):
+        """Enable platesolve button if at least one file is loaded."""
+        self.platesolve_action.setEnabled(len(self.parent.loaded_files) > 0)
+    
+    def update_close_button_visibility(self):
+        """Update the close button enabled state based on whether files are loaded."""
+        self.close_action.setEnabled(len(self.parent.loaded_files) > 0)
+    
+    def update_overlay_button_visibility(self):
+        """Update overlay button visibility based on overlay availability."""
+        has_overlay = (
+            (hasattr(self.parent, '_simbad_overlay') and self.parent._simbad_overlay is not None) or
+            (hasattr(self.parent, '_sso_overlay') and self.parent._sso_overlay is not None) or
+            (hasattr(self.parent, '_ephemeris_overlay') and self.parent._ephemeris_overlay is not None)
+        )
+        self.overlay_toggle_action.setVisible(has_overlay)
+        if has_overlay:
+            self.overlay_toggle_action.setChecked(self.parent._overlay_visible) 

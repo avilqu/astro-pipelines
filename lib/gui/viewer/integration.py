@@ -1,0 +1,157 @@
+import os
+import time
+from PyQt6.QtCore import QThread
+from PyQt6.QtWidgets import QMessageBox, QDialog
+from lib.gui.common.orbit_details import OrbitComputationDialog, OrbitComputationWorker, OrbitDataWindow, MotionTrackingStackWorker
+from lib.gui.common.console_window import ConsoleOutputWindow
+
+
+class IntegrationMixin:
+    """Mixin class providing integration and stacking functionality for the FITS viewer."""
+    
+    def open_orbit_computation_dialog(self):
+        """Open dialog to compute orbit data for a specific object."""
+        if not self.loaded_files:
+            QMessageBox.warning(self, "No Files", "No FITS files loaded. Please load some files first.")
+            return
+        
+        # Extract target name from current FITS file
+        target_name = None
+        if self.current_file_index >= 0 and self.current_file_index < len(self.loaded_files):
+            current_file_path = self.loaded_files[self.current_file_index]
+            
+            # Try to get target name from preloaded FITS data first
+            if current_file_path in self._preloaded_fits:
+                _, header, _ = self._preloaded_fits[current_file_path]
+                if header:
+                    target_name = header.get('OBJECT', '').strip()
+            
+            # If not found in preloaded data, try to read from file directly
+            if not target_name:
+                try:
+                    from astropy.io import fits
+                    with fits.open(current_file_path) as hdul:
+                        header = hdul[0].header
+                        target_name = header.get('OBJECT', '').strip()
+                except Exception:
+                    pass
+        
+        dialog = OrbitComputationDialog(self, target_name)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            object_name = dialog.get_object_name()
+            if not object_name:
+                QMessageBox.warning(self, "No Object", "Please enter an object designation.")
+                return
+            
+            # Console output window for orbit computation
+            console_window = ConsoleOutputWindow(f"Orbit Computation: {object_name}", self)
+            console_window.show_and_raise()
+            
+            # Start worker thread
+            self._orbit_thread = QThread()
+            self._orbit_worker = OrbitComputationWorker(object_name, self.loaded_files, console_window)
+            self._orbit_worker.moveToThread(self._orbit_thread)
+            self._orbit_worker.console_output.connect(console_window.append_text)
+            self._orbit_thread.started.connect(self._orbit_worker.run)
+            
+            def on_finished(predicted_positions, pseudo_mpec_text):
+                console_window.append_text("\nComputation finished.\n")
+                self._orbit_thread.quit()
+                self._orbit_thread.wait()
+                
+                # Show orbit data window
+                dlg = OrbitDataWindow(object_name, predicted_positions, pseudo_mpec_text, self)
+                dlg.row_selected.connect(self.on_ephemeris_row_selected)
+                self._ephemeris_predicted_positions = predicted_positions
+                self._ephemeris_object_name = object_name
+                dlg.show()
+                # Store reference to prevent garbage collection
+                self._orbit_window = dlg
+                # Optionally, select the current file's row by default
+                if self.current_file_index >= 0:
+                    dlg.positions_table.selectRow(self.current_file_index)
+                    self.on_ephemeris_row_selected(self.current_file_index, predicted_positions[self.current_file_index])
+            
+            def on_error(msg):
+                console_window.append_text(f"\nError: {msg}\n")
+                self._orbit_thread.quit()
+                self._orbit_thread.wait()
+                QMessageBox.critical(self, "Orbit Computation Error", f"Error computing orbit data: {msg}")
+            
+            self._orbit_worker.finished.connect(on_finished)
+            self._orbit_worker.error.connect(on_error)
+            self._orbit_thread.start()
+
+    def stack_align_wcs(self):
+        """Stack alignment using WCS coordinates (placeholder for future implementation)."""
+        # TODO: Implement stack alignment on WCS
+        pass
+
+    def stack_align_ephemeris(self):
+        """Perform motion tracking integration using ephemeris data."""
+        if not hasattr(self, '_ephemeris_predicted_positions') or not self._ephemeris_predicted_positions:
+            QMessageBox.warning(self, "No Ephemeris Data", 
+                              "No ephemeris data available. Please compute orbit data first using the Solar System Objects menu.")
+            return
+        
+        if not self.loaded_files:
+            QMessageBox.warning(self, "No Files", "No FITS files are currently loaded in the viewer.")
+            return
+        
+        if len(self.loaded_files) < 2:
+            QMessageBox.warning(self, "Insufficient Files", "At least 2 FITS files are required for stacking.")
+            return
+        
+        # Create output directory if it doesn't exist
+        output_dir = "/tmp/astropipes-stacked"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate output filename
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        safe_object_name = self._ephemeris_object_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        output_file = os.path.join(output_dir, f"motion_tracked_{safe_object_name}_{timestamp}.fits")
+        
+        # Create console window for output
+        console_window = ConsoleOutputWindow("Motion Tracking Integration", self)
+        console_window.show_and_raise()
+        
+        # Start stacking in background thread
+        self._stack_thread = QThread()
+        self._stack_worker = MotionTrackingStackWorker(
+            self.loaded_files, 
+            self._ephemeris_object_name, 
+            output_file,
+            console_window
+        )
+        self._stack_worker.moveToThread(self._stack_thread)
+        self._stack_thread.started.connect(self._stack_worker.run)
+        
+        def on_console_output(text):
+            console_window.append_text(text)
+        
+        def on_finished(success, message):
+            if success:
+                console_window.append_text(f"\n\033[1;32mMotion tracking integration completed successfully!\033[0m\n\n{message}\n")
+                # Add the result to the loaded files in the viewer
+                self.loaded_files.append(output_file)
+                # Load the file in the viewer
+                self.open_and_add_file(output_file)
+                # Update navigation buttons and file count
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+            else:
+                console_window.append_text(f"\n\033[1;31mMotion tracking integration failed:\033[0m\n\n{message}\n")
+            
+            self._stack_thread.quit()
+            self._stack_thread.wait()
+        
+        def on_cancel():
+            console_window.append_text("\n\033[1;31mCancelling motion tracking integration...\033[0m\n")
+            self._stack_thread.quit()
+            self._stack_thread.wait()
+            console_window.close()
+        
+        self._stack_worker.console_output.connect(on_console_output)
+        self._stack_worker.finished.connect(on_finished)
+        console_window.cancel_requested.connect(on_cancel)
+        self._stack_thread.start() 

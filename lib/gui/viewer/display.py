@@ -1,148 +1,6 @@
 import numpy as np
 from PyQt6.QtGui import QPixmap, QImage
-
-from PyQt6.QtWidgets import (QPushButton, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QDialog, QLineEdit, QMessageBox)
-from PyQt6.QtCore import QObject, pyqtSignal, QThread
-from PyQt6.QtWidgets import QProgressDialog, QApplication
-from PyQt6.QtCore import Qt
-
-class SIMBADSearchDialog(QDialog):
-    """Dialog window for SIMBAD object search"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("SIMBAD Object Search")
-        self.setGeometry(300, 300, 400, 150)
-        self.setModal(True)
-        
-        self.parent_viewer = parent
-        self.result = None
-        
-        layout = QVBoxLayout(self)
-        
-        # Instructions
-        instruction_label = QLabel("Enter the name of an astronomical object to search in SIMBAD:")
-        instruction_label.setWordWrap(True)
-        layout.addWidget(instruction_label)
-        
-        # Search input
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("e.g., M31, NGC 224, Vega, Sirius")
-        self.search_input.returnPressed.connect(self.search_object)
-        layout.addWidget(self.search_input)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        
-        self.search_button = QPushButton("Search")
-        self.search_button.clicked.connect(self.search_object)
-        button_layout.addWidget(self.search_button)
-        
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
-        
-        layout.addLayout(button_layout)
-        
-        # Set focus to search input
-        self.search_input.setFocus()
-    
-    def search_object(self):
-        """Search for the object in SIMBAD"""
-        object_name = self.search_input.text().strip()
-        
-        if not object_name:
-            QMessageBox.warning(self, "Search Error", "Please enter an object name.")
-            return
-        
-        self.search_button.setEnabled(False)
-        self.search_button.setText("Searching...")
-        # Show progress dialog
-        progress = QProgressDialog("Searching SIMBAD...", None, 0, 0, self)
-        progress.setWindowTitle("SIMBAD Search")
-        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
-        progress.show()
-        QApplication.processEvents()
-        # Start worker thread
-        self._simbad_thread = QThread()
-        self._simbad_worker = SIMBADWorker(
-            self.parent_viewer.astrometry_catalog,
-            self.parent_viewer.wcs,
-            self.parent_viewer.image_data.shape,
-            object_name
-        )
-        self._simbad_worker.moveToThread(self._simbad_thread)
-        self._simbad_thread.started.connect(self._simbad_worker.run)
-        def on_finished(simbad_object, pixel_coords):
-            progress.close()
-            self._simbad_thread.quit()
-            self._simbad_thread.wait()
-            if simbad_object is None:
-                QMessageBox.information(self, "Not Found", f"The object '{object_name}' was not found in SIMBAD.")
-                self.search_button.setEnabled(True)
-                self.search_button.setText("Search")
-                return
-            if pixel_coords is None:
-                QMessageBox.information(self, "Object Out of Field", \
-                    f"The object '{simbad_object.name}' was found in SIMBAD but is out of frame.\n" \
-                    f"Coordinates: RA {simbad_object.ra:.4f}°, Dec {simbad_object.dec:.4f}°")
-                self.search_button.setEnabled(True)
-                self.search_button.setText("Search")
-                self.reject()
-                return
-            self.result = (simbad_object, pixel_coords)
-            QMessageBox.information(self, "Object Found", \
-                f"Found '{simbad_object.name}' in the field!\n" \
-                f"Type: {simbad_object.object_type}\n" \
-                f"RA: {simbad_object.ra:.4f}°, Dec: {simbad_object.dec:.4f}°")
-            self.search_button.setEnabled(True)
-            self.search_button.setText("Search")
-            self.accept()
-        def on_error(msg):
-            progress.close()
-            self._simbad_thread.quit()
-            self._simbad_thread.wait()
-            QMessageBox.critical(self, "Search Error", f"Error searching SIMBAD: {msg}")
-            self.search_button.setEnabled(True)
-            self.search_button.setText("Search")
-        self._simbad_worker.finished.connect(on_finished)
-        self._simbad_worker.error.connect(on_error)
-        self._simbad_thread.start()
-
-
-class SIMBADWorker(QObject):
-    finished = pyqtSignal(object, object)  # simbad_object, pixel_coords
-    error = pyqtSignal(str)
-
-    def __init__(self, astrometry_catalog, wcs, image_shape, object_name):
-        super().__init__()
-        self.astrometry_catalog = astrometry_catalog
-        self.wcs = wcs
-        self.image_shape = image_shape
-        self.object_name = object_name
-
-    def run(self):
-        try:
-            simbad_object = self.astrometry_catalog.simbad_search(self.object_name)
-            if simbad_object is None:
-                self.finished.emit(None, None)
-                return
-            if self.wcs is None:
-                self.error.emit("No WCS information available. Please solve the image first.")
-                return
-            is_in_field, pixel_coords = self.astrometry_catalog.check_object_in_field(
-                self.wcs, self.image_shape, simbad_object
-            )
-            if is_in_field:
-                self.finished.emit(simbad_object, pixel_coords)
-            else:
-                self.finished.emit(simbad_object, None)
-        except Exception as e:
-            self.error.emit(str(e))
-
+from PyQt6.QtCore import Qt, QTimer
 
 def create_image_object(image_data: np.ndarray, display_min=None, display_max=None, clipping=False, sigma_clip=3):
     """Convert numpy array to QPixmap for display - optimized version. NaNs are replaced with the minimum finite value. If clipping is True, use sigma_clip-sigma clipping for display range."""
@@ -184,3 +42,63 @@ def create_image_object(image_data: np.ndarray, display_min=None, display_max=No
     q_image = q_image.copy()
     # Convert to pixmap
     return QPixmap.fromImage(q_image)
+
+
+class DisplayMixin:
+    """Mixin class providing image display functionality for the FITS viewer."""
+    
+    def update_image_display(self, keep_zoom=False):
+        """Update the image display with current data and zoom level."""
+        if self.image_data is None:
+            return
+        # Save current zoom and viewport center
+        if keep_zoom:
+            current_zoom = self._zoom if hasattr(self, '_zoom') else 1.0
+            # Save current viewport center for restoration
+            saved_center = self._get_viewport_center()
+        else:
+            current_zoom = getattr(self, '_zoom', 1.0)
+        viewport_w = self.scroll_area.viewport().width()
+        viewport_h = self.scroll_area.viewport().height()
+        
+        # Get display parameters from histogram controller
+        params = self.histogram_controller.get_display_parameters()
+        if params['stretch_mode'] == 'linear':
+            orig_pixmap = create_image_object(self.image_data, display_min=params['display_min'], display_max=params['display_max'], clipping=params['clipping'], sigma_clip=params['sigma_clip'])
+        else:
+            data = self.image_data.astype(float)
+            # Avoid divide-by-zero warning by only computing log10 for positive values
+            mask = data > 0
+            log_data = np.zeros_like(data)
+            log_data[mask] = np.log10(data[mask])
+            orig_pixmap = create_image_object(log_data, display_min=params['display_min'], display_max=params['display_max'], clipping=params['clipping'], sigma_clip=params['sigma_clip'])
+        self._orig_pixmap = orig_pixmap  # Always set to the unscaled pixmap
+        # Set the display pixmap according to current zoom
+        new_width = int(orig_pixmap.width() * self._zoom)
+        new_height = int(orig_pixmap.height() * self._zoom)
+        display_pixmap = orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.image_label.setPixmap(display_pixmap)
+        
+        # Add padding around the image to allow panning beyond boundaries
+        # The padding should be large enough to allow significant panning
+        padding = max(1000, max(new_width, new_height) * 2)  # At least 1000px or 2x image size
+        padded_width = new_width + padding
+        padded_height = new_height + padding
+        self.image_label.setFixedSize(padded_width, padded_height)
+        self.pixmap = orig_pixmap
+        # Set scale_factor for coordinate conversion
+        self.scale_factor = self._zoom if hasattr(self, '_zoom') else 1.0
+        
+        # If this is a new image (not restoring view), center it in the viewport
+        if not keep_zoom:
+            self._center_image_in_viewport()
+        else:
+            # Restore the viewport center with a small delay to ensure image is loaded
+            if saved_center:
+                def restore_center():
+                    self._set_viewport_center(saved_center[0], saved_center[1])
+                QTimer.singleShot(10, restore_center)
+        # If zoom mode is set to fit, update zoom
+        if getattr(self, '_pending_zoom_to_fit', False):
+            self._pending_zoom_to_fit = False
+            self.zoom_to_fit()

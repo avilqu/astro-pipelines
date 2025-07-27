@@ -439,4 +439,60 @@ class SSOOverlay:
             # Draw name to the right
             text_x = int(x + self.radius + 4)
             text_y = int(y + 4)
-            painter.drawText(text_x, text_y, obj.name) 
+            painter.drawText(text_x, text_y, obj.name)
+
+
+class OverlayMixin:
+    """Mixin class providing overlay functionality for the FITS viewer."""
+    
+    def toggle_overlay_visibility(self):
+        """Toggle the visibility of all overlays."""
+        self._overlay_visible = not self._overlay_visible
+        self.overlay_toggle_action.setChecked(self._overlay_visible)
+        self.image_label.update()
+
+    def update_overlay_button_visibility(self):
+        """Update the overlay button visibility based on whether overlays are available."""
+        self.toolbar_controller.update_overlay_button_visibility()
+
+    def on_sso_row_selected(self, row_index):
+        """Handle selection of a Solar System Object row."""
+        self._sso_highlight_index = row_index
+        self.image_label.update()
+
+    def on_ephemeris_row_selected(self, row_index, ephemeris):
+        """Handle selection of an ephemeris row and show marker at the predicted position."""
+        # Save current brightness before switching
+        self.histogram_controller.save_state_before_switch()
+        # Save current viewport state before switching
+        if hasattr(self, '_zoom'):
+            self._last_zoom = self._zoom
+        self._last_center = self._get_viewport_center()
+        # Load the corresponding FITS file and add a marker at the ephemeris position
+        if not (0 <= row_index < len(self.loaded_files)):
+            return
+        self.current_file_index = row_index
+        self.load_fits(self.loaded_files[row_index], restore_view=True)
+        self.update_close_button_visibility()
+        # Set marker overlay for ephemeris position
+        ra = ephemeris.get("RA", 0.0)
+        dec = ephemeris.get("Dec", 0.0)
+        if self.wcs is not None:
+            from astropy.wcs.utils import skycoord_to_pixel
+            from astropy.coordinates import SkyCoord
+            import astropy.units as u
+            skycoord = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
+            x, y = skycoord_to_pixel(skycoord, self.wcs)
+            self._ephemeris_overlay = ((ra, dec), (x, y))
+            self._show_ephemeris_marker((x, y))
+        else:
+            self._ephemeris_overlay = None
+            self._show_ephemeris_marker(None)
+        self.image_label.update()
+
+    def _show_ephemeris_marker(self, pixel_coords):
+        """Store the marker position for overlay drawing."""
+        self._ephemeris_marker_coords = pixel_coords
+        self._overlay_visible = True
+        self.update_overlay_button_visibility()
+        self.image_label.update() 
