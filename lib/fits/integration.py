@@ -21,7 +21,8 @@ from datetime import datetime
 
 # Import configuration
 from config import (SIGMA_LOW, SIGMA_HIGH, TESTED_FITS_CARDS, 
-                   INTEGRATION_MEMORY_LIMIT, INTEGRATION_CHUNK_SIZE, INTEGRATION_ENABLE_CHUNKED)
+                   INTEGRATION_MEMORY_LIMIT, INTEGRATION_CHUNK_SIZE, INTEGRATION_ENABLE_CHUNKED,
+                   MOTION_TRACKING_SIGMA_CLIP, MOTION_TRACKING_METHOD)
 
 # Memory management configuration
 MEMORY_LIMIT = INTEGRATION_MEMORY_LIMIT
@@ -390,6 +391,115 @@ def calculate_motion_shifts(files: List[str], object_name: str,
     return shifts
 
 
+def safe_set_metadata(meta_dict: dict, key: str, value) -> None:
+    """
+    Safely set metadata value ensuring it's compatible with FITS headers.
+    
+    Parameters:
+    -----------
+    meta_dict : dict
+        Metadata dictionary to update
+    key : str
+        Metadata key
+    value : any
+        Value to set (will be converted to string if needed)
+    """
+    # Convert value to string if it's not a basic type that FITS supports
+    if isinstance(value, (bool, int, float, str)):
+        meta_dict[key] = value
+    else:
+        meta_dict[key] = str(value)
+
+
+def calculate_required_padding(shifts: List[Tuple[float, float]]) -> Tuple[int, int, int, int]:
+    """
+    Calculate the required padding for motion tracking integration.
+    
+    Parameters:
+    -----------
+    shifts : List[Tuple[float, float]]
+        List of (dx, dy) shifts for each image
+        
+    Returns:
+    --------
+    Tuple[int, int, int, int]
+        Padding required: (left, right, top, bottom) in pixels
+    """
+    if not shifts:
+        return (0, 0, 0, 0)
+    
+    # Find the maximum shifts in each direction
+    max_dx_positive = max(0, max(dx for dx, dy in shifts))
+    max_dx_negative = max(0, max(-dx for dx, dy in shifts))
+    max_dy_positive = max(0, max(dy for dx, dy in shifts))
+    max_dy_negative = max(0, max(-dy for dx, dy in shifts))
+    
+    # Add some extra padding for interpolation artifacts
+    extra_padding = 2
+    
+    return (
+        int(max_dx_positive) + extra_padding,  # left
+        int(max_dx_negative) + extra_padding,  # right
+        int(max_dy_positive) + extra_padding,  # top
+        int(max_dy_negative) + extra_padding   # bottom
+    )
+
+
+def pad_image_for_motion_tracking(image: np.ndarray, padding: Tuple[int, int, int, int]) -> np.ndarray:
+    """
+    Pad an image for motion tracking to ensure all shifted positions have valid data.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        Input image array
+    padding : Tuple[int, int, int, int]
+        Padding: (left, right, top, bottom) in pixels
+        
+    Returns:
+    --------
+    np.ndarray
+        Padded image
+    """
+    left, right, top, bottom = padding
+    
+    if left == 0 and right == 0 and top == 0 and bottom == 0:
+        return image
+    
+    # Use 'constant' mode with edge values - this is widely supported
+    # Get the edge values to use as fill
+    if top > 0:
+        top_val = image[0, :]
+    if bottom > 0:
+        bottom_val = image[-1, :]
+    if left > 0:
+        left_val = image[:, 0]
+    if right > 0:
+        right_val = image[:, -1]
+    
+    # Create padded array
+    padded = np.zeros((image.shape[0] + top + bottom, image.shape[1] + left + right), dtype=image.dtype)
+    
+    # Copy original image to center
+    padded[top:top+image.shape[0], left:left+image.shape[1]] = image
+    
+    # Fill borders with edge values
+    if top > 0:
+        for i in range(top):
+            padded[i, left:left+image.shape[1]] = top_val
+    if bottom > 0:
+        for i in range(bottom):
+            padded[top+image.shape[0]+i, left:left+image.shape[1]] = bottom_val
+    if left > 0:
+        for j in range(left):
+            padded[top:top+image.shape[0], j] = left_val
+    if right > 0:
+        for j in range(right):
+            padded[top:top+image.shape[0], left+image.shape[1]+j] = right_val
+    
+    return padded
+
+
 def shift_image(image: np.ndarray, dx: float, dy: float, 
                 interpolation: str = 'bilinear') -> np.ndarray:
     """
@@ -416,8 +526,10 @@ def shift_image(image: np.ndarray, dx: float, dy: float,
     if dx == 0 and dy == 0:
         return image
     
-    # scipy.ndimage.shift uses (dy, dx) order
-    shifted = shift(image, (dy, dx), order=1, mode='constant', cval=np.nan)
+    # Use 'constant' mode with the minimum value of the image
+    # This avoids NaN values and is widely supported
+    fill_value = np.nanmin(image) if np.isfinite(image).any() else 0.0
+    shifted = shift(image, (dy, dx), order=1, mode='constant', cval=fill_value)
     
     return shifted
 
@@ -481,6 +593,18 @@ def integrate_chunked(files: List[str],
     # Calculate motion shifts for all files
     shifts = calculate_motion_shifts(files, object_name, reference_time)
     
+    # Calculate required padding
+    padding = calculate_required_padding(shifts)
+    print(f"Required padding: {padding}")
+    
+    # Get original image shape for cropping
+    try:
+        original_shape = extract_ccd_data(files[0]).data.shape
+        print(f"Original image shape: {original_shape}")
+    except Exception as e:
+        print(f"Warning: Could not determine original shape: {e}")
+        original_shape = None
+
     # Process in chunks
     total_chunks = (len(files) + chunk_size - 1) // chunk_size
     chunk_results = []
@@ -495,6 +619,9 @@ def integrate_chunked(files: List[str],
         
         # Load and shift images for this chunk
         shifted_images = []
+        chunk_processed = 0
+        chunk_skipped = 0
+        
         for i, (file_path, (dx, dy)) in enumerate(zip(chunk_files, chunk_shifts)):
             if progress_callback:
                 overall_progress = (chunk_idx * chunk_size + i) / len(files)
@@ -506,6 +633,11 @@ def integrate_chunked(files: List[str],
                 # Load image
                 ccd = extract_ccd_data(file_path)
                 
+                # Pad image
+                padded_data = pad_image_for_motion_tracking(ccd.data, padding)
+                ccd.data = padded_data
+                print(f"    Padded image: {ccd.data.shape} -> {padded_data.shape}")
+                
                 # Apply shift
                 if dx != 0 or dy != 0:
                     shifted_data = shift_image(ccd.data, dx, dy)
@@ -513,10 +645,14 @@ def integrate_chunked(files: List[str],
                     print(f"    Applied shift: dx={dx:.2f}, dy={dy:.2f}")
                 
                 shifted_images.append(ccd)
+                chunk_processed += 1
                 
             except Exception as e:
                 print(f"Warning: Error processing {file_path}: {e}")
+                chunk_skipped += 1
                 continue
+        
+        print(f"  Chunk {chunk_idx + 1} summary: {chunk_processed} processed, {chunk_skipped} skipped")
         
         if not shifted_images:
             print(f"Warning: No valid images in chunk {chunk_idx + 1}")
@@ -550,9 +686,9 @@ def integrate_chunked(files: List[str],
                 )
             
             # Add chunk metadata
-            chunk_stack.meta['CHUNK_ID'] = chunk_idx
-            chunk_stack.meta['CHUNK_SIZE'] = len(shifted_images)
-            chunk_stack.meta['TOTAL_CHUNKS'] = total_chunks
+            safe_set_metadata(chunk_stack.meta, 'CHUNK_ID', chunk_idx)
+            safe_set_metadata(chunk_stack.meta, 'CHUNK_SIZE', len(shifted_images))
+            safe_set_metadata(chunk_stack.meta, 'TOTAL_CHUNKS', total_chunks)
             
             chunk_results.append(chunk_stack)
             
@@ -601,13 +737,13 @@ def integrate_chunked(files: List[str],
                 )
         
         # Clean up metadata
-        final_stack.meta['COMBINED'] = True
-        final_stack.meta['MOTION_TRACKED'] = True
-        final_stack.meta['TRACKED_OBJECT'] = object_name
-        final_stack.meta['CHUNKED_PROCESSING'] = True
-        final_stack.meta['TOTAL_CHUNKS'] = total_chunks
+        safe_set_metadata(final_stack.meta, 'COMBINED', True)
+        safe_set_metadata(final_stack.meta, 'MOTION_TRACKED', True)
+        safe_set_metadata(final_stack.meta, 'TRACKED_OBJECT', object_name)
+        safe_set_metadata(final_stack.meta, 'CHUNKED_PROCESSING', True)
+        safe_set_metadata(final_stack.meta, 'TOTAL_CHUNKS', total_chunks)
         if reference_time:
-            final_stack.meta['REFERENCE_TIME'] = reference_time
+            safe_set_metadata(final_stack.meta, 'REFERENCE_TIME', reference_time)
         final_stack.uncertainty = None
         final_stack.mask = None
         final_stack.flags = None
@@ -618,6 +754,10 @@ def integrate_chunked(files: List[str],
                 del final_stack.meta[key]
         
         print(f"✓ Chunked integration complete")
+        
+        # Crop the result to restore original dimensions
+        if original_shape is not None and padding != (0, 0, 0, 0):
+            final_stack = crop_integrated_image(final_stack, original_shape, padding)
         
         # Save if requested
         if output_path:
@@ -707,9 +847,23 @@ def integrate_with_motion_tracking(files: List[str],
     # Calculate motion shifts
     shifts = calculate_motion_shifts(files, object_name, reference_time)
     
+    # Calculate required padding
+    padding = calculate_required_padding(shifts)
+    print(f"Required padding: {padding}")
+    
+    # Get original image shape for cropping
+    try:
+        original_shape = extract_ccd_data(files[0]).data.shape
+        print(f"Original image shape: {original_shape}")
+    except Exception as e:
+        print(f"Warning: Could not determine original shape: {e}")
+        original_shape = None
+
     # Load and shift images
     print(f"\nLoading and shifting images...")
     shifted_images = []
+    processed_count = 0
+    skipped_count = 0
     
     for i, (file_path, (dx, dy)) in enumerate(zip(files, shifts)):
         if progress_callback:
@@ -721,6 +875,11 @@ def integrate_with_motion_tracking(files: List[str],
             # Load image
             ccd = extract_ccd_data(file_path)
             
+            # Pad image
+            padded_data = pad_image_for_motion_tracking(ccd.data, padding)
+            ccd.data = padded_data
+            print(f"  Padded image: {ccd.data.shape} -> {padded_data.shape}")
+
             # Apply shift
             if dx != 0 or dy != 0:
                 shifted_data = shift_image(ccd.data, dx, dy)
@@ -728,10 +887,17 @@ def integrate_with_motion_tracking(files: List[str],
                 print(f"  Applied shift: dx={dx:.2f}, dy={dy:.2f}")
             
             shifted_images.append(ccd)
+            processed_count += 1
             
         except Exception as e:
             print(f"Warning: Error processing {file_path}: {e}")
+            skipped_count += 1
             continue
+    
+    print(f"\nProcessing summary:")
+    print(f"  Total files: {len(files)}")
+    print(f"  Successfully processed: {processed_count}")
+    print(f"  Skipped: {skipped_count}")
     
     if not shifted_images:
         raise MotionTrackingIntegrationError("No valid images to integrate")
@@ -768,17 +934,21 @@ def integrate_with_motion_tracking(files: List[str],
             )
         
         # Clean up metadata
-        stack.meta['COMBINED'] = True
-        stack.meta['MOTION_TRACKED'] = True
-        stack.meta['TRACKED_OBJECT'] = object_name
-        stack.meta['CHUNKED_PROCESSING'] = False
+        safe_set_metadata(stack.meta, 'COMBINED', True)
+        safe_set_metadata(stack.meta, 'MOTION_TRACKED', True)
+        safe_set_metadata(stack.meta, 'TRACKED_OBJECT', object_name)
+        safe_set_metadata(stack.meta, 'CHUNKED_PROCESSING', False)
         if reference_time:
-            stack.meta['REFERENCE_TIME'] = reference_time
+            safe_set_metadata(stack.meta, 'REFERENCE_TIME', reference_time)
         stack.uncertainty = None
         stack.mask = None
         stack.flags = None
         
         print(f"✓ Integration complete")
+        
+        # Crop the result to restore original dimensions
+        if original_shape is not None and padding != (0, 0, 0, 0):
+            stack = crop_integrated_image(stack, original_shape, padding)
         
         # Save if requested
         if output_path:
@@ -885,9 +1055,9 @@ def integrate_standard(files: List[str],
             )
         
         # Clean up metadata
-        stack.meta['COMBINED'] = True
-        stack.meta['MOTION_TRACKED'] = False
-        stack.meta['CHUNKED_PROCESSING'] = False
+        safe_set_metadata(stack.meta, 'COMBINED', True)
+        safe_set_metadata(stack.meta, 'MOTION_TRACKED', False)
+        safe_set_metadata(stack.meta, 'CHUNKED_PROCESSING', False)
         stack.uncertainty = None
         stack.mask = None
         stack.flags = None
@@ -906,3 +1076,50 @@ def integrate_standard(files: List[str],
         
     except Exception as e:
         raise MotionTrackingIntegrationError(f"Error during integration: {e}") 
+
+
+def crop_integrated_image(integrated_image: ccdp.CCDData, original_shape: Tuple[int, int], 
+                         padding: Tuple[int, int, int, int]) -> ccdp.CCDData:
+    """
+    Crop the integrated image to remove padding and restore original dimensions.
+    
+    Parameters:
+    -----------
+    integrated_image : ccdp.CCDData
+        The integrated image with padding
+    original_shape : Tuple[int, int]
+        Original image shape (height, width)
+    padding : Tuple[int, int, int, int]
+        Padding that was applied: (left, right, top, bottom)
+        
+    Returns:
+    --------
+    ccdp.CCDData
+        Cropped image with original dimensions
+    """
+    left, right, top, bottom = padding
+    
+    if left == 0 and right == 0 and top == 0 and bottom == 0:
+        return integrated_image
+    
+    # Calculate crop indices
+    crop_top = top
+    crop_bottom = integrated_image.data.shape[0] - bottom
+    crop_left = left
+    crop_right = integrated_image.data.shape[1] - right
+    
+    # Crop the image
+    cropped_data = integrated_image.data[crop_top:crop_bottom, crop_left:crop_right]
+    
+    # Create new CCDData object with cropped data
+    cropped_image = ccdp.CCDData(cropped_data, unit=integrated_image.unit)
+    cropped_image.meta = integrated_image.meta.copy()
+    
+    # Update metadata
+    safe_set_metadata(cropped_image.meta, 'CROPPED', True)
+    safe_set_metadata(cropped_image.meta, 'ORIGINAL_SHAPE', original_shape)
+    safe_set_metadata(cropped_image.meta, 'PADDING_REMOVED', padding)
+    
+    print(f"Cropped integrated image from {integrated_image.data.shape} to {cropped_data.shape}")
+    
+    return cropped_image 

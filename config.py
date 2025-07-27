@@ -64,6 +64,10 @@ INTEGRATION_MEMORY_LIMIT = 6e9  # 6GB memory limit for integration (in bytes)
 INTEGRATION_CHUNK_SIZE = 25     # Number of images to process in each chunk
 INTEGRATION_ENABLE_CHUNKED = False  # Enable chunked processing for large datasets
 
+# Motion tracking integration settings
+MOTION_TRACKING_SIGMA_CLIP = False  # Disable sigma clipping by default for motion tracking to avoid border issues
+MOTION_TRACKING_METHOD = 'average'  # Default integration method for motion tracking
+
 # Constraints for selecting calibratin masters. Note that
 # astro-pipelines generates and uses calibrated master darks
 # and scales them to match the exposure of the light frame

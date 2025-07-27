@@ -6,6 +6,7 @@ from PyQt6.QtCore import QThread, QObject, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox, QDialog
 from lib.gui.viewer.orbital_elements import OrbitComputationDialog, OrbitComputationWorker, OrbitDataWindow
 from lib.gui.common.console_window import ConsoleOutputWindow
+from config import MOTION_TRACKING_SIGMA_CLIP, MOTION_TRACKING_METHOD
 
 
 class MotionTrackingStackWorker(QObject):
@@ -40,8 +41,8 @@ class MotionTrackingStackWorker(QObject):
                 result = integrate_with_motion_tracking(
                     files=self.files,
                     object_name=self.object_name,
-                    method='average',
-                    sigma_clip=True,
+                    method=MOTION_TRACKING_METHOD,
+                    sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
                     output_path=self.output_path
                 )
                 
