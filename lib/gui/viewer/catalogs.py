@@ -288,8 +288,8 @@ class CatalogSearchMixin:
             return
         
         # Progress dialog
-        progress = QProgressDialog("Searching SIMBAD for field objects...", None, 0, 0, self)
-        progress.setWindowTitle("SIMBAD Field Search")
+        progress = QProgressDialog("Searching SIMBAD for deep-sky objects...", None, 0, 0, self)
+        progress.setWindowTitle("Deep-Sky SIMBAD Search")
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
@@ -307,7 +307,7 @@ class CatalogSearchMixin:
             self._simbad_field_thread.quit()
             self._simbad_field_thread.wait()
             if not simbad_objects:
-                QMessageBox.information(self, "No Field Objects", "No field objects found in the image.")
+                QMessageBox.information(self, "No Deep-Sky Objects", "No deep-sky objects found in the image.")
                 return
             # Overlay only those in field
             self._simbad_field_overlay = (simbad_objects, pixel_coords_list)
@@ -333,7 +333,7 @@ class CatalogSearchMixin:
             progress.close()
             self._simbad_field_thread.quit()
             self._simbad_field_thread.wait()
-            QMessageBox.critical(self, "SIMBAD Field Search Error", f"Error searching for field objects: {msg}")
+            QMessageBox.critical(self, "Deep-Sky SIMBAD Search Error", f"Error searching for deep-sky objects: {msg}")
         
         self._simbad_field_worker.finished.connect(on_finished)
         self._simbad_field_worker.error.connect(on_error)

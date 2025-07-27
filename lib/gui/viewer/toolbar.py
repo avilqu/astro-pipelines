@@ -321,7 +321,7 @@ class ToolbarController:
         
         simbad_menu.addSeparator()
         
-        find_simbad_field_action = QAction("Find SIMBAD objects in field", self.parent)
+        find_simbad_field_action = QAction("Find deep-sky objects in field", self.parent)
         find_simbad_field_action.triggered.connect(self.parent.open_simbad_field_search_dialog)
         simbad_menu.addAction(find_simbad_field_action)
         

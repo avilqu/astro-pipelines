@@ -27,16 +27,29 @@ class SolarSystemObject:
 class SIMBADObject:
     """Class to represent a SIMBAD object found in the field"""
     def __init__(self, name: str, ra: float, dec: float, object_type: str = "Unknown", 
-                 magnitude: float = None, distance: float = None):
+                 magnitude: float = None, distance: float = None, distance_unit: str = None):
         self.name = name
         self.ra = ra  # degrees
         self.dec = dec  # degrees
         self.object_type = object_type
         self.magnitude = magnitude
-        self.distance = distance  # parsecs
+        self.distance = distance  # distance value
+        self.distance_unit = distance_unit  # distance unit (pc, kpc, Mpc, etc.)
     def __str__(self):
-        mag_str = f", Mag: {self.magnitude:.2f}" if self.magnitude is not None else ""
-        dist_str = f", Dist: {self.distance:.1f}pc" if self.distance is not None else ""
+        mag_str = ""
+        if self.magnitude is not None:
+            try:
+                mag_str = f", Mag: {float(self.magnitude):.2f}"
+            except (ValueError, TypeError):
+                mag_str = f", Mag: {self.magnitude}"
+        dist_str = ""
+        if self.distance is not None:
+            try:
+                unit = self.distance_unit if self.distance_unit else "pc"
+                dist_str = f", Dist: {float(self.distance):.1f}{unit}"
+            except (ValueError, TypeError):
+                unit = self.distance_unit if self.distance_unit else "pc"
+                dist_str = f", Dist: {self.distance}{unit}"
         return f"{self.name} ({self.object_type}) - RA: {self.ra:.4f}°, Dec: {self.dec:.4f}°{mag_str}{dist_str}"
 
 class AstrometryCatalog:
@@ -61,8 +74,18 @@ class AstrometryCatalog:
                           max_magnitude: float = 25.0) -> List[SIMBADObject]:
         """Perform a SIMBAD cone search for objects within a specified radius."""
         try:
-            # Use basic SIMBAD query without extra fields to avoid hanging
+            # Configure Simbad for cone search with object type, magnitude, and distance
             Simbad.reset_votable_fields()
+            Simbad.add_votable_fields('otype', 'V', 'distance')
+            
+            # Deep-sky object types to include
+            deep_sky_types = {
+                'Cl*', 'GlC', 'OpC', 'SFR', 'HII', 'Cld', 'GNe', 'RNe', 'MoC', 'DNe', 
+                'glb', 'CGb', 'HVC', 'cor', 'bub', 'SNR', 'sh', 'flt', 'LSB', 'bCG', 
+                'SBG', 'H2G', 'EmG', 'AGN', 'SyG', 'Sy1', 'Sy2', 'rG', 'LIN', 'QSO', 
+                'Bla', 'BLL', 'GiP', 'GiG', 'GiC', 'BiC', 'IG', 'PaG', 'GrG', 'CGG', 
+                'ClG', 'PCG', 'SCG', 'PN', 'SN*'
+            }
             
             # Perform the cone search
             result = Simbad.query_region(
@@ -80,19 +103,51 @@ class AstrometryCatalog:
                     name = row['main_id'] if 'main_id' in row.colnames else str(row['matched_id'])
                     obj_ra = row['ra']  # already in degrees
                     obj_dec = row['dec']  # already in degrees
-                    obj_type = "Unknown"  # We'll get this from a separate query if needed
-                    magnitude = None  # We'll get this from a separate query if needed
-                    distance = None  # We'll get this from a separate query if needed
+                    obj_type = row['otype'] if 'otype' in row.colnames else "Unknown"
                     
-                    simbad_obj = SIMBADObject(name, obj_ra, obj_dec, obj_type, magnitude, distance)
+                    # Filter to only deep-sky objects
+                    if obj_type not in deep_sky_types:
+                        continue
+                    
+                    # Handle magnitude - check for masked values and NaN
+                    magnitude = None
+                    if 'V' in row.colnames:
+                        v_val = row['V']
+                        if hasattr(v_val, 'mask') and v_val.mask:
+                            magnitude = None
+                        elif not np.isnan(v_val):
+                            magnitude = float(v_val)
+                    
+                    # Handle distance - check for masked values and '--'
+                    distance = None
+                    distance_unit = None
+                    if 'mesdistance.dist' in row.colnames:
+                        dist_val = row['mesdistance.dist']
+                        if hasattr(dist_val, 'mask') and dist_val.mask:
+                            distance = None
+                        elif dist_val != '--' and not np.isnan(dist_val):
+                            distance = float(dist_val)
+                            # Get distance unit if available
+                            if 'mesdistance.unit' in row.colnames:
+                                unit_val = row['mesdistance.unit']
+                                if hasattr(unit_val, 'mask') and unit_val.mask:
+                                    distance_unit = None
+                                elif unit_val != '--' and unit_val is not None:
+                                    distance_unit = str(unit_val)
+                    
+                    # Filter by magnitude if specified
+                    if max_magnitude < 25.0 and magnitude is not None and magnitude > max_magnitude:
+                        continue
+                    
+                    simbad_obj = SIMBADObject(name, obj_ra, obj_dec, obj_type, magnitude, distance, distance_unit)
                     objects.append(simbad_obj)
-                    logging.info(f"Found SIMBAD object: {simbad_obj}")
+                    logging.info(f"Found deep-sky object: {simbad_obj}")
                     
                 except Exception as e:
                     logging.warning(f"Error parsing SIMBAD object: {e}")
                     continue
             
-            logging.info(f"Found {len(objects)} SIMBAD objects in cone search")
+            logging.info(f"Found {len(objects)} deep-sky objects in cone search")
             return objects
             
         except Exception as e:
@@ -267,7 +322,7 @@ class AstrometryCatalog:
 
     def get_field_simbad_objects(self, wcs: WCS, image_shape: Tuple[int, int], 
                                 radius_buffer: float = 0.1) -> List[SIMBADObject]:
-        """Get SIMBAD objects in the field of view."""
+        """Get deep-sky SIMBAD objects in the field of view."""
         try:
             center_x = image_shape[1] / 2
             center_y = image_shape[0] / 2
@@ -288,8 +343,8 @@ class AstrometryCatalog:
             else:
                 search_radius = 1.0 + radius_buffer
             
-            logging.info(f"SIMBAD field center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°")
-            logging.info(f"SIMBAD search radius: {search_radius:.3f}°")
+            logging.info(f"Deep-sky SIMBAD field center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°")
+            logging.info(f"Deep-sky SIMBAD search radius: {search_radius:.3f}°")
             
             objects = self.simbad_cone_search(ra_center, dec_center, search_radius)
             
@@ -306,7 +361,7 @@ class AstrometryCatalog:
                     if (0 <= pixel_x <= image_shape[1] and 
                         0 <= pixel_y <= image_shape[0]):
                         filtered_objects.append(obj)
-                        logging.info(f"SIMBAD object in field: {obj}")
+                        logging.info(f"Deep-sky object in field: {obj}")
                 except Exception as e:
                     logging.warning(f"Error checking if SIMBAD object {obj.name} is in field: {e}")
                     continue
@@ -314,7 +369,7 @@ class AstrometryCatalog:
             return filtered_objects
             
         except Exception as e:
-            logging.error(f"Error getting field SIMBAD objects: {e}")
+            logging.error(f"Error getting field deep-sky objects: {e}")
             return []
 
     def get_simbad_object_pixel_coordinates(self, wcs: WCS, objects: List[SIMBADObject]) -> List[Tuple[SIMBADObject, float, float]]:
