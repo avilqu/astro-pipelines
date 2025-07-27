@@ -74,8 +74,8 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         self.simbad_button = self.toolbar_controller.simbad_button
         self.sso_button = self.toolbar_controller.sso_button
         self.overlay_toggle_action = self.toolbar_controller.overlay_toggle_action
-        self.calibrate_action = self.toolbar_controller.calibrate_action
-        self.platesolve_action = self.toolbar_controller.platesolve_action
+        self.calibrate_button = self.toolbar_controller.calibrate_button
+        self.platesolve_button = self.toolbar_controller.platesolve_button
         self.header_button = self.toolbar_controller.header_button
         self.integration_button = self.toolbar_controller.integration_button
         self.filelist_action = self.toolbar_controller.filelist_action

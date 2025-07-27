@@ -436,3 +436,82 @@ class ImageOperationsMixin:
         
         console_window.cancel_requested.connect(lambda: cancelled.update({"flag": True}))
         next_in_queue() 
+
+    def calibrate_current_image(self):
+        """Calibrate the currently displayed image using bias, dark, and flat frames."""
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        from lib.gui.library.calibration_thread import CalibrationThread
+        
+        if not self.loaded_files:
+            QMessageBox.warning(self, "No files", "No FITS files loaded to calibrate.")
+            return
+        
+        current_file = self.loaded_files[self.current_file_index]
+        
+        console_window = ConsoleOutputWindow("Calibrating Current File", self)
+        console_window.show_and_raise()
+        
+        # Store thread as instance variable to prevent premature destruction
+        self._calibrate_current_thread = CalibrationThread(current_file)
+        self._calibrate_current_thread.output.connect(console_window.append_text)
+        
+        def on_finished(result):
+            if result.get('success'):
+                # Replace the current file with the calibrated version
+                calibrated_path = result['calibrated_path']
+                self.loaded_files[self.current_file_index] = calibrated_path
+                self._preloaded_fits.clear()
+                self._preload_fits_file(calibrated_path)
+                self.load_fits(calibrated_path, restore_view=True)
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+                self.update_align_button_visibility()
+                self.update_platesolve_button_visibility()
+                console_window.append_text("\nFile calibrated and loaded.\n")
+            else:
+                console_window.append_text("\nCalibration failed.\n")
+                QMessageBox.critical(self, "Calibration Error", "Calibration failed for the current file.")
+            
+            # Clean up thread reference
+            self._calibrate_current_thread = None
+        
+        self._calibrate_current_thread.finished.connect(on_finished)
+        self._calibrate_current_thread.start()
+
+    def platesolve_current_image(self):
+        """Platesolve the currently displayed image using astrometry.net."""
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        from lib.gui.library.platesolving_thread import PlatesolvingThread
+        
+        if not self.loaded_files:
+            QMessageBox.warning(self, "No files", "No FITS files loaded to platesolve.")
+            return
+        
+        current_file = self.loaded_files[self.current_file_index]
+        
+        console_window = ConsoleOutputWindow("Platesolving Current File", self)
+        console_window.show_and_raise()
+        
+        # Store thread as instance variable to prevent premature destruction
+        self._platesolve_current_thread = PlatesolvingThread(current_file)
+        self._platesolve_current_thread.output.connect(console_window.append_text)
+        
+        def on_finished(result):
+            msg = self._format_platesolving_result(result)
+            console_window.append_text(f"\n{msg}\n")
+            
+            if hasattr(result, 'success') and result.success:
+                # Reload the current file after platesolving
+                self._preloaded_fits.clear()
+                self._preload_fits_file(current_file)
+                self.load_fits(current_file, restore_view=True)
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+                self.update_align_button_visibility()
+                self.update_platesolve_button_visibility()
+            
+            # Clean up thread reference
+            self._platesolve_current_thread = None
+        
+        self._platesolve_current_thread.finished.connect(on_finished)
+        self._platesolve_current_thread.start() 

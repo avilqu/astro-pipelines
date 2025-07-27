@@ -45,8 +45,8 @@ class ToolbarController:
         self.simbad_button = None
         self.sso_button = None
         self.overlay_toggle_action = None
-        self.calibrate_action = None
-        self.platesolve_action = None
+        self.calibrate_button = None
+        self.platesolve_button = None
         self.header_button = None
         self.integration_button = None
         self.filelist_action = None
@@ -353,24 +353,59 @@ class ToolbarController:
         """Create image processing controls (calibrate, platesolve, header)."""
         self.toolbar.addWidget(make_toolbar_separator(self.parent))
         
-        # Calibrate button
+        # Calibrate button with dropdown
         calibrate_icon = QIcon.fromTheme("blur")
         if calibrate_icon.isNull():
             calibrate_icon = QIcon.fromTheme("edit-blur")
-        self.calibrate_action = QAction(calibrate_icon, "", self.parent)
-        self.calibrate_action.setToolTip("Calibrate all loaded images")
-        self.calibrate_action.setEnabled(True)
-        self.calibrate_action.triggered.connect(self.parent.calibrate_all_images)
-        self.toolbar.addAction(self.calibrate_action)
-        self.toolbar.widgetForAction(self.calibrate_action).setFixedSize(32, 32)
+        
+        self.calibrate_button = QToolButton(self.parent)
+        self.calibrate_button.setIcon(calibrate_icon)
+        self.calibrate_button.setToolTip("Calibrate images")
+        self.calibrate_button.setEnabled(True)
+        self.calibrate_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.calibrate_button.setFixedSize(32, 32)
+        
+        # Create calibrate dropdown menu
+        calibrate_menu = QMenu(self.calibrate_button)
+        
+        calibrate_current_action = QAction("Calibrate this image", self.parent)
+        calibrate_current_action.triggered.connect(self.parent.calibrate_current_image)
+        calibrate_menu.addAction(calibrate_current_action)
+        
+        calibrate_menu.addSeparator()
+        
+        calibrate_all_action = QAction("Calibrate all images", self.parent)
+        calibrate_all_action.triggered.connect(self.parent.calibrate_all_images)
+        calibrate_menu.addAction(calibrate_all_action)
+        
+        self.calibrate_button.setMenu(calibrate_menu)
+        self.calibrate_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.calibrate_button)
 
-        # Platesolve button
-        self.platesolve_action = QAction(QIcon.fromTheme("map-globe"), "", self.parent)
-        self.platesolve_action.setToolTip("Platesolve all loaded images")
-        self.platesolve_action.setEnabled(False)
-        self.platesolve_action.triggered.connect(self.parent.platesolve_all_images)
-        self.toolbar.addAction(self.platesolve_action)
-        self.toolbar.widgetForAction(self.platesolve_action).setFixedSize(32, 32)
+        # Platesolve button with dropdown
+        self.platesolve_button = QToolButton(self.parent)
+        self.platesolve_button.setIcon(QIcon.fromTheme("map-globe"))
+        self.platesolve_button.setToolTip("Platesolve images")
+        self.platesolve_button.setEnabled(False)
+        self.platesolve_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.platesolve_button.setFixedSize(32, 32)
+        
+        # Create platesolve dropdown menu
+        platesolve_menu = QMenu(self.platesolve_button)
+        
+        platesolve_current_action = QAction("Platesolve this image", self.parent)
+        platesolve_current_action.triggered.connect(self.parent.platesolve_current_image)
+        platesolve_menu.addAction(platesolve_current_action)
+        
+        platesolve_menu.addSeparator()
+        
+        platesolve_all_action = QAction("Platesolve all images", self.parent)
+        platesolve_all_action.triggered.connect(self.parent.platesolve_all_images)
+        platesolve_menu.addAction(platesolve_all_action)
+        
+        self.platesolve_button.setMenu(platesolve_menu)
+        self.platesolve_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.platesolve_button)
 
         # Header button
         self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self.parent)
@@ -486,8 +521,8 @@ class ToolbarController:
         self.overlay_toggle_action.setEnabled(False)
         
         # Disable calibration and platesolve buttons
-        self.calibrate_action.setEnabled(False)
-        self.platesolve_action.setEnabled(False)
+        self.calibrate_button.setEnabled(False)
+        self.platesolve_button.setEnabled(False)
         
         # Disable integration button
         self.integration_button.setEnabled(False)
@@ -513,8 +548,8 @@ class ToolbarController:
         # self.overlay_toggle_action.setEnabled(True)
         
         # Enable calibration and platesolve buttons
-        self.calibrate_action.setEnabled(True)
-        self.platesolve_action.setEnabled(True)
+        self.calibrate_button.setEnabled(True)
+        self.platesolve_button.setEnabled(True)
         
         # Integration button is managed separately based on number of files
         # self.integration_button.setEnabled(True)
@@ -531,7 +566,7 @@ class ToolbarController:
     
     def update_platesolve_button_visibility(self):
         """Enable platesolve button if at least one file is loaded."""
-        self.platesolve_action.setEnabled(len(self.parent.loaded_files) > 0)
+        self.platesolve_button.setEnabled(len(self.parent.loaded_files) > 0)
     
     def update_close_button_visibility(self):
         """Update the close button enabled state based on whether files are loaded."""
