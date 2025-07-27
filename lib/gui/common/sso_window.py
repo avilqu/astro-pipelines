@@ -8,6 +8,7 @@ class SSOResultWindow(QDialog):
     sso_row_selected = pyqtSignal(int)
     def __init__(self, sso_objects, pixel_coords_dict, parent=None):
         super().__init__(parent)
+        self.sso_objects = sso_objects  # Store for later use
         self.setWindowTitle("Solar System Objects in Field")
         self.setGeometry(250, 250, 900, 500)
         self.setModal(False)  # Make the dialog non-modal
@@ -84,5 +85,16 @@ class SSOResultWindow(QDialog):
     def _on_row_selected(self, table):
         selected_rows = table.selectionModel().selectedRows()
         if selected_rows:
-            row = selected_rows[0].row()
-            self.sso_row_selected.emit(row) 
+            visual_row = selected_rows[0].row()
+            # For QTableWidget, we need to get the item and find its original position
+            # Get the first column item to identify the object
+            item = table.item(visual_row, 0)  # Name column
+            if item is not None:
+                # Find the original row by searching through the original data
+                # We'll use the object name as a unique identifier
+                object_name = item.text()
+                # Find the original index by matching the object name
+                for i, obj in enumerate(self.sso_objects):
+                    if str(getattr(obj, 'name', '')) == object_name:
+                        self.sso_row_selected.emit(i)
+                        break 
