@@ -623,3 +623,63 @@ def create_wcs_from_file(wcs_file_path: str) -> WCS:
         
     except Exception as e:
         raise WCSExtractionError(f"Error creating WCS object from {wcs_file_path}: {e}") 
+
+
+def copy_wcs_from_reference(reference_header: fits.Header, target_header: fits.Header) -> fits.Header:
+    """
+    Copy WCS information from reference header to target header.
+    
+    This function is used during image alignment to ensure that aligned images
+    have the same WCS information as the reference image, which is essential
+    for maintaining coordinate consistency across aligned images.
+    
+    Parameters:
+    -----------
+    reference_header : fits.Header
+        Reference header containing the WCS information to copy
+    target_header : fits.Header
+        Target header to receive the WCS information
+        
+    Returns:
+    --------
+    fits.Header
+        New header with WCS information copied from reference
+    """
+    # Create a copy of the target header
+    new_header = target_header.copy()
+    
+    # WCS keywords to copy from reference
+    wcs_keywords = [
+        'CTYPE1', 'CTYPE2',  # Coordinate types
+        'CRPIX1', 'CRPIX2',  # Reference pixel coordinates
+        'CRVAL1', 'CRVAL2',  # Reference pixel world coordinates
+        'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2',  # CD matrix
+        'PC1_1', 'PC1_2', 'PC2_1', 'PC2_2',  # PC matrix (alternative to CD)
+        'CUNIT1', 'CUNIT2',  # Coordinate units
+        'EQUINOX',  # Equinox
+        'RADESYS',  # Reference system
+        'LONPOLE', 'LATPOLE',  # Pole coordinates
+        'PV1_0', 'PV1_1', 'PV1_2', 'PV1_3', 'PV1_4', 'PV1_5', 'PV1_6', 'PV1_7', 'PV1_8', 'PV1_9', 'PV1_10',
+        'PV2_0', 'PV2_1', 'PV2_2', 'PV2_3', 'PV2_4', 'PV2_5', 'PV2_6', 'PV2_7', 'PV2_8', 'PV2_9', 'PV2_10',
+        'WCSAXES',  # Number of WCS axes
+        'LTV1', 'LTV2',  # Linear transformation terms
+        'LTM1_1', 'LTM1_2', 'LTM2_1', 'LTM2_2',  # Linear transformation matrix
+    ]
+    
+    # Copy WCS keywords from reference to target
+    for keyword in wcs_keywords:
+        if keyword in reference_header:
+            new_header[keyword] = reference_header[keyword]
+        elif keyword in new_header:
+            # Remove WCS keywords that don't exist in reference
+            del new_header[keyword]
+    
+    # Also copy any WCS-related comments
+    if 'COMMENT' in reference_header:
+        for i, comment in enumerate(reference_header['COMMENT']):
+            if any(wcs_term in comment.upper() for wcs_term in ['WCS', 'COORDINATE', 'ASTROMETRY', 'PLATE']):
+                if 'COMMENT' not in new_header:
+                    new_header['COMMENT'] = []
+                new_header['COMMENT'].append(comment)
+    
+    return new_header 

@@ -96,6 +96,18 @@ class FileOperationsMixin:
 
     def open_and_add_file(self, fits_path):
         """Open and add a FITS file to the loaded files list."""
+        # Clean up temporary aligned files if loading a new file that's not part of current set
+        if self.loaded_files and fits_path not in self.loaded_files:
+            # Check if current files are temporary aligned files
+            current_files_are_temp = all(
+                os.path.basename(path).startswith('aligned_') and 
+                '/tmp/astropipes-aligned-' in path 
+                for path in self.loaded_files
+            )
+            if current_files_are_temp:
+                # Clean up temporary files when loading new files
+                self.cleanup_temp_files()
+        
         # Save zoom, center, and brightness before switching
         if self.image_data is not None:
             self._last_zoom = self._zoom

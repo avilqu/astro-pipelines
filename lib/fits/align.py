@@ -97,7 +97,7 @@ def _fix_byte_order_for_astroalign(image: np.ndarray) -> np.ndarray:
     else:
         return image
 
-def align_images_with_astroalign(image_datas: List[np.ndarray], reference_index: int = 0, progress_callback=None) -> List[np.ndarray]:
+def align_images_with_astroalign(image_datas: List[np.ndarray], headers: List[fits.Header], reference_index: int = 0, progress_callback=None) -> Tuple[List[np.ndarray], fits.Header]:
     """
     Align images using astroalign's asterism matching.
     
@@ -105,6 +105,8 @@ def align_images_with_astroalign(image_datas: List[np.ndarray], reference_index:
     -----------
     image_datas : List[np.ndarray]
         List of image arrays to align
+    headers : List[fits.Header]
+        List of FITS headers corresponding to the images
     reference_index : int
         Index of the reference image (default: 0)
     progress_callback : callable, optional
@@ -112,17 +114,18 @@ def align_images_with_astroalign(image_datas: List[np.ndarray], reference_index:
         
     Returns:
     --------
-    List[np.ndarray]
-        List of aligned images
+    Tuple[List[np.ndarray], fits.Header]
+        List of aligned images and the reference header with WCS information
     """
     if not ASTROALIGN_AVAILABLE:
         raise ImportError("astroalign package is required for asterism-based alignment.")
     
     if len(image_datas) < 2:
-        return image_datas
+        return image_datas, headers[0] if headers else None
     
     # Use the first image as reference
     reference_image = image_datas[reference_index]
+    reference_header = headers[reference_index] if headers else None
     aligned_images = [reference_image]  # Reference image stays unchanged
     
     n = len(image_datas) - 1  # Exclude reference image
@@ -164,7 +167,7 @@ def align_images_with_astroalign(image_datas: List[np.ndarray], reference_index:
             result[i] = aligned_images[current + 1]  # +1 because aligned_images[0] is reference
             current += 1
     
-    return result
+    return result, reference_header
 
 def find_transform_with_astroalign(source_image: np.ndarray, target_image: np.ndarray) -> Tuple[np.ndarray, List[Tuple[float, float]]]:
     """

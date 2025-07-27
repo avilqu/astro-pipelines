@@ -107,26 +107,36 @@ class AlignmentWorker(QObject):
         try:
             if self.method == "astroalign":
                 from lib.fits.align import align_images_with_astroalign, check_astroalign_available
+                from lib.fits.wcs import copy_wcs_from_reference
                 
                 if not check_astroalign_available():
                     raise ImportError("astroalign package is not available. Please install it with: pip install astroalign")
                 
-                aligned_datas = align_images_with_astroalign(
-                    self.image_datas, reference_index=0, progress_callback=self.progress.emit
+                aligned_datas, reference_header = align_images_with_astroalign(
+                    self.image_datas, self.headers, reference_index=0, progress_callback=self.progress.emit
                 )
                 
-                # For astroalign, we keep the original WCS of the reference image
+                # Copy WCS information from reference header to all aligned images
+                updated_headers = []
+                for i, header in enumerate(self.headers):
+                    if i == 0:  # Reference image - keep original header
+                        updated_headers.append(header)
+                    else:  # Aligned images - copy WCS from reference
+                        new_header = copy_wcs_from_reference(reference_header, header)
+                        updated_headers.append(new_header)
+                
+                # Create WCS object from reference header
                 common_wcs = None
-                if self.headers:
+                if reference_header:
                     from astropy.wcs import WCS
                     try:
-                        common_wcs = WCS(self.headers[0])
+                        common_wcs = WCS(reference_header)
                     except:
                         pass
                 
                 # Use reference image dimensions
-                new_nx = self.headers[0]['NAXIS1'] if self.headers else aligned_datas[0].shape[1]
-                new_ny = self.headers[0]['NAXIS2'] if self.headers else aligned_datas[0].shape[0]
+                new_nx = reference_header['NAXIS1'] if reference_header else aligned_datas[0].shape[1]
+                new_ny = reference_header['NAXIS2'] if reference_header else aligned_datas[0].shape[0]
                 
             else:  # WCS reprojection method
                 from lib.fits.align import compute_padded_reference_wcs, reproject_images_to_common_wcs
@@ -134,14 +144,36 @@ class AlignmentWorker(QObject):
                 aligned_datas = reproject_images_to_common_wcs(
                     self.image_datas, self.headers, common_wcs, (new_ny, new_nx), progress_callback=self.progress.emit
                 )
+                updated_headers = self.headers  # Headers are already properly handled in WCS reprojection
             
-            self.finished.emit(aligned_datas, common_wcs, new_nx, new_ny, self.headers)
+            self.finished.emit(aligned_datas, common_wcs, new_nx, new_ny, updated_headers)
         except Exception as e:
             self.error.emit(str(e))
 
 
 class ImageOperationsMixin:
     """Mixin class providing image calibration, platesolving, and alignment functionality."""
+    
+    def cleanup_temp_files(self):
+        """Clean up temporary aligned files."""
+        import shutil
+        if hasattr(self, '_temp_aligned_dirs'):
+            for temp_dir in self._temp_aligned_dirs:
+                try:
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+                except Exception as e:
+                    print(f"Warning: Could not remove temporary directory {temp_dir}: {e}")
+            self._temp_aligned_dirs.clear()
+    
+    def closeEvent(self, event):
+        """Override closeEvent to cleanup temporary files."""
+        self.cleanup_temp_files()
+        # Call parent closeEvent if it exists
+        if hasattr(super(), 'closeEvent'):
+            super().closeEvent(event)
+        else:
+            event.accept()
     
     def align_images(self, method=None):
         """Align all loaded images using the specified method or configuration default.
@@ -248,8 +280,21 @@ class ImageOperationsMixin:
         
         def on_finished(aligned_datas, common_wcs, new_nx, new_ny, headers):
             progress.close()
+            
+            # Create temporary directory for aligned files
+            import tempfile
+            import os
+            from astropy.io import fits
+            
+            temp_dir = tempfile.mkdtemp(prefix="astropipes-aligned-")
+            if not hasattr(self, '_temp_aligned_dirs'):
+                self._temp_aligned_dirs = []
+            self._temp_aligned_dirs.append(temp_dir)  # Track for cleanup
+            new_file_paths = []
+            
             for i, path in enumerate(self.loaded_files):
-                new_header = headers[0].copy()
+                # Use the updated header for this specific image
+                new_header = headers[i].copy()
                 new_header['NAXIS1'] = new_nx
                 new_header['NAXIS2'] = new_ny
                 # Add alignment method info to header
@@ -259,7 +304,32 @@ class ImageOperationsMixin:
                 else:
                     new_header['COMMENT'] = 'Aligned using WCS reprojection'
                 
-                self._preloaded_fits[path] = (aligned_datas[i], new_header, common_wcs)
+                # Create WCS object for this specific image
+                image_wcs = None
+                try:
+                    from astropy.wcs import WCS
+                    image_wcs = WCS(new_header)
+                except:
+                    pass
+                
+                # Save aligned image to temporary file
+                original_filename = os.path.basename(path)
+                name, ext = os.path.splitext(original_filename)
+                aligned_filename = f"aligned_{name}{ext}"
+                aligned_path = os.path.join(temp_dir, aligned_filename)
+                
+                # Create FITS file with aligned data and updated header
+                hdu = fits.PrimaryHDU(aligned_datas[i], new_header)
+                hdu.writeto(aligned_path, overwrite=True)
+                
+                new_file_paths.append(aligned_path)
+                
+                # Update the preloaded fits cache
+                self._preloaded_fits[aligned_path] = (aligned_datas[i], new_header, image_wcs)
+            
+            # Update loaded_files list to point to the new aligned files
+            self.loaded_files = new_file_paths
+            
             self.current_file_index = 0
             self.load_fits(self.loaded_files[0], restore_view=False)
             self.update_navigation_buttons()
