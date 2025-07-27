@@ -301,13 +301,27 @@ class ToolbarController:
     
     def _create_search_controls(self):
         """Create search and overlay controls."""
-        # SIMBAD search button
-        self.simbad_button = QAction(QIcon.fromTheme("file-search-symbolic"), "", self.parent)
+        # SIMBAD search button with dropdown
+        simbad_icon = QIcon.fromTheme("file-search-symbolic")
+        if simbad_icon.isNull():
+            simbad_icon = QIcon.fromTheme("search")
+        
+        self.simbad_button = QToolButton(self.parent)
+        self.simbad_button.setIcon(simbad_icon)
         self.simbad_button.setToolTip("Search for an object in SIMBAD and overlay on image")
         self.simbad_button.setEnabled(True)
-        self.simbad_button.triggered.connect(self.parent.open_simbad_search_dialog)
-        self.toolbar.addAction(self.simbad_button)
-        self.toolbar.widgetForAction(self.simbad_button).setFixedSize(32, 32)
+        self.simbad_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.simbad_button.setFixedSize(32, 32)
+        
+        # Create SIMBAD dropdown menu
+        simbad_menu = QMenu(self.simbad_button)
+        search_simbad_action = QAction("Search on SIMBAD", self.parent)
+        search_simbad_action.triggered.connect(self.parent.open_simbad_search_dialog)
+        simbad_menu.addAction(search_simbad_action)
+        
+        self.simbad_button.setMenu(simbad_menu)
+        self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.simbad_button)
         
         # Solar System Objects button
         sso_icon = QIcon.fromTheme("kstars_planets")
