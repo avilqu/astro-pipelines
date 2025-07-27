@@ -461,8 +461,10 @@ class ImageOperationsMixin:
                 # Replace the current file with the calibrated version
                 calibrated_path = result['calibrated_path']
                 self.loaded_files[self.current_file_index] = calibrated_path
+                # Reload all files to ensure cache is consistent
                 self._preloaded_fits.clear()
-                self._preload_fits_file(calibrated_path)
+                for path in self.loaded_files:
+                    self._preload_fits_file(path)
                 self.load_fits(calibrated_path, restore_view=True)
                 self.update_navigation_buttons()
                 self.update_image_count_label()
@@ -502,9 +504,10 @@ class ImageOperationsMixin:
             console_window.append_text(f"\n{msg}\n")
             
             if hasattr(result, 'success') and result.success:
-                # Reload the current file after platesolving
+                # Reload all files after platesolving to ensure cache is consistent
                 self._preloaded_fits.clear()
-                self._preload_fits_file(current_file)
+                for path in self.loaded_files:
+                    self._preload_fits_file(path)
                 self.load_fits(current_file, restore_view=True)
                 self.update_navigation_buttons()
                 self.update_image_count_label()
