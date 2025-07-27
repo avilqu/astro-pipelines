@@ -23,10 +23,41 @@ class NavigationMixin:
         angle = event.angleDelta().y()
         if angle == 0:
             return
+        
+        # Get the current mouse position relative to the image label
+        cursor_pos = event.position().toPoint()
+        
+        # Get current scroll position
+        hbar = self.scroll_area.horizontalScrollBar()
+        vbar = self.scroll_area.verticalScrollBar()
+        
+        # Calculate the point under the cursor in image coordinates before zoom
+        # This is the point we want to keep centered during zoom
+        cursor_x_in_label = cursor_pos.x() + hbar.value()
+        cursor_y_in_label = cursor_pos.y() + vbar.value()
+        
+        # Get current image dimensions and padding
+        current_width = int(self._orig_pixmap.width() * self._zoom)
+        current_height = int(self._orig_pixmap.height() * self._zoom)
+        padding = max(1000, max(current_width, current_height) * 2)
+        current_padded_width = current_width + padding
+        current_padded_height = current_height + padding
+        
+        # Calculate the offset to center the image within the padded label
+        current_x_offset = (current_padded_width - current_width) // 2
+        current_y_offset = (current_padded_height - current_height) // 2
+        
+        # Convert cursor position from label coordinates to image coordinates
+        cursor_x_in_image = (cursor_x_in_label - current_x_offset) / self._zoom
+        cursor_y_in_image = (cursor_y_in_label - current_y_offset) / self._zoom
+        
+        # Apply zoom change
         if angle > 0:
             self._zoom = min(self._zoom * self._zoom_step, self._max_zoom)
         else:
             self._zoom = max(self._zoom / self._zoom_step, self._min_zoom)
+        
+        # Calculate new image dimensions and padding
         new_width = int(self._orig_pixmap.width() * self._zoom)
         new_height = int(self._orig_pixmap.height() * self._zoom)
         
@@ -36,6 +67,23 @@ class NavigationMixin:
         padded_height = new_height + padding
         label.setFixedSize(padded_width, padded_height)
         label.setPixmap(self._orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        
+        # Calculate the new offset to center the image within the padded label
+        new_x_offset = (padded_width - new_width) // 2
+        new_y_offset = (padded_height - new_height) // 2
+        
+        # Calculate where the cursor point should be in the new zoomed image
+        new_cursor_x_in_image = cursor_x_in_image * self._zoom
+        new_cursor_y_in_image = cursor_y_in_image * self._zoom
+        
+        # Calculate the new scroll position to keep the cursor point centered
+        new_scroll_x = int(new_cursor_x_in_image + new_x_offset - cursor_pos.x())
+        new_scroll_y = int(new_cursor_y_in_image + new_y_offset - cursor_pos.y())
+        
+        # Set the new scroll position
+        hbar.setValue(new_scroll_x)
+        vbar.setValue(new_scroll_y)
+        
         event.accept()
 
     def mousePressEvent(self, event):
