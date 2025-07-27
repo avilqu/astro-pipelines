@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel, QMenu
 from PyQt6.QtGui import QFont, QColor, QBrush
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from astropy.coordinates import Angle
 import astropy.units as u
+import webbrowser
 
 class SIMBADFieldResultWindow(QDialog):
     simbad_field_row_selected = pyqtSignal(int)
@@ -11,7 +12,7 @@ class SIMBADFieldResultWindow(QDialog):
         super().__init__(parent)
         self.simbad_objects = simbad_objects  # Store for later use
         self.pixel_coords_list = pixel_coords_list
-        self.setWindowTitle("Deep-Sky Objects in Field")
+        self.setWindowTitle("Deep-Sky objects in field")
         self.setGeometry(250, 250, 900, 500)
         self.setModal(False)  # Make the dialog non-modal
         
@@ -25,6 +26,10 @@ class SIMBADFieldResultWindow(QDialog):
         table.setFont(QFont("Courier New", 10))
         table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
         table.setSelectionMode(table.SelectionMode.SingleSelection)
+        
+        # Enable context menu for the table
+        table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        table.customContextMenuRequested.connect(self._show_context_menu)
         
         def get_row_color(type_str):
             if not type_str:
@@ -95,6 +100,40 @@ class SIMBADFieldResultWindow(QDialog):
         layout.addWidget(table)
         self.setLayout(layout)
         self.table = table
+    
+    def _show_context_menu(self, position):
+        """Show context menu for the table."""
+        # Get the item at the clicked position
+        item = self.table.itemAt(position)
+        if item is None:
+            return
+        
+        # Get the row index
+        row = item.row()
+        
+        # Create context menu
+        context_menu = QMenu(self)
+        
+        # Add "View object details" action
+        view_details_action = context_menu.addAction("View object details")
+        view_details_action.triggered.connect(lambda: self._view_object_details(row))
+        
+        # Show the context menu at the cursor position
+        context_menu.exec(self.table.mapToGlobal(position))
+    
+    def _view_object_details(self, row):
+        """Open the SIMBAD object details page in the default browser."""
+        if row < len(self.simbad_objects):
+            obj = self.simbad_objects[row]
+            object_name = getattr(obj, 'name', '')
+            if object_name:
+                # Construct SIMBAD URL
+                simbad_url = f"http://simbad.u-strasbg.fr/simbad/sim-id?Ident={object_name}"
+                try:
+                    webbrowser.open(simbad_url)
+                except Exception as e:
+                    # If webbrowser fails, we could show a message box here
+                    print(f"Failed to open browser: {e}")
     
     def _on_row_selected(self, table):
         selected_rows = table.selectionModel().selectedRows()
