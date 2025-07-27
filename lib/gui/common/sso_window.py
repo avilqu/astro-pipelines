@@ -10,7 +10,7 @@ class SSOResultWindow(QDialog):
         super().__init__(parent)
         self.sso_objects = sso_objects  # Store for later use
         self.setWindowTitle("Solar System Objects in Field")
-        self.setGeometry(250, 250, 900, 500)
+        self.setGeometry(250, 250, 875, 350)
         self.setModal(False)  # Make the dialog non-modal
         layout = QVBoxLayout(self)
         table = QTableWidget(self)

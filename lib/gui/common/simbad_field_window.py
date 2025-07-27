@@ -13,7 +13,7 @@ class SIMBADFieldResultWindow(QDialog):
         self.simbad_objects = simbad_objects  # Store for later use
         self.pixel_coords_list = pixel_coords_list
         self.setWindowTitle("Deep-Sky objects in field")
-        self.setGeometry(250, 250, 900, 500)
+        self.setGeometry(250, 250, 750, 250)
         self.setModal(False)  # Make the dialog non-modal
         
         layout = QVBoxLayout(self)
