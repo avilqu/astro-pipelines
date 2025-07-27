@@ -341,6 +341,13 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         
         # Create dropdown menu
         integration_menu = QMenu(self.integration_button)
+        align_wcs_action = QAction("Align on WCS", self)
+        align_wcs_action.triggered.connect(self.align_images)
+        integration_menu.addAction(align_wcs_action)
+        
+        # Add separator
+        integration_menu.addSeparator()
+        
         stack_wcs_action = QAction("Stack on WCS", self)
         stack_wcs_action.triggered.connect(self.stack_align_wcs)
         integration_menu.addAction(stack_wcs_action)
@@ -363,13 +370,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.toolbar.addWidget(spacer)
 
-        # Restore Align button (only visible if >1 image loaded) - should be after the spacer
-        self.align_action = QAction(QIcon.fromTheme("image-rotate-symbolic"), "", self)
-        self.align_action.setToolTip("Align all images using WCS")
-        self.align_action.setVisible(False)
-        self.align_action.triggered.connect(self.align_images)
-        self.toolbar.addAction(self.align_action)
-        self.toolbar.widgetForAction(self.align_action).setFixedSize(32, 32)
+        # Align button removed - functionality moved to Integration dropdown
 
         self.toolbar.addWidget(nav_widget)
 
@@ -1210,9 +1211,8 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.show_next_file()
 
     def update_align_button_visibility(self):
-        # Hide align button if only one or no files loaded
+        # Update integration button visibility based on number of loaded files
         visible = len(self.loaded_files) > 1
-        self.align_action.setVisible(visible)
         self.filelist_action.setVisible(visible)
         # For QToolButton, always keep visible, but enable/disable
         if hasattr(self, 'integration_button'):
