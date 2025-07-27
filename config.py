@@ -67,6 +67,7 @@ INTEGRATION_ENABLE_CHUNKED = False  # Enable chunked processing for large datase
 # Motion tracking integration settings
 MOTION_TRACKING_SIGMA_CLIP = False  # Disable sigma clipping by default for motion tracking to avoid border issues
 MOTION_TRACKING_METHOD = 'average'  # Default integration method for motion tracking
+MOTION_TRACKING_CREATE_BOTH_STACKS = True  # Create both median and average stacks
 
 # Constraints for selecting calibratin masters. Note that
 # astro-pipelines generates and uses calibrated master darks

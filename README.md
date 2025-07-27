@@ -165,6 +165,31 @@ The GUI includes advanced functionality to search for and display solar system o
 - **Distance**: Distance from Earth in Astronomical Units (AU)
 - **Velocity**: Apparent motion in arcseconds per hour
 
+#### Motion Tracking Integration
+
+The motion tracking integration feature allows you to stack images while keeping moving objects (like asteroids) static in the final result. This is particularly useful for tracking solar system objects that move across the field of view during observations.
+
+**Features:**
+- **Dual Stack Output**: By default, creates both median and average stacks for comparison
+- **Ephemeris-based Tracking**: Uses orbital elements to calculate precise object positions
+- **Border Handling**: Proper padding and cropping to avoid edge artifacts
+- **Configurable**: Control stack types and processing parameters via configuration
+
+**Configuration Options:**
+- `MOTION_TRACKING_CREATE_BOTH_STACKS`: Set to `True` to create both median and average stacks, `False` for single stack
+- `MOTION_TRACKING_METHOD`: Default method when creating single stack ('average', 'median', 'sum')
+- `MOTION_TRACKING_SIGMA_CLIP`: Enable/disable sigma clipping (default: False to avoid border issues)
+
+**Usage:**
+1. Load a sequence of FITS images in the viewer
+2. Compute orbit data for the target object using "Solar System Objects" menu
+3. Use "Stack on ephemeris" from the integration menu
+4. Both median and average stacks will be created and loaded into the viewer
+
+**Output Files:**
+- `{basename}_median.fits`: Median stack (better for noise reduction)
+- `{basename}_average.fits`: Average stack (better for signal preservation)
+
 ### AutoPipe Usage
 
 AutoPipe automatically monitors the observation directory (configured via `OBS_PATH` in `config.py`) for new FITS files and processes them through the calibration and platesolving pipeline.

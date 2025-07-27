@@ -6,13 +6,13 @@ from PyQt6.QtCore import QThread, QObject, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox, QDialog
 from lib.gui.viewer.orbital_elements import OrbitComputationDialog, OrbitComputationWorker, OrbitDataWindow
 from lib.gui.common.console_window import ConsoleOutputWindow
-from config import MOTION_TRACKING_SIGMA_CLIP, MOTION_TRACKING_METHOD
+from config import MOTION_TRACKING_SIGMA_CLIP, MOTION_TRACKING_METHOD, MOTION_TRACKING_CREATE_BOTH_STACKS
 
 
 class MotionTrackingStackWorker(QObject):
     """Worker thread for motion tracking integration."""
     console_output = pyqtSignal(str)  # console output text
-    finished = pyqtSignal(bool, str)  # success, message
+    finished = pyqtSignal(bool, str, list)  # success, message, output_files
     
     def __init__(self, files, object_name, output_path, console_window=None):
         super().__init__()
@@ -35,26 +35,84 @@ class MotionTrackingStackWorker(QObject):
             try:
                 self.console_output.emit(f"\033[1;34mStarting motion tracking integration for {self.object_name}\033[0m\n")
                 self.console_output.emit(f"\033[1;34mProcessing {len(self.files)} files\033[0m\n")
-                self.console_output.emit(f"\033[1;34mOutput will be saved to: {self.output_path}\033[0m\n\n")
                 
-                # Perform motion tracking integration
-                result = integrate_with_motion_tracking(
-                    files=self.files,
-                    object_name=self.object_name,
-                    method=MOTION_TRACKING_METHOD,
-                    sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
-                    output_path=self.output_path
-                )
+                if MOTION_TRACKING_CREATE_BOTH_STACKS:
+                    self.console_output.emit(f"\033[1;34mConfiguration: Creating both median and average stacks\033[0m\n")
+                else:
+                    self.console_output.emit(f"\033[1;34mConfiguration: Creating single {MOTION_TRACKING_METHOD} stack\033[0m\n")
                 
-                # Success message
-                message = f"Successfully created motion tracked stack:\n"
-                message += f"Object: {self.object_name}\n"
-                message += f"Files processed: {len(self.files)}\n"
-                message += f"Output: {self.output_path}\n"
-                message += f"Image shape: {result.data.shape}\n"
-                message += f"Data range: {result.data.min():.2f} to {result.data.max():.2f}"
+                output_files = []
                 
-                self.finished.emit(True, message)
+                # Generate output filenames
+                output_dir = os.path.dirname(self.output_path)
+                base_name = os.path.splitext(os.path.basename(self.output_path))[0]
+                
+                if MOTION_TRACKING_CREATE_BOTH_STACKS:
+                    self.console_output.emit(f"\033[1;34mWill create both median and average stacks\033[0m\n\n")
+                    
+                    # Create median stack
+                    median_output_path = os.path.join(output_dir, f"{base_name}_median.fits")
+                    self.console_output.emit(f"\033[1;33mCreating median stack...\033[0m\n")
+                    
+                    median_result = integrate_with_motion_tracking(
+                        files=self.files,
+                        object_name=self.object_name,
+                        method='median',
+                        sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
+                        output_path=median_output_path
+                    )
+                    output_files.append(median_output_path)
+                    
+                    self.console_output.emit(f"\033[1;32m✓ Median stack completed\033[0m\n")
+                    
+                    # Create average stack
+                    average_output_path = os.path.join(output_dir, f"{base_name}_average.fits")
+                    self.console_output.emit(f"\033[1;33mCreating average stack...\033[0m\n")
+                    
+                    average_result = integrate_with_motion_tracking(
+                        files=self.files,
+                        object_name=self.object_name,
+                        method='average',
+                        sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
+                        output_path=average_output_path
+                    )
+                    output_files.append(average_output_path)
+                    
+                    self.console_output.emit(f"\033[1;32m✓ Average stack completed\033[0m\n")
+                    
+                    # Success message for both stacks
+                    message = f"Successfully created motion tracked stacks:\n"
+                    message += f"Object: {self.object_name}\n"
+                    message += f"Files processed: {len(self.files)}\n"
+                    message += f"Median stack: {median_output_path}\n"
+                    message += f"Average stack: {average_output_path}\n"
+                    message += f"Median image shape: {median_result.data.shape}\n"
+                    message += f"Average image shape: {average_result.data.shape}\n"
+                    message += f"Median data range: {median_result.data.min():.2f} to {median_result.data.max():.2f}\n"
+                    message += f"Average data range: {average_result.data.min():.2f} to {average_result.data.max():.2f}"
+                else:
+                    self.console_output.emit(f"\033[1;34mWill create {MOTION_TRACKING_METHOD} stack\033[0m\n\n")
+                    
+                    # Create single stack with configured method
+                    result = integrate_with_motion_tracking(
+                        files=self.files,
+                        object_name=self.object_name,
+                        method=MOTION_TRACKING_METHOD,
+                        sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
+                        output_path=self.output_path
+                    )
+                    output_files.append(self.output_path)
+                    
+                    # Success message for single stack
+                    message = f"Successfully created motion tracked stack:\n"
+                    message += f"Object: {self.object_name}\n"
+                    message += f"Files processed: {len(self.files)}\n"
+                    message += f"Method: {MOTION_TRACKING_METHOD}\n"
+                    message += f"Output: {self.output_path}\n"
+                    message += f"Image shape: {result.data.shape}\n"
+                    message += f"Data range: {result.data.min():.2f} to {result.data.max():.2f}"
+                
+                self.finished.emit(True, message, output_files)
                 
             finally:
                 # Restore stdout/stderr
@@ -62,11 +120,11 @@ class MotionTrackingStackWorker(QObject):
                 sys.stderr = old_stderr
             
         except MotionTrackingIntegrationError as e:
-            self.finished.emit(False, f"Motion tracking integration error: {e}")
+            self.finished.emit(False, f"Motion tracking integration error: {e}", [])
         except Exception as e:
             import traceback
             error_msg = f"Unexpected error during motion tracking integration:\n{str(e)}\n\n{traceback.format_exc()}"
-            self.finished.emit(False, error_msg)
+            self.finished.emit(False, error_msg, [])
 
 
 class IntegrationMixin:
@@ -192,13 +250,14 @@ class IntegrationMixin:
         def on_console_output(text):
             console_window.append_text(text)
         
-        def on_finished(success, message):
+        def on_finished(success, message, output_files):
             if success:
                 console_window.append_text(f"\n\033[1;32mMotion tracking integration completed successfully!\033[0m\n\n{message}\n")
-                # Add the result to the loaded files in the viewer
-                self.loaded_files.append(output_file)
-                # Load the file in the viewer
-                self.open_and_add_file(output_file)
+                # Add the results to the loaded files in the viewer
+                self.loaded_files.extend(output_files)
+                # Load the files in the viewer
+                for file_path in output_files:
+                    self.open_and_add_file(file_path)
                 # Update navigation buttons and file count
                 self.update_navigation_buttons()
                 self.update_image_count_label()
