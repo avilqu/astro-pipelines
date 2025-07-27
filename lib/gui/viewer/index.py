@@ -433,36 +433,114 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         if file_path:
             self.open_and_add_file(file_path)
 
+    def open_file(self):
+        """Alias for open_file_dialog for keyboard shortcuts"""
+        self.open_file_dialog()
+
     def _get_viewport_center(self):
         # Returns the center of the viewport in image coordinates (x, y)
+        if self.image_label.pixmap() is None or self.image_data is None:
+            return None
+            
         hbar = self.scroll_area.horizontalScrollBar()
         vbar = self.scroll_area.verticalScrollBar()
         viewport_w = self.scroll_area.viewport().width()
         viewport_h = self.scroll_area.viewport().height()
-        img_w = self.image_label.width()
-        img_h = self.image_label.height()
-        if img_w > 0 and img_h > 0:
+        label_w = self.image_label.width()
+        label_h = self.image_label.height()
+        
+        if label_w > 0 and label_h > 0:
+            # Get the original image dimensions
+            img_h, img_w = self.image_data.shape
+            
+            # Calculate the image dimensions in the current zoom
+            pixmap_w = self.image_label.pixmap().width()
+            pixmap_h = self.image_label.pixmap().height()
+            
+            # Calculate the scale factor (same as in overlay coordinate conversion)
+            scale_x = pixmap_w / img_w
+            scale_y = pixmap_h / img_h
+            scale = scale_x  # or scale_y, they should be equal
+            
+            # Calculate the offset to center the image within the padded label
+            x_offset = (label_w - pixmap_w) // 2
+            y_offset = (label_h - pixmap_h) // 2
+            
+            # Get the center of the viewport in label coordinates
             center_x = hbar.value() + viewport_w // 2
             center_y = vbar.value() + viewport_h // 2
-            # Convert to image coordinates
-            img_cx = int(center_x / self._zoom)
-            img_cy = int(center_y / self._zoom)
-            return (img_cx, img_cy)
+            
+            # Convert from label coordinates to image coordinates (reverse of overlay conversion)
+            pixmap_x = center_x - x_offset
+            pixmap_y = center_y - y_offset
+            
+            if (0 <= pixmap_x < pixmap_w and 0 <= pixmap_y < pixmap_h):
+                img_cx = pixmap_x / scale
+                img_cy = pixmap_y / scale
+                return (img_cx, img_cy)
         return None
 
     def _set_viewport_center(self, img_cx, img_cy):
         # Centers the viewport on (img_cx, img_cy) in image coordinates
-        new_width = self.image_label.width()
-        new_height = self.image_label.height()
+        if self.image_label.pixmap() is None:
+            return
+            
         viewport_w = self.scroll_area.viewport().width()
         viewport_h = self.scroll_area.viewport().height()
-        if new_width > 0 and new_height > 0:
-            center_x = int(img_cx * self._zoom)
-            center_y = int(img_cy * self._zoom)
+        label_w = self.image_label.width()
+        label_h = self.image_label.height()
+        
+        if label_w > 0 and label_h > 0:
+            # Get the original image dimensions
+            img_h, img_w = self.image_data.shape
+            
+            # Calculate the image dimensions in the current zoom
+            pixmap_w = self.image_label.pixmap().width()
+            pixmap_h = self.image_label.pixmap().height()
+            
+            # Calculate the scale factor (same as in overlay coordinate conversion)
+            scale_x = pixmap_w / img_w
+            scale_y = pixmap_h / img_h
+            scale = scale_x  # or scale_y, they should be equal
+            
+            # Calculate the offset to center the image within the padded label
+            x_offset = (label_w - pixmap_w) // 2
+            y_offset = (label_h - pixmap_h) // 2
+            
+            # Convert image coordinates to label coordinates (same as overlay conversion)
+            center_x = int(img_cx * scale) + x_offset
+            center_y = int(img_cy * scale) + y_offset
+            
             hbar = self.scroll_area.horizontalScrollBar()
             vbar = self.scroll_area.verticalScrollBar()
-            hbar.setValue(max(0, center_x - viewport_w // 2))
-            vbar.setValue(max(0, center_y - viewport_h // 2))
+            # Allow centering beyond image boundaries by not constraining to minimum values
+            hbar.setValue(center_x - viewport_w // 2)
+            vbar.setValue(center_y - viewport_h // 2)
+
+    def _center_image_in_viewport(self):
+        """Center the image in the viewport, accounting for padding"""
+        if self.image_label.pixmap() is None:
+            return
+        
+        viewport_w = self.scroll_area.viewport().width()
+        viewport_h = self.scroll_area.viewport().height()
+        label_w = self.image_label.width()
+        label_h = self.image_label.height()
+        
+        # Calculate the center of the image within the padded label
+        # The image is centered in the label, so its center is at label_w/2, label_h/2
+        image_center_x = label_w // 2
+        image_center_y = label_h // 2
+        
+        # Calculate scroll position to center the image in the viewport
+        hbar = self.scroll_area.horizontalScrollBar()
+        vbar = self.scroll_area.verticalScrollBar()
+        
+        scroll_x = image_center_x - viewport_w // 2
+        scroll_y = image_center_y - viewport_h // 2
+        
+        hbar.setValue(scroll_x)
+        vbar.setValue(scroll_y)
 
     def open_and_add_file(self, fits_path):
         # Save zoom, center, and brightness before switching
@@ -482,7 +560,16 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self.loaded_files.append(fits_path)
             self.current_file_index = len(self.loaded_files) - 1
             self._preload_fits_file(fits_path)
-            self.load_fits(fits_path, restore_view=True)
+            self.load_fits(fits_path, restore_view=False)  # New files should be centered, not restore view
+            # Auto-zoom to fit for the first file loaded
+            if len(self.loaded_files) == 1:
+                from PyQt6.QtCore import QTimer
+                from PyQt6.QtWidgets import QApplication
+                # Process events and then apply zoom to fit
+                def delayed_zoom():
+                    QApplication.processEvents()
+                    self.zoom_to_fit()
+                QTimer.singleShot(100, delayed_zoom)
         self.update_navigation_buttons()
         self.update_image_count_label()
         self.update_align_button_visibility()
@@ -684,8 +771,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         current_brightness = self.brightness_slider.value()
         self.brightness_slider.setValue(current_brightness)
         self.on_brightness_slider_changed(current_brightness)
-        self.update_image_display(keep_zoom=True)
-        self.zoom_to_fit()
+        # Don't call zoom_to_fit() as it changes the viewport position
 
     def set_log_stretch(self):
         self.stretch_mode = 'log'
@@ -699,8 +785,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         current_brightness = self.brightness_slider.value()
         self.brightness_slider.setValue(current_brightness)
         self.on_brightness_slider_changed(current_brightness)
-        self.update_image_display(keep_zoom=True)
-        self.zoom_to_fit()
+        # Don't call zoom_to_fit() as it changes the viewport position
 
     def toggle_clipping(self):
         self.clipping_enabled = not self.clipping_enabled
@@ -720,25 +805,22 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def update_image_display(self, keep_zoom=False):
         if self.image_data is None:
             return
-        # Save current zoom and center of view in image coordinates
+        # Save current zoom and scroll position
         if keep_zoom:
             current_zoom = self._zoom if hasattr(self, '_zoom') else 1.0
+            # Use saved scroll position if available, otherwise save current
+            if hasattr(self, '_last_scroll_x') and hasattr(self, '_last_scroll_y'):
+                saved_scroll_x = self._last_scroll_x
+                saved_scroll_y = self._last_scroll_y
+            else:
+                hbar = self.scroll_area.horizontalScrollBar()
+                vbar = self.scroll_area.verticalScrollBar()
+                saved_scroll_x = hbar.value()
+                saved_scroll_y = vbar.value()
         else:
             current_zoom = getattr(self, '_zoom', 1.0)
-        hbar = self.scroll_area.horizontalScrollBar()
-        vbar = self.scroll_area.verticalScrollBar()
         viewport_w = self.scroll_area.viewport().width()
         viewport_h = self.scroll_area.viewport().height()
-        old_width = self.image_label.width()
-        old_height = self.image_label.height()
-        # Compute center of viewport in image coordinates
-        if old_width > 0 and old_height > 0:
-            center_x = hbar.value() + viewport_w // 2
-            center_y = vbar.value() + viewport_h // 2
-            rel_cx = center_x / old_width
-            rel_cy = center_y / old_height
-        else:
-            rel_cx = rel_cy = 0.5
         if self.stretch_mode == 'linear':
             orig_pixmap = create_image_object(self.image_data, display_min=self.display_min, display_max=self.display_max, clipping=self.clipping_enabled, sigma_clip=self.sigma_clip)
         else:
@@ -754,17 +836,29 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         new_height = int(orig_pixmap.height() * self._zoom)
         display_pixmap = orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.image_label.setPixmap(display_pixmap)
-        self.image_label.setFixedSize(new_width, new_height)
+        
+        # Add padding around the image to allow panning beyond boundaries
+        # The padding should be large enough to allow significant panning
+        padding = max(1000, max(new_width, new_height) * 2)  # At least 1000px or 2x image size
+        padded_width = new_width + padding
+        padded_height = new_height + padding
+        self.image_label.setFixedSize(padded_width, padded_height)
         self.pixmap = orig_pixmap
         # Set scale_factor for coordinate conversion
         self.scale_factor = self._zoom if hasattr(self, '_zoom') else 1.0
-        # Restore scroll position to keep the same view center
-        hbar = self.scroll_area.horizontalScrollBar()
-        vbar = self.scroll_area.verticalScrollBar()
-        new_cx = int(rel_cx * new_width)
-        new_cy = int(rel_cy * new_height)
-        hbar.setValue(max(0, new_cx - viewport_w // 2))
-        vbar.setValue(max(0, new_cy - viewport_h // 2))
+        
+        # If this is a new image (not restoring view), center it in the viewport
+        if not keep_zoom:
+            self._center_image_in_viewport()
+        else:
+            # Restore the exact scroll position with a small delay to ensure image is loaded
+            from PyQt6.QtCore import QTimer
+            def restore_scroll():
+                hbar = self.scroll_area.horizontalScrollBar()
+                vbar = self.scroll_area.verticalScrollBar()
+                hbar.setValue(saved_scroll_x)
+                vbar.setValue(saved_scroll_y)
+            QTimer.singleShot(10, restore_scroll)
         # If zoom mode is set to fit, update zoom
         if getattr(self, '_pending_zoom_to_fit', False):
             self._pending_zoom_to_fit = False
@@ -773,6 +867,20 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def reset_zoom(self):
         self._zoom = 1.0
         self.update_image_display(keep_zoom=False)
+
+    def zoom_in_at_center(self):
+        """Zoom in at the current viewport center"""
+        if self._orig_pixmap is None:
+            return
+        self._zoom = min(self._zoom * 1.15, 20.0)
+        self.update_image_display(keep_zoom=True)
+
+    def zoom_out_at_center(self):
+        """Zoom out at the current viewport center"""
+        if self._orig_pixmap is None:
+            return
+        self._zoom = max(self._zoom / 1.15, 0.05)
+        self.update_image_display(keep_zoom=True)
 
     def zoom_to_fit(self):
         if self.image_label.pixmap() is None:
@@ -785,11 +893,24 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         scale_x = viewport.width() / pixmap.width()
         scale_y = viewport.height() / pixmap.height()
         self._zoom = min(scale_x, scale_y)
-        # Update display
-        new_width = int(pixmap.width() * self._zoom)
-        new_height = int(pixmap.height() * self._zoom)
-        self.image_label.setFixedSize(new_width, new_height)
-        self.image_label.setPixmap(self._orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        # Use the proper display update mechanism
+        self.update_image_display(keep_zoom=False)
+        # Center the image in the viewport
+        self._center_image_in_viewport()
+        # Force a repaint to ensure the viewport is updated
+        self.image_label.update()
+        self.scroll_area.viewport().update()
+        # Force the viewport to center on the image
+        label_w = self.image_label.width()
+        label_h = self.image_label.height()
+        viewport_w = self.scroll_area.viewport().width()
+        viewport_h = self.scroll_area.viewport().height()
+        center_x = (label_w - viewport_w) // 2
+        center_y = (label_h - viewport_h) // 2
+        hbar = self.scroll_area.horizontalScrollBar()
+        vbar = self.scroll_area.verticalScrollBar()
+        hbar.setValue(center_x)
+        vbar.setValue(center_y)
 
     def load_fits(self, fits_path, restore_view=False):
         try:
@@ -817,7 +938,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     else:
                         self._zoom = 1.0
                     self._pending_zoom_to_fit = False
-                    self.update_image_display(keep_zoom=True)
+                    self.update_image_display(keep_zoom=restore_view)
                     self.image_label.setText("")
                     self.setWindowTitle(f"Astropipes FITS Viewer - {fits_path}")
                     self.header_button.setEnabled(True)
@@ -1337,6 +1458,13 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
             self._last_brightness = self.brightness_slider.value()
         else:
             self._last_brightness = 50
+        # Save current viewport state before switching
+        if hasattr(self, '_zoom'):
+            self._last_zoom = self._zoom
+        hbar = self.scroll_area.horizontalScrollBar()
+        vbar = self.scroll_area.verticalScrollBar()
+        self._last_scroll_x = hbar.value()
+        self._last_scroll_y = vbar.value()
         # Load the corresponding FITS file and add a marker at the ephemeris position
         if not (0 <= row_index < len(self.loaded_files)):
             return
@@ -1468,7 +1596,9 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Center the viewport on the center of the selected region
         center_x = (x0 + x1) / 2
         center_y = (y0 + y1) / 2
-        self.update_image_display(keep_zoom=True)
+        # Update display with new zoom level
+        self.update_image_display(keep_zoom=False)  # Use keep_zoom=False to apply new zoom
+        # Set viewport center after display is updated
         self._set_viewport_center(center_x, center_y)
         # Optionally, turn off region mode after zoom
         self.zoom_region_action.setChecked(False)
@@ -1535,11 +1665,8 @@ def main():
     if fits_paths:
         for i, path in enumerate(fits_paths):
             viewer.open_and_add_file(path)
-        # Show the first file
-        if viewer.loaded_files:
-            viewer.current_file_index = 0
-            viewer.load_fits(viewer.loaded_files[0])
-            viewer.update_navigation_buttons()
+        # The first file is already loaded by open_and_add_file
+        viewer.update_navigation_buttons()
     viewer.show()
     # Ensure zoom to fit is called after the window is visible
     QTimer.singleShot(0, viewer.zoom_to_fit)

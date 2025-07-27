@@ -119,15 +119,20 @@ class ImageLabel(QLabel):
         scroll_area = self.parent_viewer.scroll_area
         h_scroll = scroll_area.horizontalScrollBar()
         v_scroll = scroll_area.verticalScrollBar()
-        target_h = max(0, min(self.target_scroll_pos.x(), h_scroll.maximum()))
-        target_v = max(0, min(self.target_scroll_pos.y(), v_scroll.maximum()))
+        
+        # Allow panning beyond image boundaries by not constraining to maximum values
+        # This enables viewing "empty space" around the image when zoomed out
+        target_h = self.target_scroll_pos.x()
+        target_v = self.target_scroll_pos.y()
+        
         current_h = h_scroll.value()
         current_v = v_scroll.value()
         interpolation_factor = 0.7
         new_h = int(current_h + (target_h - current_h) * interpolation_factor)
         new_v = int(current_v + (target_v - current_v) * interpolation_factor)
-        new_h = max(0, min(new_h, h_scroll.maximum()))
-        new_v = max(0, min(new_v, v_scroll.maximum()))
+        
+        # Set the scroll values without constraining to maximum
+        # This allows negative values and values beyond the image size
         h_scroll.setValue(new_h)
         v_scroll.setValue(new_v)
 

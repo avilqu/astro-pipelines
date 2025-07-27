@@ -29,7 +29,12 @@ class NavigationMixin:
             self._zoom = max(self._zoom / self._zoom_step, self._min_zoom)
         new_width = int(self._orig_pixmap.width() * self._zoom)
         new_height = int(self._orig_pixmap.height() * self._zoom)
-        label.setFixedSize(new_width, new_height)
+        
+        # Add padding around the image to allow panning beyond boundaries
+        padding = max(1000, max(new_width, new_height) * 2)  # At least 1000px or 2x image size
+        padded_width = new_width + padding
+        padded_height = new_height + padding
+        label.setFixedSize(padded_width, padded_height)
         label.setPixmap(self._orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         event.accept()
 
@@ -55,9 +60,12 @@ class NavigationMixin:
                 return
             hbar = self.scroll_area.horizontalScrollBar()
             vbar = self.scroll_area.verticalScrollBar()
-            # Apply pan speed coefficient
-            hbar.setValue(hbar.value() - int(delta.x() * self._pan_speed))
-            vbar.setValue(vbar.value() - int(delta.y() * self._pan_speed))
+            # Apply pan speed coefficient and allow panning beyond image boundaries
+            new_h = hbar.value() - int(delta.x() * self._pan_speed)
+            new_v = vbar.value() - int(delta.y() * self._pan_speed)
+            # Set values without constraining to maximum/minimum to allow panning beyond boundaries
+            hbar.setValue(new_h)
+            vbar.setValue(new_v)
             self._last_pan_pos = current_pos
             event.accept()
         else:
