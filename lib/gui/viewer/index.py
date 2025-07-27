@@ -810,18 +810,11 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
     def update_image_display(self, keep_zoom=False):
         if self.image_data is None:
             return
-        # Save current zoom and scroll position
+        # Save current zoom and viewport center
         if keep_zoom:
             current_zoom = self._zoom if hasattr(self, '_zoom') else 1.0
-            # Use saved scroll position if available, otherwise save current
-            if hasattr(self, '_last_scroll_x') and hasattr(self, '_last_scroll_y'):
-                saved_scroll_x = self._last_scroll_x
-                saved_scroll_y = self._last_scroll_y
-            else:
-                hbar = self.scroll_area.horizontalScrollBar()
-                vbar = self.scroll_area.verticalScrollBar()
-                saved_scroll_x = hbar.value()
-                saved_scroll_y = vbar.value()
+            # Save current viewport center for restoration
+            saved_center = self._get_viewport_center()
         else:
             current_zoom = getattr(self, '_zoom', 1.0)
         viewport_w = self.scroll_area.viewport().width()
@@ -856,14 +849,12 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         if not keep_zoom:
             self._center_image_in_viewport()
         else:
-            # Restore the exact scroll position with a small delay to ensure image is loaded
-            from PyQt6.QtCore import QTimer
-            def restore_scroll():
-                hbar = self.scroll_area.horizontalScrollBar()
-                vbar = self.scroll_area.verticalScrollBar()
-                hbar.setValue(saved_scroll_x)
-                vbar.setValue(saved_scroll_y)
-            QTimer.singleShot(10, restore_scroll)
+            # Restore the viewport center with a small delay to ensure image is loaded
+            if saved_center:
+                from PyQt6.QtCore import QTimer
+                def restore_center():
+                    self._set_viewport_center(saved_center[0], saved_center[1])
+                QTimer.singleShot(10, restore_center)
         # If zoom mode is set to fit, update zoom
         if getattr(self, '_pending_zoom_to_fit', False):
             self._pending_zoom_to_fit = False
@@ -1443,6 +1434,10 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                     self._last_brightness = self.brightness_slider.value()
                 else:
                     self._last_brightness = 50
+                # Save current viewport state before switching
+                if hasattr(self, '_zoom'):
+                    self._last_zoom = self._zoom
+                self._last_center = self._get_viewport_center()
                 self.current_file_index = row
                 self.load_fits(self.loaded_files[row], restore_view=True)
                 self.update_navigation_buttons()
@@ -1472,10 +1467,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Save current viewport state before switching
         if hasattr(self, '_zoom'):
             self._last_zoom = self._zoom
-        hbar = self.scroll_area.horizontalScrollBar()
-        vbar = self.scroll_area.verticalScrollBar()
-        self._last_scroll_x = hbar.value()
-        self._last_scroll_y = vbar.value()
+        self._last_center = self._get_viewport_center()
         # Load the corresponding FITS file and add a marker at the ephemeris position
         if not (0 <= row_index < len(self.loaded_files)):
             return
@@ -1657,13 +1649,21 @@ class FileListWindow(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(self.table)
         self.setLayout(layout)
-        self.table.cellDoubleClicked.connect(self._row_activated)
-        self.table.cellClicked.connect(self._row_activated)
+        # Connect selection change instead of clicks to enable keyboard navigation
+        self.table.selectionModel().selectionChanged.connect(self._on_selection_changed)
 
     def _row_activated(self, row, col):
         if 0 <= row < len(self.file_paths):
             self.on_row_selected(row)
             # Do not close the window here
+
+    def _on_selection_changed(self, selected, deselected):
+        """Handle selection changes to enable keyboard navigation."""
+        selected_rows = self.table.selectionModel().selectedRows()
+        if selected_rows:
+            row = selected_rows[0].row()
+            if 0 <= row < len(self.file_paths):
+                self.on_row_selected(row)
 
     def select_row(self, row):
         if 0 <= row < self.table.rowCount():

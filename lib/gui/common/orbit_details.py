@@ -59,8 +59,8 @@ class OrbitDataWindow(QMainWindow):
         self.positions_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         positions_layout.addWidget(self.positions_table)
         
-        # Connect the table click event
-        self.positions_table.cellClicked.connect(self._on_row_clicked)
+        # Connect selection change instead of clicks to enable keyboard navigation
+        self.positions_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
         
         # Add the tab
         self.tab_widget.addTab(positions_widget, "Positions")
@@ -96,6 +96,10 @@ class OrbitDataWindow(QMainWindow):
                 value = entry.get(key, "")
                 self.positions_table.setItem(i, j, QTableWidgetItem(str(value)))
         self.positions_table.resizeColumnsToContents()
+        
+        # Set initial selection to first row to trigger viewer update
+        if predicted_positions:
+            self.positions_table.selectRow(0)
 
     def _populate_pseudo_mpec(self, pseudo_mpec_text):
         """Populate the pseudo MPEC text area."""
@@ -107,6 +111,14 @@ class OrbitDataWindow(QMainWindow):
     def _on_row_clicked(self, row, col):
         if 0 <= row < len(self.predicted_positions):
             self.row_selected.emit(row, self.predicted_positions[row])
+
+    def _on_selection_changed(self, selected, deselected):
+        """Handle selection changes to enable keyboard navigation."""
+        selected_rows = self.positions_table.selectionModel().selectedRows()
+        if selected_rows:
+            row = selected_rows[0].row()
+            if 0 <= row < len(self.predicted_positions):
+                self.row_selected.emit(row, self.predicted_positions[row])
     
 
 
