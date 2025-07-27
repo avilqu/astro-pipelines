@@ -426,7 +426,7 @@ def integrate_chunked(files: List[str],
                      object_name: str,
                      reference_time: Optional[str] = None,
                      method: str = 'average',
-                     sigma_clip: bool = True,
+                     sigma_clip: bool = False,
                      scale: Optional[Callable] = None,
                      output_path: Optional[str] = None,
                      progress_callback: Optional[Callable] = None,
@@ -446,7 +446,7 @@ def integrate_chunked(files: List[str],
     method : str
         Integration method ('average', 'median', 'sum')
     sigma_clip : bool
-        Whether to apply sigma clipping
+        Whether to apply sigma clipping (default: False for raw output)
     scale : Optional[Callable]
         Scaling function (e.g., for flat fielding)
     output_path : Optional[str]
@@ -461,7 +461,7 @@ def integrate_chunked(files: List[str],
     Returns:
     --------
     ccdp.CCDData
-        Integrated image with motion tracking applied
+        Integrated image with motion tracking applied (raw output by default)
     """
     if not files:
         raise MotionTrackingIntegrationError("No input files provided")
@@ -637,7 +637,7 @@ def integrate_with_motion_tracking(files: List[str],
                                  object_name: str,
                                  reference_time: Optional[str] = None,
                                  method: str = 'average',
-                                 sigma_clip: bool = True,
+                                 sigma_clip: bool = False,
                                  scale: Optional[Callable] = None,
                                  output_path: Optional[str] = None,
                                  progress_callback: Optional[Callable] = None,
@@ -658,7 +658,7 @@ def integrate_with_motion_tracking(files: List[str],
     method : str
         Integration method ('average', 'median', 'sum')
     sigma_clip : bool
-        Whether to apply sigma clipping
+        Whether to apply sigma clipping (default: False for raw output)
     scale : Optional[Callable]
         Scaling function (e.g., for flat fielding)
     output_path : Optional[str]
@@ -675,7 +675,7 @@ def integrate_with_motion_tracking(files: List[str],
     Returns:
     --------
     ccdp.CCDData
-        Integrated image with motion tracking applied
+        Integrated image with motion tracking applied (raw output by default)
     """
     if not files:
         raise MotionTrackingIntegrationError("No input files provided")
@@ -796,7 +796,7 @@ def integrate_with_motion_tracking(files: List[str],
 
 def integrate_standard(files: List[str],
                       method: str = 'average',
-                      sigma_clip: bool = True,
+                      sigma_clip: bool = False,
                       scale: Optional[Callable] = None,
                       output_path: Optional[str] = None,
                       progress_callback: Optional[Callable] = None,
@@ -811,7 +811,7 @@ def integrate_standard(files: List[str],
     method : str
         Integration method ('average', 'median', 'sum')
     sigma_clip : bool
-        Whether to apply sigma clipping
+        Whether to apply sigma clipping (default: False for raw output)
     scale : Optional[Callable]
         Scaling function (e.g., for flat fielding)
     output_path : Optional[str]
@@ -824,7 +824,7 @@ def integrate_standard(files: List[str],
     Returns:
     --------
     ccdp.CCDData
-        Integrated image
+        Integrated image (raw output by default)
     """
     if not files:
         raise MotionTrackingIntegrationError("No input files provided")
