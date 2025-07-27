@@ -165,11 +165,36 @@ class SkybotWorker(QObject):
             self.error.emit(str(e))
 
 
+class SIMBADFieldWorker(QObject):
+    """Worker class for performing SIMBAD field searches in a background thread."""
+    finished = pyqtSignal(list, list)  # simbad_objects, pixel_coords_list
+    error = pyqtSignal(str)
+
+    def __init__(self, astrometry_catalog, wcs, image_shape):
+        super().__init__()
+        self.astrometry_catalog = astrometry_catalog
+        self.wcs = wcs
+        self.image_shape = image_shape
+
+    def run(self):
+        """Execute the SIMBAD field search."""
+        try:
+            simbad_objects = self.astrometry_catalog.get_field_simbad_objects(self.wcs, self.image_shape)
+            pixel_coords = self.astrometry_catalog.get_simbad_object_pixel_coordinates(self.wcs, simbad_objects)
+            pixel_coords_list = [(x, y) for (obj, x, y) in pixel_coords]
+            self.finished.emit(simbad_objects, pixel_coords_list)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class CatalogSearchMixin:
     """Mixin class providing SIMBAD and SkyBot search functionality."""
     
     def open_simbad_search_dialog(self):
         """Open the SIMBAD search dialog and handle results."""
+        # Clear field overlay before single object search
+        self._simbad_field_overlay = None
+        
         dlg = SIMBADSearchDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result:
             simbad_object, pixel_coords = dlg.result
@@ -187,6 +212,7 @@ class CatalogSearchMixin:
         
         # Remove overlays before new search
         self._simbad_overlay = None
+        self._simbad_field_overlay = None
         self._sso_overlay = None
         self._overlay_visible = True
         self.update_overlay_button_visibility()
@@ -251,6 +277,67 @@ class CatalogSearchMixin:
         self._skybot_worker.finished.connect(on_finished)
         self._skybot_worker.error.connect(on_error)
         self._skybot_thread.start()
+
+    def open_simbad_field_search_dialog(self):
+        """Open the SIMBAD field search dialog and handle results."""
+        # Clear single object overlay before field search
+        self._simbad_overlay = None
+        
+        if self.wcs is None or self.image_data is None:
+            QMessageBox.warning(self, "No WCS", "No WCS/image data available. Please solve the image first.")
+            return
+        
+        # Progress dialog
+        progress = QProgressDialog("Searching SIMBAD for field objects...", None, 0, 0, self)
+        progress.setWindowTitle("SIMBAD Field Search")
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        # Start worker thread
+        self._simbad_field_thread = QThread()
+        self._simbad_field_worker = SIMBADFieldWorker(self.astrometry_catalog, self.wcs, self.image_data.shape)
+        self._simbad_field_worker.moveToThread(self._simbad_field_thread)
+        self._simbad_field_thread.started.connect(self._simbad_field_worker.run)
+        
+        def on_finished(simbad_objects, pixel_coords_list):
+            progress.close()
+            self._simbad_field_thread.quit()
+            self._simbad_field_thread.wait()
+            if not simbad_objects:
+                QMessageBox.information(self, "No Field Objects", "No field objects found in the image.")
+                return
+            # Overlay only those in field
+            self._simbad_field_overlay = (simbad_objects, pixel_coords_list)
+            self._simbad_field_highlight_index = None  # Reset highlight
+            self._overlay_visible = True
+            self.update_overlay_button_visibility()
+            self.image_label.update()
+            # Show SIMBAD field result window (all objects, with pixel coords if in field)
+            try:
+                from lib.gui.common.simbad_field_window import SIMBADFieldResultWindow
+                dlg = SIMBADFieldResultWindow(simbad_objects, pixel_coords_list, self)
+                dlg.simbad_field_row_selected.connect(self.on_simbad_field_row_selected)
+                dlg.show()
+            except ImportError:
+                pass
+            self.overlay_toggle_action.setVisible(True)
+            # Temporarily block signals to avoid circular dependency
+            self.overlay_toggle_action.blockSignals(True)
+            self.overlay_toggle_action.setChecked(True)
+            self.overlay_toggle_action.blockSignals(False)
+        
+        def on_error(msg):
+            progress.close()
+            self._simbad_field_thread.quit()
+            self._simbad_field_thread.wait()
+            QMessageBox.critical(self, "SIMBAD Field Search Error", f"Error searching for field objects: {msg}")
+        
+        self._simbad_field_worker.finished.connect(on_finished)
+        self._simbad_field_worker.error.connect(on_error)
+        self._simbad_field_thread.start()
 
     def _get_epoch_from_header(self):
         """Extract epoch from FITS header DATE-OBS field."""

@@ -56,6 +56,49 @@ class AstrometryCatalog:
         except Exception as e:
             logging.error(f"Astroquery SIMBAD error: {e}")
             return None
+
+    def simbad_cone_search(self, ra: float, dec: float, radius: float, 
+                          max_magnitude: float = 25.0) -> List[SIMBADObject]:
+        """Perform a SIMBAD cone search for objects within a specified radius."""
+        try:
+            # Use basic SIMBAD query without extra fields to avoid hanging
+            Simbad.reset_votable_fields()
+            
+            # Perform the cone search
+            result = Simbad.query_region(
+                SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs'),
+                radius=radius*u.deg
+            )
+            
+            if result is None or len(result) == 0:
+                logging.info(f"No SIMBAD objects found in cone search at RA={ra:.4f}, Dec={dec:.4f}, radius={radius:.2f}°")
+                return []
+            
+            objects = []
+            for row in result:
+                try:
+                    name = row['main_id'] if 'main_id' in row.colnames else str(row['matched_id'])
+                    obj_ra = row['ra']  # already in degrees
+                    obj_dec = row['dec']  # already in degrees
+                    obj_type = "Unknown"  # We'll get this from a separate query if needed
+                    magnitude = None  # We'll get this from a separate query if needed
+                    distance = None  # We'll get this from a separate query if needed
+                    
+                    simbad_obj = SIMBADObject(name, obj_ra, obj_dec, obj_type, magnitude, distance)
+                    objects.append(simbad_obj)
+                    logging.info(f"Found SIMBAD object: {simbad_obj}")
+                    
+                except Exception as e:
+                    logging.warning(f"Error parsing SIMBAD object: {e}")
+                    continue
+            
+            logging.info(f"Found {len(objects)} SIMBAD objects in cone search")
+            return objects
+            
+        except Exception as e:
+            logging.error(f"Error in SIMBAD cone search: {e}")
+            return []
+
     def check_object_in_field(self, wcs: WCS, image_shape: Tuple[int, int], 
                              simbad_object: SIMBADObject) -> Tuple[bool, Optional[Tuple[float, float]]]:
         try:
@@ -219,5 +262,74 @@ class AstrometryCatalog:
                 pixel_coords.append((obj, float(pixel_x), float(pixel_y)))
             except Exception as e:
                 logging.warning(f"Error converting coordinates for {obj.name}: {e}")
+                continue
+        return pixel_coords 
+
+    def get_field_simbad_objects(self, wcs: WCS, image_shape: Tuple[int, int], 
+                                radius_buffer: float = 0.1) -> List[SIMBADObject]:
+        """Get SIMBAD objects in the field of view."""
+        try:
+            center_x = image_shape[1] / 2
+            center_y = image_shape[0] / 2
+            center_coords = wcs.pixel_to_world(center_x, center_y)
+            ra_center = center_coords.ra.deg
+            dec_center = center_coords.dec.deg
+            
+            # Calculate search radius based on image diagonal
+            corners = wcs.calc_footprint()
+            if corners is not None:
+                max_radius = 0
+                for corner_ra, corner_dec in corners:
+                    dra = (corner_ra - ra_center) * np.cos(np.radians(dec_center))
+                    ddec = corner_dec - dec_center
+                    radius = np.sqrt(dra**2 + ddec**2)
+                    max_radius = max(max_radius, radius)
+                search_radius = max_radius + radius_buffer
+            else:
+                search_radius = 1.0 + radius_buffer
+            
+            logging.info(f"SIMBAD field center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°")
+            logging.info(f"SIMBAD search radius: {search_radius:.3f}°")
+            
+            objects = self.simbad_cone_search(ra_center, dec_center, search_radius)
+            
+            # Filter objects to only those actually in the field
+            filtered_objects = []
+            for obj in objects:
+                try:
+                    obj_coords = SkyCoord(ra=obj.ra*u.deg, dec=obj.dec*u.deg)
+                    pixel_result = wcs.world_to_pixel(obj_coords)
+                    if hasattr(pixel_result, '__len__') and len(pixel_result) == 2:
+                        pixel_x, pixel_y = pixel_result
+                    else:
+                        pixel_x, pixel_y = pixel_result[0], pixel_result[1]
+                    if (0 <= pixel_x <= image_shape[1] and 
+                        0 <= pixel_y <= image_shape[0]):
+                        filtered_objects.append(obj)
+                        logging.info(f"SIMBAD object in field: {obj}")
+                except Exception as e:
+                    logging.warning(f"Error checking if SIMBAD object {obj.name} is in field: {e}")
+                    continue
+            
+            return filtered_objects
+            
+        except Exception as e:
+            logging.error(f"Error getting field SIMBAD objects: {e}")
+            return []
+
+    def get_simbad_object_pixel_coordinates(self, wcs: WCS, objects: List[SIMBADObject]) -> List[Tuple[SIMBADObject, float, float]]:
+        """Get pixel coordinates for a list of SIMBAD objects."""
+        pixel_coords = []
+        for obj in objects:
+            try:
+                obj_coords = SkyCoord(ra=obj.ra*u.deg, dec=obj.dec*u.deg)
+                pixel_result = wcs.world_to_pixel(obj_coords)
+                if hasattr(pixel_result, '__len__') and len(pixel_result) == 2:
+                    pixel_x, pixel_y = pixel_result
+                else:
+                    pixel_x, pixel_y = pixel_result[0], pixel_result[1]
+                pixel_coords.append((obj, float(pixel_x), float(pixel_y)))
+            except Exception as e:
+                logging.warning(f"Error converting coordinates for SIMBAD object {obj.name}: {e}")
                 continue
         return pixel_coords 

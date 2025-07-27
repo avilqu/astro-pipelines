@@ -63,6 +63,7 @@ class FileOperationsMixin:
             
             # Clear any overlays
             self._simbad_overlay = None
+            self._simbad_field_overlay = None
             self._sso_overlay = None
             self._ephemeris_overlay = None
             self._overlay_visible = False

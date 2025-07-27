@@ -156,6 +156,7 @@ class ImageOperationsMixin:
         
         # Remove overlays before aligning
         self._simbad_overlay = None
+        self._simbad_field_overlay = None
         self._overlay_visible = True
         self.update_overlay_button_visibility()
         

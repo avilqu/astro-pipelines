@@ -266,6 +266,40 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        # Draw SIMBAD field overlay if enabled
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_simbad_field_overlay') and
+            self.parent_viewer._simbad_field_overlay and
+            getattr(self.parent_viewer, '_overlay_visible', True)
+        ):
+            try:
+                from lib.gui.viewer.overlay import SIMBADFieldOverlay
+                simbad_objects, pixel_coords_list = self.parent_viewer._simbad_field_overlay
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                pixel_coords_disp = [
+                    (x * scale + x_offset, y * scale + y_offset)
+                    for (x, y) in pixel_coords_list
+                ]
+                highlight_index = getattr(self.parent_viewer, '_simbad_field_highlight_index', None)
+                overlay = SIMBADFieldOverlay(simbad_objects, pixel_coords_disp, highlight_index=highlight_index)
+                painter = QPainter(self)
+                overlay.draw(painter)
+                painter.end()
+            except Exception as e:
+                pass
         # Draw SSO overlay if enabled
         if (
             self.parent_viewer and
@@ -442,6 +476,41 @@ class SSOOverlay:
             painter.drawText(text_x, text_y, obj.name)
 
 
+class SIMBADFieldOverlay:
+    """Overlay for displaying multiple SIMBAD objects found in the field."""
+    def __init__(self, simbad_objects, pixel_coords_list, color=QColor(0, 255, 0), radius=8, highlight_index=None):
+        self.simbad_objects = simbad_objects  # List of SIMBADObject
+        self.pixel_coords_list = pixel_coords_list  # List of (x, y)
+        self.color = color
+        self.radius = radius
+        self.highlight_index = highlight_index
+
+    def draw(self, painter: QPainter):
+        font = QFont()
+        font.setPointSize(9)
+        font.setBold(False)
+        painter.setFont(font)
+        
+        for idx, (obj, (x, y)) in enumerate(zip(self.simbad_objects, self.pixel_coords_list)):
+            if self.highlight_index is not None and idx == self.highlight_index:
+                color = QColor(255, 0, 0)  # Red for highlight
+                pen = QPen(color)
+                pen.setWidth(3)
+            else:
+                color = self.color
+                pen = QPen(color)
+                pen.setWidth(2)
+            
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
+            
+            # Draw name to the right
+            text_x = int(x + self.radius + 4)
+            text_y = int(y + 4)
+            painter.drawText(text_x, text_y, obj.name)
+
+
 class OverlayMixin:
     """Mixin class providing overlay functionality for the FITS viewer."""
     
@@ -461,6 +530,11 @@ class OverlayMixin:
     def on_sso_row_selected(self, row_index):
         """Handle selection of a Solar System Object row."""
         self._sso_highlight_index = row_index
+        self.image_label.update()
+
+    def on_simbad_field_row_selected(self, row_index):
+        """Handle selection of a SIMBAD field object row."""
+        self._simbad_field_highlight_index = row_index
         self.image_label.update()
 
     def on_ephemeris_row_selected(self, row_index, ephemeris):

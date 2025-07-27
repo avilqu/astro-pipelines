@@ -319,6 +319,12 @@ class ToolbarController:
         search_simbad_action.triggered.connect(self.parent.open_simbad_search_dialog)
         simbad_menu.addAction(search_simbad_action)
         
+        simbad_menu.addSeparator()
+        
+        find_simbad_field_action = QAction("Find SIMBAD objects in field", self.parent)
+        find_simbad_field_action.triggered.connect(self.parent.open_simbad_field_search_dialog)
+        simbad_menu.addAction(find_simbad_field_action)
+        
         self.simbad_button.setMenu(simbad_menu)
         self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.simbad_button)
