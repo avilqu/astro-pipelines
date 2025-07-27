@@ -348,7 +348,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # Add separator
         integration_menu.addSeparator()
         
-        stack_wcs_action = QAction("Stack on WCS", self)
+        stack_wcs_action = QAction("Stack aligned images", self)
         stack_wcs_action.triggered.connect(self.stack_align_wcs)
         integration_menu.addAction(stack_wcs_action)
         stack_ephemeris_action = QAction("Stack on ephemeris", self)
@@ -409,6 +409,7 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         self.stretch_locked = True
         self.locked_display_min = None
         self.locked_display_max = None
+        self.brightness_adjustment = 0.0  # Track user's brightness adjustment separately
         self._sso_highlight_index = None
         self._zoom_region_mode = False  # Track if zoom-to-region is active
         self._pending_zoom_rect = None  # Store the last selected rectangle
@@ -693,8 +694,12 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
         # value 50 = no adjustment, value 0 = darkest, value 100 = brightest
         adjustment = (value - 50) / 50.0 * adjustment_range
         
+        # Store the brightness adjustment separately
+        self.brightness_adjustment = adjustment
+        
         # Apply adjustment to display_min (lower values = brighter image)
-        adjusted_min = self._get_auto_display_minmax()[0] - adjustment
+        auto_min, auto_max = self._get_auto_display_minmax()
+        adjusted_min = auto_min - adjustment
         
         # Update display parameters
         self.display_min = adjusted_min
@@ -762,45 +767,44 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
 
     def set_linear_stretch(self):
         self.stretch_mode = 'linear'
-        # Recalculate locked parameters with new stretch mode since stretch is always locked
+        # Recalculate base parameters with new stretch mode
         auto_min, auto_max = self._get_auto_display_minmax()
-        self.locked_display_min = auto_min
+        # Apply the stored brightness adjustment to preserve user's settings
+        adjusted_min = auto_min - self.brightness_adjustment
+        self.locked_display_min = adjusted_min
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
-        # Preserve brightness slider position and reapply adjustment
-        current_brightness = self.brightness_slider.value()
-        self.brightness_slider.setValue(current_brightness)
-        self.on_brightness_slider_changed(current_brightness)
+        # Update the display with the new stretch mode
+        self.update_image_display(keep_zoom=True)
         # Don't call zoom_to_fit() as it changes the viewport position
 
     def set_log_stretch(self):
         self.stretch_mode = 'log'
-        # Recalculate locked parameters with new stretch mode since stretch is always locked
+        # Recalculate base parameters with new stretch mode
         auto_min, auto_max = self._get_auto_display_minmax()
-        self.locked_display_min = auto_min
+        # Apply the stored brightness adjustment to preserve user's settings
+        adjusted_min = auto_min - self.brightness_adjustment
+        self.locked_display_min = adjusted_min
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
-        # Preserve brightness slider position and reapply adjustment
-        current_brightness = self.brightness_slider.value()
-        self.brightness_slider.setValue(current_brightness)
-        self.on_brightness_slider_changed(current_brightness)
+        # Update the display with the new stretch mode
+        self.update_image_display(keep_zoom=True)
         # Don't call zoom_to_fit() as it changes the viewport position
 
     def toggle_clipping(self):
         self.clipping_enabled = not self.clipping_enabled
         self.clipping_action.setChecked(self.clipping_enabled)
-        # Recalculate locked parameters with new clipping setting since stretch is always locked
+        # Recalculate base parameters with new clipping setting
         auto_min, auto_max = self._get_auto_display_minmax()
-        self.locked_display_min = auto_min
+        # Apply the stored brightness adjustment to preserve user's settings
+        adjusted_min = auto_min - self.brightness_adjustment
+        self.locked_display_min = adjusted_min
         self.locked_display_max = auto_max
         self.display_min = self.locked_display_min
         self.display_max = self.locked_display_max
-        # Preserve brightness slider position and reapply adjustment
-        current_brightness = self.brightness_slider.value()
-        self.brightness_slider.setValue(current_brightness)
-        self.on_brightness_slider_changed(current_brightness)
+        # Update the display with the new clipping setting
         self.update_image_display(keep_zoom=True)
 
     def update_image_display(self, keep_zoom=False):
@@ -952,14 +956,21 @@ class SimpleFITSViewer(NavigationMixin, QMainWindow):
                         self.display_min = self.locked_display_min
                         self.display_max = self.locked_display_max
                     else:
-                        # Use existing locked parameters
+                        # Use existing locked parameters - DO NOT recalculate based on new image
+                        # Apply the stored brightness adjustment to the new image
+                        auto_min, auto_max = self._get_auto_display_minmax()
+                        adjusted_min = auto_min - self.brightness_adjustment
+                        self.locked_display_min = adjusted_min
+                        self.locked_display_max = auto_max
                         self.display_min = self.locked_display_min
                         self.display_max = self.locked_display_max
+                        # Update the display with the locked parameters
+                        self.update_image_display(keep_zoom=restore_view)
                     # Restore brightness slider position and apply adjustment
                     if hasattr(self, '_last_brightness'):
                         self.brightness_slider.setValue(self._last_brightness)
-                        # Apply the brightness adjustment to the new image
-                        self.on_brightness_slider_changed(self._last_brightness)
+                        # The brightness adjustment is already applied above, just update the slider tooltip
+                        self.update_brightness_slider_tooltip()
                     else:
                         self.brightness_slider.setValue(50)
                 else:
