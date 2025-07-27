@@ -183,7 +183,7 @@ class CatalogSearchMixin:
 
     def open_sso_search_dialog(self):
         """Open the Solar System Object search dialog using SkyBot."""
-        from lib.fits.catalogs import SolarSystemObject
+        from lib.sci.catalogs import SolarSystemObject
         
         # Remove overlays before new search
         self._simbad_overlay = None
@@ -237,7 +237,10 @@ class CatalogSearchMixin:
             except ImportError:
                 pass
             self.overlay_toggle_action.setVisible(True)
+            # Temporarily block signals to avoid circular dependency
+            self.overlay_toggle_action.blockSignals(True)
             self.overlay_toggle_action.setChecked(True)
+            self.overlay_toggle_action.blockSignals(False)
         
         def on_error(msg):
             progress.close()

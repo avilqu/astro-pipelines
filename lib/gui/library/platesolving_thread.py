@@ -1,6 +1,6 @@
 import signal
 from PyQt6.QtCore import QThread, pyqtSignal
-from lib.fits.astrometry import solve_single_image, PlatesolvingResult
+from lib.sci.platesolving import solve_single_image, PlatesolvingResult
 
 class PlatesolvingThread(QThread):
     output = pyqtSignal(str)

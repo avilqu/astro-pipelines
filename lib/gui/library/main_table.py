@@ -18,7 +18,7 @@ import sys
 import io
 import threading
 from contextlib import redirect_stdout, redirect_stderr
-from lib.fits.astrometry import solve_single_image, PlatesolvingResult
+from lib.sci.platesolving import solve_single_image, PlatesolvingResult
 import signal
 from .platesolving_thread import PlatesolvingThread
 from config import to_display_time

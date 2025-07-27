@@ -62,6 +62,7 @@ class ToolbarController:
         self._create_navigation_controls()
         self._create_file_controls()
         self._create_zoom_controls()
+        self._create_histogram_controls()
         self._create_search_controls()
         self._create_processing_controls()
         self._create_integration_controls()
@@ -247,6 +248,57 @@ class ToolbarController:
         self.toolbar.addAction(self.zoom_region_action)
         self.toolbar.widgetForAction(self.zoom_region_action).setFixedSize(32, 32)
     
+    def _create_histogram_controls(self):
+        """Create histogram-related controls."""
+        # Add separator before histogram controls
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+        
+        # Linear stretch action
+        self.linear_action = QAction(QIcon.fromTheme("view-object-histogram-linear-symbolic"), "", self.parent)
+        self.linear_action.setToolTip("Linear histogram stretch")
+        self.toolbar.addAction(self.linear_action)
+        self.toolbar.widgetForAction(self.linear_action).setFixedSize(32, 32)
+        
+        # Log stretch action
+        self.log_action = QAction(QIcon.fromTheme("view-object-histogram-logarithmic"), "", self.parent)
+        self.log_action.setToolTip("Logarithmic histogram stretch")
+        self.toolbar.addAction(self.log_action)
+        self.toolbar.widgetForAction(self.log_action).setFixedSize(32, 32)
+
+        # Brightness slider
+        from PyQt6.QtWidgets import QSlider
+        self.brightness_slider = QSlider(Qt.Orientation.Horizontal, self.parent)
+        self.brightness_slider.setMinimum(0)
+        self.brightness_slider.setMaximum(100)
+        self.brightness_slider.setValue(50)  # Default to middle position
+        self.brightness_slider.setFixedWidth(120)
+        self.brightness_slider.setToolTip("Adjust image brightness")
+        self.brightness_slider.setStyleSheet("""
+            QSlider:disabled {
+                color: #333333;
+            }
+        """)
+        self.toolbar.addWidget(self.brightness_slider)
+
+        # Clipping button
+        self.clipping_action = QAction(QIcon.fromTheme("upindicator"), "", self.parent)
+        self.clipping_action.setCheckable(True)
+        self.clipping_action.setChecked(False)  # Default to off
+        self.clipping_action.setToolTip(f"Toggle sigma clipping for display stretch (sigma={3.0})")
+        self.toolbar.addAction(self.clipping_action)
+        self.toolbar.widgetForAction(self.clipping_action).setFixedSize(32, 32)
+        
+        # Add separator after histogram controls
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+    
+    def connect_histogram_signals(self):
+        """Connect histogram control signals to the histogram controller."""
+        if hasattr(self.parent, 'histogram_controller'):
+            self.linear_action.triggered.connect(self.parent.histogram_controller.set_linear_stretch)
+            self.log_action.triggered.connect(self.parent.histogram_controller.set_log_stretch)
+            self.brightness_slider.valueChanged.connect(self.parent.histogram_controller.on_brightness_slider_changed)
+            self.clipping_action.triggered.connect(self.parent.histogram_controller.toggle_clipping)
+    
     def _create_search_controls(self):
         """Create search and overlay controls."""
         # SIMBAD search button
@@ -288,7 +340,10 @@ class ToolbarController:
         # Overlay toggle action
         self.overlay_toggle_action = QAction(QIcon.fromTheme("shapes"), "", self.parent)
         self.overlay_toggle_action.setCheckable(True)
+        # Temporarily block signals during initial setup to avoid triggering toggle
+        self.overlay_toggle_action.blockSignals(True)
         self.overlay_toggle_action.setChecked(True)
+        self.overlay_toggle_action.blockSignals(False)
         self.overlay_toggle_action.setVisible(False)
         self.overlay_toggle_action.triggered.connect(self.parent.toggle_overlay_visibility)
         self.toolbar.addAction(self.overlay_toggle_action)
@@ -410,6 +465,12 @@ class ToolbarController:
         self.zoom_to_fit_action.setEnabled(False)
         self.zoom_region_action.setEnabled(False)
         
+        # Disable histogram controls
+        self.linear_action.setEnabled(False)
+        self.log_action.setEnabled(False)
+        self.brightness_slider.setEnabled(False)
+        self.clipping_action.setEnabled(False)
+        
         # Disable search buttons
         self.simbad_button.setEnabled(False)
         self.sso_button.setEnabled(False)
@@ -430,6 +491,12 @@ class ToolbarController:
         self.reset_zoom_action.setEnabled(True)
         self.zoom_to_fit_action.setEnabled(True)
         self.zoom_region_action.setEnabled(True)
+        
+        # Enable histogram controls
+        self.linear_action.setEnabled(True)
+        self.log_action.setEnabled(True)
+        self.brightness_slider.setEnabled(True)
+        self.clipping_action.setEnabled(True)
         
         # Enable search buttons
         self.simbad_button.setEnabled(True)
@@ -470,6 +537,14 @@ class ToolbarController:
             (hasattr(self.parent, '_sso_overlay') and self.parent._sso_overlay is not None) or
             (hasattr(self.parent, '_ephemeris_overlay') and self.parent._ephemeris_overlay is not None)
         )
+
         self.overlay_toggle_action.setVisible(has_overlay)
         if has_overlay:
-            self.overlay_toggle_action.setChecked(self.parent._overlay_visible) 
+            # Temporarily block signals to avoid circular dependency
+            self.overlay_toggle_action.blockSignals(True)
+            self.overlay_toggle_action.setChecked(self.parent._overlay_visible)
+            self.overlay_toggle_action.blockSignals(False)
+            # Also enable the button when overlays are available
+            self.overlay_toggle_action.setEnabled(True)
+        else:
+            self.overlay_toggle_action.setEnabled(False) 

@@ -448,7 +448,10 @@ class OverlayMixin:
     def toggle_overlay_visibility(self):
         """Toggle the visibility of all overlays."""
         self._overlay_visible = not self._overlay_visible
+        # Temporarily block signals to avoid circular dependency
+        self.overlay_toggle_action.blockSignals(True)
         self.overlay_toggle_action.setChecked(self._overlay_visible)
+        self.overlay_toggle_action.blockSignals(False)
         self.image_label.update()
 
     def update_overlay_button_visibility(self):

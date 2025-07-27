@@ -168,7 +168,7 @@ if __name__ == "__main__":
     def solve_image():
         """Solve a single FITS image using astrometry.net"""
         try:
-            from lib.fits.astrometry import solve_single_image
+            from lib.sci.platesolving import solve_single_image
             import os
             import logging
             
@@ -261,7 +261,7 @@ if __name__ == "__main__":
     def get_observations():
         """Download and display MPC observations for a given asteroid designation using mpcq."""
         try:
-            from lib.astrometry.orbit import get_asteroid_observations
+            from lib.sci.orbit import get_asteroid_observations
             designation = args.get_obs
             print(f"{Style.BRIGHT + Fore.BLUE}Querying MPC observations for: {designation}{Style.RESET_ALL}")
             observations = get_asteroid_observations(designation)
@@ -298,7 +298,7 @@ if __name__ == "__main__":
     def get_neocp_observations():
         """Download and display NEOCP observations for a given object designation."""
         try:
-            from lib.astrometry.orbit import get_neocp_observations
+            from lib.sci.orbit import get_neocp_observations
             designation = args.get_neocp_obs
             print(f"{Style.BRIGHT + Fore.BLUE}Querying NEOCP observations for: {designation}{Style.RESET_ALL}")
             observations = get_neocp_observations(designation)
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     def get_neocp_objects():
         """Get and display the current list of objects on the NEOCP."""
         try:
-            from lib.astrometry.orbit import get_neocp_objects
+            from lib.sci.orbit import get_neocp_objects
             print(f"{Style.BRIGHT + Fore.BLUE}Querying current NEOCP objects...{Style.RESET_ALL}")
             objects = get_neocp_objects()
             # Try to display as a table using pandas if possible

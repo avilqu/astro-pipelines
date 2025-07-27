@@ -16,10 +16,10 @@ import shutil
 from colorama import Style, Fore
 
 # Import catalog classes from new location
-from lib.fits.catalogs import SolarSystemObject, SIMBADObject, AstrometryCatalog
+from lib.sci.catalogs import SolarSystemObject, SIMBADObject, AstrometryCatalog
 
 # Import our FITS utilities
-from .wcs import (
+from lib.fits.wcs import (
     validate_fits_file, 
     ImageValidationResult, 
     get_platesolving_constraints,

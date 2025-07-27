@@ -16,7 +16,7 @@ from lib.gui.viewer.integration import IntegrationMixin
 from lib.gui.viewer.display import DisplayMixin
 from lib.gui.viewer.histogram import HistogramController
 from lib.gui.viewer.toolbar import ToolbarController
-from lib.fits.catalogs import AstrometryCatalog
+from lib.sci.catalogs import AstrometryCatalog
 
 
 
@@ -54,6 +54,9 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         
         # Initialize histogram controller (needs access to toolbar)
         self.histogram_controller = HistogramController(self)
+        
+        # Connect histogram control signals
+        self.toolbar_controller.connect_histogram_signals()
         
         # Get references to toolbar and navigation elements
         self.toolbar = self.toolbar_controller.toolbar

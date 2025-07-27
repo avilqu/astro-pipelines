@@ -119,8 +119,6 @@ class OrbitDataWindow(QMainWindow):
             row = selected_rows[0].row()
             if 0 <= row < len(self.predicted_positions):
                 self.row_selected.emit(row, self.predicted_positions[row])
-    
-
 
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None, target_name=None):
@@ -179,7 +177,7 @@ class OrbitComputationWorker(QObject):
             rtio = RealTimeStringIO(self.console_output.emit)
             old_stdout, old_stderr = sys.stdout, sys.stderr
             sys.stdout = sys.stderr = rtio
-            from lib.astrometry.orbit import predict_position_findorb
+            from lib.sci.orbit import predict_position_findorb
             predicted_positions = []
             pseudo_mpec_text = ""
             
@@ -278,65 +276,4 @@ class OrbitComputationWorker(QObject):
             self.error.emit(str(e))
         finally:
             sys.stdout = old_stdout
-            sys.stderr = old_stderr
-
-
-class MotionTrackingStackWorker(QObject):
-    """Worker thread for motion tracking integration."""
-    console_output = pyqtSignal(str)  # console output text
-    finished = pyqtSignal(bool, str)  # success, message
-    
-    def __init__(self, files, object_name, output_path, console_window=None):
-        super().__init__()
-        self.files = files
-        self.object_name = object_name
-        self.output_path = output_path
-        self.console_window = console_window
-    
-    def run(self):
-        """Run the motion tracking integration."""
-        try:
-            import sys
-            from lib.gui.common.console_window import RealTimeStringIO
-            from lib.fits.integration import integrate_with_motion_tracking, MotionTrackingIntegrationError
-            
-            # Redirect stdout/stderr to console output
-            rtio = RealTimeStringIO(self.console_output.emit)
-            old_stdout, old_stderr = sys.stdout, sys.stderr
-            sys.stdout = sys.stderr = rtio
-            
-            try:
-                self.console_output.emit(f"\033[1;34mStarting motion tracking integration for {self.object_name}\033[0m\n")
-                self.console_output.emit(f"\033[1;34mProcessing {len(self.files)} files\033[0m\n")
-                self.console_output.emit(f"\033[1;34mOutput will be saved to: {self.output_path}\033[0m\n\n")
-                
-                # Perform motion tracking integration
-                result = integrate_with_motion_tracking(
-                    files=self.files,
-                    object_name=self.object_name,
-                    method='average',
-                    sigma_clip=True,
-                    output_path=self.output_path
-                )
-                
-                # Success message
-                message = f"Successfully created motion tracked stack:\n"
-                message += f"Object: {self.object_name}\n"
-                message += f"Files processed: {len(self.files)}\n"
-                message += f"Output: {self.output_path}\n"
-                message += f"Image shape: {result.data.shape}\n"
-                message += f"Data range: {result.data.min():.2f} to {result.data.max():.2f}"
-                
-                self.finished.emit(True, message)
-                
-            finally:
-                # Restore stdout/stderr
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-            
-        except MotionTrackingIntegrationError as e:
-            self.finished.emit(False, f"Motion tracking integration error: {e}")
-        except Exception as e:
-            import traceback
-            error_msg = f"Unexpected error during motion tracking integration:\n{str(e)}\n\n{traceback.format_exc()}"
-            self.finished.emit(False, error_msg) 
+            sys.stderr = old_stderr 

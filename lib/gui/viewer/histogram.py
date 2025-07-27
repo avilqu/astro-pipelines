@@ -27,52 +27,12 @@ class HistogramController:
     
     def _create_ui_elements(self):
         """Create histogram-related UI elements for the toolbar."""
-        toolbar = self.parent.toolbar_controller.toolbar
-        
-        # Add separator before histogram controls
-        from lib.gui.viewer.toolbar import make_toolbar_separator
-        toolbar.addWidget(make_toolbar_separator(self.parent))
-        
-        # Linear stretch action
-        self.linear_action = QAction(QIcon.fromTheme("view-object-histogram-linear-symbolic"), "", self.parent)
-        self.linear_action.setToolTip("Linear histogram stretch")
-        self.linear_action.triggered.connect(self.set_linear_stretch)
-        toolbar.addAction(self.linear_action)
-        toolbar.widgetForAction(self.linear_action).setFixedSize(32, 32)
-        
-        # Log stretch action
-        self.log_action = QAction(QIcon.fromTheme("view-object-histogram-logarithmic"), "", self.parent)
-        self.log_action.setToolTip("Logarithmic histogram stretch")
-        self.log_action.triggered.connect(self.set_log_stretch)
-        toolbar.addAction(self.log_action)
-        toolbar.widgetForAction(self.log_action).setFixedSize(32, 32)
-
-        # Brightness slider
-        self.brightness_slider = QSlider(Qt.Orientation.Horizontal, self.parent)
-        self.brightness_slider.setMinimum(0)
-        self.brightness_slider.setMaximum(100)
-        self.brightness_slider.setValue(50)  # Default to middle position
-        self.brightness_slider.setFixedWidth(120)
-        self.brightness_slider.setToolTip("Adjust image brightness")
-        self.brightness_slider.valueChanged.connect(self.on_brightness_slider_changed)
-        self.brightness_slider.setStyleSheet("""
-            QSlider:disabled {
-                color: #333333;
-            }
-        """)
-        toolbar.addWidget(self.brightness_slider)
-
-        # Clipping button
-        self.clipping_action = QAction(QIcon.fromTheme("upindicator"), "", self.parent)
-        self.clipping_action.setCheckable(True)
-        self.clipping_action.setChecked(False)  # Default to off
-        self.clipping_action.setToolTip(f"Toggle sigma clipping for display stretch (sigma={3.0})")
-        self.clipping_action.triggered.connect(self.toggle_clipping)
-        toolbar.addAction(self.clipping_action)
-        toolbar.widgetForAction(self.clipping_action).setFixedSize(32, 32)
-        
-        # Add separator after histogram controls
-        toolbar.addWidget(make_toolbar_separator(self.parent))
+        # UI elements are now created by the toolbar controller
+        # Get references to the UI elements from the toolbar controller
+        self.linear_action = self.parent.toolbar_controller.linear_action
+        self.log_action = self.parent.toolbar_controller.log_action
+        self.brightness_slider = self.parent.toolbar_controller.brightness_slider
+        self.clipping_action = self.parent.toolbar_controller.clipping_action
     
     def on_brightness_slider_changed(self, value):
         """Handle brightness slider value changes."""
@@ -215,17 +175,13 @@ class HistogramController:
 
     def update_button_states_for_no_image(self):
         """Disable histogram-related buttons when no image is loaded."""
-        self.linear_action.setEnabled(False)
-        self.log_action.setEnabled(False)
-        self.brightness_slider.setEnabled(False)
-        self.clipping_action.setEnabled(False)
+        # Button state management is now handled by the toolbar controller
+        pass
 
     def update_button_states_for_image_loaded(self):
         """Enable histogram-related buttons when an image is loaded."""
-        self.linear_action.setEnabled(True)
-        self.log_action.setEnabled(True)
-        self.brightness_slider.setEnabled(True)
-        self.clipping_action.setEnabled(True)
+        # Button state management is now handled by the toolbar controller
+        pass
 
     def initialize_for_new_image(self, restore_view=False):
         """Initialize histogram parameters for a newly loaded image."""

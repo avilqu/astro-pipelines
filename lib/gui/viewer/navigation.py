@@ -354,19 +354,13 @@ class NavigationMixin:
 
     def update_button_states_for_no_image(self):
         """Disable all buttons that require an image to be loaded."""
-        # Disable toolbar buttons
+        # Disable toolbar buttons (includes histogram controls)
         self.toolbar_controller.update_button_states_for_no_image()
-        
-        # Disable histogram-related buttons
-        self.histogram_controller.update_button_states_for_no_image()
 
     def update_button_states_for_image_loaded(self):
         """Enable all buttons that require an image to be loaded."""
-        # Enable toolbar buttons
+        # Enable toolbar buttons (includes histogram controls)
         self.toolbar_controller.update_button_states_for_image_loaded()
-        
-        # Enable histogram-related buttons
-        self.histogram_controller.update_button_states_for_image_loaded()
 
     def on_zoom_region_toggled(self, checked):
         """Handle zoom region mode toggle."""
