@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, Qt
-from PyQt6.QtWidgets import QDialog, QMessageBox, QProgressDialog, QApplication, QPushButton, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit
+from PyQt6.QtWidgets import QDialog, QMessageBox, QProgressDialog, QApplication, QPushButton, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox
 from astropy.time import Time
 
 
@@ -109,6 +109,120 @@ class SIMBADSearchDialog(QDialog):
         self._simbad_thread.start()
 
 
+class GaiaSearchDialog(QDialog):
+    """Dialog window for Gaia catalog search"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Gaia Catalog Search")
+        self.setGeometry(300, 300, 400, 150)
+        self.setModal(True)
+        
+        self.parent_viewer = parent
+        self.result = None
+        
+        layout = QVBoxLayout(self)
+        
+        # Instructions
+        instruction_label = QLabel("Search for stars in Gaia DR3 catalog brighter than specified magnitude:")
+        instruction_label.setWordWrap(True)
+        layout.addWidget(instruction_label)
+        
+        # Magnitude input
+        magnitude_layout = QHBoxLayout()
+        magnitude_label = QLabel("Magnitude limit:")
+        self.magnitude_input = QLineEdit()
+        self.magnitude_input.setText("12.0")
+        self.magnitude_input.setPlaceholderText("e.g., 12.0")
+        magnitude_layout.addWidget(magnitude_label)
+        magnitude_layout.addWidget(self.magnitude_input)
+        layout.addLayout(magnitude_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.search_button = QPushButton("Search")
+        self.search_button.clicked.connect(self.search_gaia)
+        button_layout.addWidget(self.search_button)
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Set focus to magnitude input
+        self.magnitude_input.setFocus()
+    
+    def search_gaia(self):
+        """Search for stars in Gaia catalog"""
+        try:
+            magnitude_limit = float(self.magnitude_input.text().strip())
+        except ValueError:
+            QMessageBox.warning(self, "Input Error", "Please enter a valid magnitude limit (e.g., 12.0).")
+            return
+        
+        if magnitude_limit < 0 or magnitude_limit > 25:
+            QMessageBox.warning(self, "Input Error", "Magnitude limit should be between 0 and 25.")
+            return
+        
+        gaia_dr = "DR3"  # Always use DR3
+        
+        self.search_button.setEnabled(False)
+        self.search_button.setText("Searching...")
+        
+        # Show progress dialog
+        progress = QProgressDialog("Searching Gaia DR3...", None, 0, 0, self)
+        progress.setWindowTitle("Gaia Search")
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        # Start worker thread
+        self._gaia_thread = QThread()
+        self._gaia_worker = GaiaWorker(
+            self.parent_viewer.astrometry_catalog,
+            self.parent_viewer.wcs,
+            self.parent_viewer.image_data.shape,
+            magnitude_limit
+        )
+        self._gaia_worker.moveToThread(self._gaia_thread)
+        self._gaia_thread.started.connect(self._gaia_worker.run)
+        
+        def on_finished(gaia_objects, pixel_coords_dict):
+            progress.close()
+            self._gaia_thread.quit()
+            self._gaia_thread.wait()
+            
+            if not gaia_objects:
+                QMessageBox.information(self, "No Stars Found", 
+                    f"No Gaia DR3 stars brighter than magnitude {magnitude_limit} found in the field.")
+                self.search_button.setEnabled(True)
+                self.search_button.setText("Search")
+                return
+            
+            self.result = (gaia_objects, pixel_coords_dict)
+            QMessageBox.information(self, "Stars Found", 
+                f"Found {len(gaia_objects)} Gaia DR3 stars brighter than magnitude {magnitude_limit} in the field!")
+            self.search_button.setEnabled(True)
+            self.search_button.setText("Search")
+            self.accept()
+        
+        def on_error(msg):
+            progress.close()
+            self._gaia_thread.quit()
+            self._gaia_thread.wait()
+            QMessageBox.critical(self, "Search Error", f"Error searching Gaia catalog: {msg}")
+            self.search_button.setEnabled(True)
+            self.search_button.setText("Search")
+        
+        self._gaia_worker.finished.connect(on_finished)
+        self._gaia_worker.error.connect(on_error)
+        self._gaia_thread.start()
+
+
 class SIMBADWorker(QObject):
     """Worker class for performing SIMBAD searches in a background thread."""
     finished = pyqtSignal(object, object)  # simbad_object, pixel_coords
@@ -138,6 +252,31 @@ class SIMBADWorker(QObject):
                 self.finished.emit(simbad_object, pixel_coords)
             else:
                 self.finished.emit(simbad_object, None)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class GaiaWorker(QObject):
+    """Worker class for performing Gaia searches in a background thread."""
+    finished = pyqtSignal(list, dict)  # gaia_objects, pixel_coords_dict
+    error = pyqtSignal(str)
+
+    def __init__(self, astrometry_catalog, wcs, image_shape, magnitude_limit):
+        super().__init__()
+        self.astrometry_catalog = astrometry_catalog
+        self.wcs = wcs
+        self.image_shape = image_shape
+        self.magnitude_limit = magnitude_limit
+
+    def run(self):
+        """Execute the Gaia search."""
+        try:
+            gaia_objects = self.astrometry_catalog.get_field_gaia_objects(
+                self.wcs, self.image_shape, self.magnitude_limit
+            )
+            pixel_coords = self.astrometry_catalog.get_gaia_object_pixel_coordinates(self.wcs, gaia_objects)
+            pixel_coords_dict = {obj: (x, y) for (obj, x, y) in pixel_coords}
+            self.finished.emit(gaia_objects, pixel_coords_dict)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -338,6 +477,45 @@ class CatalogSearchMixin:
         self._simbad_field_worker.finished.connect(on_finished)
         self._simbad_field_worker.error.connect(on_error)
         self._simbad_field_thread.start()
+
+    def open_gaia_search_dialog(self):
+        """Open the Gaia search dialog and handle results."""
+        # Clear overlays before new search
+        self._simbad_overlay = None
+        self._simbad_field_overlay = None
+        self._sso_overlay = None
+        self._gaia_overlay = None
+        
+        if self.wcs is None or self.image_data is None:
+            QMessageBox.warning(self, "No WCS", "No WCS/image data available. Please solve the image first.")
+            return
+        
+        dlg = GaiaSearchDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result:
+            gaia_objects, pixel_coords_dict = dlg.result
+            # Overlay only those in field
+            gaia_objects_in_field = list(pixel_coords_dict.keys())
+            coords_list = list(pixel_coords_dict.values())
+            self._gaia_overlay = (gaia_objects_in_field, coords_list)
+            self._gaia_highlight_index = None  # Reset highlight
+            self._overlay_visible = True
+            self.update_overlay_button_visibility()
+            self.image_label.update()
+            # Show Gaia result window
+            try:
+                from lib.gui.common.gaia_results_window import GaiaResultWindow
+                dlg = GaiaResultWindow(gaia_objects, pixel_coords_dict, self)
+                dlg.gaia_row_selected.connect(self.on_gaia_row_selected)
+                dlg.show()
+            except ImportError:
+                pass
+            self.overlay_toggle_action.setVisible(True)
+            # Temporarily block signals to avoid circular dependency
+            self.overlay_toggle_action.blockSignals(True)
+            self.overlay_toggle_action.setChecked(True)
+            self.overlay_toggle_action.blockSignals(False)
+        else:
+            self.update_overlay_button_visibility()
 
     def _get_epoch_from_header(self):
         """Extract epoch from FITS header DATE-OBS field."""

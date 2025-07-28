@@ -325,6 +325,12 @@ class ToolbarController:
         find_simbad_field_action.triggered.connect(self.parent.open_simbad_field_search_dialog)
         simbad_menu.addAction(find_simbad_field_action)
         
+        simbad_menu.addSeparator()
+        
+        search_gaia_action = QAction("Search Gaia catalog", self.parent)
+        search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
+        simbad_menu.addAction(search_gaia_action)
+        
         self.simbad_button.setMenu(simbad_menu)
         self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.simbad_button)

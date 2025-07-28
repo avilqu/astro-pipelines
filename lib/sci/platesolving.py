@@ -16,7 +16,7 @@ import shutil
 from colorama import Style, Fore
 
 # Import catalog classes from new location
-from lib.sci.catalogs import SolarSystemObject, SIMBADObject, AstrometryCatalog
+from lib.sci.catalogs import SolarSystemObject, SIMBADObject, GaiaObject, AstrometryCatalog
 
 # Import our FITS utilities
 from lib.fits.wcs import (

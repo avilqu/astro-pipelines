@@ -9,6 +9,7 @@ from typing import List, Dict, Optional, Tuple, Union
 import logging
 
 from astroquery.simbad import Simbad
+from astroquery.gaia import Gaia
 
 class SolarSystemObject:
     """Class to represent a solar system object found in the field"""
@@ -51,6 +52,22 @@ class SIMBADObject:
                 unit = self.distance_unit if self.distance_unit else "pc"
                 dist_str = f", Dist: {self.distance}{unit}"
         return f"{self.name} ({self.object_type}) - RA: {self.ra:.4f}°, Dec: {self.dec:.4f}°{mag_str}{dist_str}"
+
+class GaiaObject:
+    """Class to represent a Gaia star found in the field"""
+    def __init__(self, source_id: str, ra: float, dec: float, magnitude: float, 
+                 parallax: float = None, pm_ra: float = None, pm_dec: float = None):
+        self.source_id = source_id
+        self.ra = ra  # degrees
+        self.dec = dec  # degrees
+        self.magnitude = magnitude
+        self.parallax = parallax  # mas
+        self.pm_ra = pm_ra  # mas/year
+        self.pm_dec = pm_dec  # mas/year
+        self.name = f"Gaia {source_id}"
+        
+    def __str__(self):
+        return f"Gaia {self.source_id} - RA: {self.ra:.4f}°, Dec: {self.dec:.4f}°, Mag: {self.magnitude:.2f}"
 
 class AstrometryCatalog:
     """Class to handle catalog searches and astrometry operations"""
@@ -386,5 +403,134 @@ class AstrometryCatalog:
                 pixel_coords.append((obj, float(pixel_x), float(pixel_y)))
             except Exception as e:
                 logging.warning(f"Error converting coordinates for SIMBAD object {obj.name}: {e}")
+                continue
+        return pixel_coords 
+
+    def gaia_cone_search(self, ra: float, dec: float, radius: float, 
+                         max_magnitude: float = 12.0, gaia_dr: str = "DR3") -> List[GaiaObject]:
+        """Perform a Gaia cone search for stars within a specified radius and magnitude limit."""
+        try:
+            logging.info(f"Performing Gaia {gaia_dr} search at RA={ra:.4f}, Dec={dec:.4f}, radius={radius:.2f}°, max_mag={max_magnitude}")
+            
+            # Construct the query for Gaia DR3
+            query = f"""
+            SELECT source_id, ra, dec, phot_g_mean_mag, parallax, pmra, pmdec
+            FROM gaiadr3.gaia_source
+            WHERE 1=CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', {ra}, {dec}, {radius}))
+            AND phot_g_mean_mag <= {max_magnitude}
+            AND phot_g_mean_mag IS NOT NULL
+            ORDER BY phot_g_mean_mag
+            """
+            
+            # Execute the query
+            job = Gaia.launch_job_async(query)
+            result = job.get_results()
+            
+            if result is None or len(result) == 0:
+                logging.info(f"No Gaia objects found in cone search")
+                return []
+            
+            objects = []
+            for row in result:
+                try:
+                    source_id = str(row['source_id'])
+                    obj_ra = float(row['ra'])
+                    obj_dec = float(row['dec'])
+                    magnitude = float(row['phot_g_mean_mag'])
+                    
+                    # Handle optional fields
+                    parallax = None
+                    if 'parallax' in row.colnames and row['parallax'] is not None:
+                        parallax = float(row['parallax'])
+                    
+                    pm_ra = None
+                    if 'pmra' in row.colnames and row['pmra'] is not None:
+                        pm_ra = float(row['pmra'])
+                    
+                    pm_dec = None
+                    if 'pmdec' in row.colnames and row['pmdec'] is not None:
+                        pm_dec = float(row['pmdec'])
+                    
+                    gaia_obj = GaiaObject(source_id, obj_ra, obj_dec, magnitude, parallax, pm_ra, pm_dec)
+                    objects.append(gaia_obj)
+                    logging.info(f"Found Gaia object: {gaia_obj}")
+                    
+                except Exception as e:
+                    logging.warning(f"Error parsing Gaia object: {e}")
+                    continue
+            
+            logging.info(f"Found {len(objects)} Gaia objects in cone search")
+            return objects
+            
+        except Exception as e:
+            logging.error(f"Error in Gaia cone search: {e}")
+            return []
+
+    def get_field_gaia_objects(self, wcs: WCS, image_shape: Tuple[int, int], 
+                              max_magnitude: float = 12.0, radius_buffer: float = 0.1) -> List[GaiaObject]:
+        """Get Gaia stars in the field of view."""
+        try:
+            center_x = image_shape[1] / 2
+            center_y = image_shape[0] / 2
+            center_coords = wcs.pixel_to_world(center_x, center_y)
+            ra_center = center_coords.ra.deg
+            dec_center = center_coords.dec.deg
+            
+            # Calculate search radius based on image diagonal
+            corners = wcs.calc_footprint()
+            if corners is not None:
+                max_radius = 0
+                for corner_ra, corner_dec in corners:
+                    dra = (corner_ra - ra_center) * np.cos(np.radians(dec_center))
+                    ddec = corner_dec - dec_center
+                    radius = np.sqrt(dra**2 + ddec**2)
+                    max_radius = max(max_radius, radius)
+                search_radius = max_radius + radius_buffer
+            else:
+                search_radius = 1.0 + radius_buffer
+            
+            logging.info(f"Gaia field center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°")
+            logging.info(f"Gaia search radius: {search_radius:.3f}°")
+            
+            objects = self.gaia_cone_search(ra_center, dec_center, search_radius, max_magnitude)
+            
+            # Filter objects to only those actually in the field
+            filtered_objects = []
+            for obj in objects:
+                try:
+                    obj_coords = SkyCoord(ra=obj.ra*u.deg, dec=obj.dec*u.deg)
+                    pixel_result = wcs.world_to_pixel(obj_coords)
+                    if hasattr(pixel_result, '__len__') and len(pixel_result) == 2:
+                        pixel_x, pixel_y = pixel_result
+                    else:
+                        pixel_x, pixel_y = pixel_result[0], pixel_result[1]
+                    if (0 <= pixel_x <= image_shape[1] and 
+                        0 <= pixel_y <= image_shape[0]):
+                        filtered_objects.append(obj)
+                        logging.info(f"Gaia object in field: {obj}")
+                except Exception as e:
+                    logging.warning(f"Error checking if Gaia object {obj.source_id} is in field: {e}")
+                    continue
+            
+            return filtered_objects
+            
+        except Exception as e:
+            logging.error(f"Error getting field Gaia objects: {e}")
+            return []
+
+    def get_gaia_object_pixel_coordinates(self, wcs: WCS, objects: List[GaiaObject]) -> List[Tuple[GaiaObject, float, float]]:
+        """Get pixel coordinates for a list of Gaia objects."""
+        pixel_coords = []
+        for obj in objects:
+            try:
+                obj_coords = SkyCoord(ra=obj.ra*u.deg, dec=obj.dec*u.deg)
+                pixel_result = wcs.world_to_pixel(obj_coords)
+                if hasattr(pixel_result, '__len__') and len(pixel_result) == 2:
+                    pixel_x, pixel_y = pixel_result
+                else:
+                    pixel_x, pixel_y = pixel_result[0], pixel_result[1]
+                pixel_coords.append((obj, float(pixel_x), float(pixel_y)))
+            except Exception as e:
+                logging.warning(f"Error converting coordinates for Gaia object {obj.source_id}: {e}")
                 continue
         return pixel_coords 

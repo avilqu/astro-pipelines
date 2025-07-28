@@ -334,6 +334,40 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        # Draw Gaia overlay if enabled
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_gaia_overlay') and
+            self.parent_viewer._gaia_overlay and
+            getattr(self.parent_viewer, '_overlay_visible', True)
+        ):
+            try:
+                from lib.gui.viewer.overlay import GaiaOverlay
+                gaia_objects, pixel_coords_list = self.parent_viewer._gaia_overlay
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                pixel_coords_disp = [
+                    (x * scale + x_offset, y * scale + y_offset)
+                    for (x, y) in pixel_coords_list
+                ]
+                highlight_index = getattr(self.parent_viewer, '_gaia_highlight_index', None)
+                overlay = GaiaOverlay(gaia_objects, pixel_coords_disp, highlight_index=highlight_index)
+                painter = QPainter(self)
+                overlay.draw(painter)
+                painter.end()
+            except Exception as e:
+                pass
         # Draw ephemeris marker overlay if present
         if (
             self.parent_viewer and
@@ -511,6 +545,42 @@ class SIMBADFieldOverlay:
             painter.drawText(text_x, text_y, obj.name)
 
 
+class GaiaOverlay:
+    """Overlay for displaying multiple Gaia stars found in the field."""
+    def __init__(self, gaia_objects, pixel_coords_list, color=QColor(0, 255, 255), radius=6, highlight_index=None):
+        self.gaia_objects = gaia_objects  # List of GaiaObject
+        self.pixel_coords_list = pixel_coords_list  # List of (x, y)
+        self.color = color
+        self.radius = radius
+        self.highlight_index = highlight_index
+
+    def draw(self, painter: QPainter):
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(False)
+        painter.setFont(font)
+        
+        for idx, (obj, (x, y)) in enumerate(zip(self.gaia_objects, self.pixel_coords_list)):
+            if self.highlight_index is not None and idx == self.highlight_index:
+                color = QColor(255, 0, 0)  # Red for highlight
+                pen = QPen(color)
+                pen.setWidth(3)
+            else:
+                color = self.color  # Use consistent color for all stars
+                pen = QPen(color)
+                pen.setWidth(2)
+            
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
+            
+            # Draw source ID to the right for highlighted objects
+            if self.highlight_index is not None and idx == self.highlight_index:
+                text_x = int(x + self.radius + 4)
+                text_y = int(y + 4)
+                painter.drawText(text_x, text_y, obj.source_id)
+
+
 class OverlayMixin:
     """Mixin class providing overlay functionality for the FITS viewer."""
     
@@ -535,6 +605,11 @@ class OverlayMixin:
     def on_simbad_field_row_selected(self, row_index):
         """Handle selection of a SIMBAD field object row."""
         self._simbad_field_highlight_index = row_index
+        self.image_label.update()
+
+    def on_gaia_row_selected(self, row_index):
+        """Handle selection of a Gaia star row."""
+        self._gaia_highlight_index = row_index
         self.image_label.update()
 
     def on_ephemeris_row_selected(self, row_index, ephemeris):
