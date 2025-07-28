@@ -335,6 +335,26 @@ class ToolbarController:
         self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.simbad_button)
         
+        # Sources detection button with dropdown
+        sources_icon = QIcon.fromTheme("kstars_stars")
+        if sources_icon.isNull():
+            sources_icon = QIcon.fromTheme("starred")
+        self.sources_button = QToolButton(self.parent)
+        self.sources_button.setIcon(sources_icon)
+        self.sources_button.setToolTip("Detect sources in image")
+        self.sources_button.setEnabled(True)
+        self.sources_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.sources_button.setFixedSize(32, 32)
+        
+        # Create sources dropdown menu
+        sources_menu = QMenu(self.sources_button)
+        detect_sources_action = QAction("Detect sources", self.parent)
+        detect_sources_action.triggered.connect(self.parent.detect_sources_action)
+        sources_menu.addAction(detect_sources_action)
+        self.sources_button.setMenu(sources_menu)
+        self.sources_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.sources_button)
+        
         # Solar System Objects button
         sso_icon = QIcon.fromTheme("kstars_planets")
         if sso_icon.isNull():
@@ -561,6 +581,7 @@ class ToolbarController:
         # Disable search buttons
         self.simbad_button.setEnabled(False)
         self.sso_button.setEnabled(False)
+        self.sources_button.setEnabled(False) # Disable sources button
         
         # Disable overlay toggle
         self.overlay_toggle_action.setEnabled(False)
@@ -590,6 +611,7 @@ class ToolbarController:
         # Enable search buttons
         self.simbad_button.setEnabled(True)
         self.sso_button.setEnabled(True)
+        self.sources_button.setEnabled(True) # Enable sources button
         
         # Overlay toggle is managed separately based on overlay availability
         # self.overlay_toggle_action.setEnabled(True)

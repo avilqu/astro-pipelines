@@ -334,6 +334,40 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        # Draw source overlay if enabled
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_source_overlay') and
+            self.parent_viewer._source_overlay and
+            getattr(self.parent_viewer, '_overlay_visible', True)
+        ):
+            try:
+                from lib.gui.viewer.overlay import SourceOverlay
+                sources, pixel_coords_list = self.parent_viewer._source_overlay
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                pixel_coords_disp = [
+                    (x * scale + x_offset, y * scale + y_offset)
+                    for (x, y) in pixel_coords_list
+                ]
+                highlight_index = getattr(self.parent_viewer, '_source_highlight_index', None)
+                overlay = SourceOverlay(sources, pixel_coords_disp, highlight_index=highlight_index)
+                painter = QPainter(self)
+                overlay.draw(painter)
+                painter.end()
+            except Exception as e:
+                pass
         # Draw Gaia overlay if enabled
         if (
             self.parent_viewer and
@@ -472,6 +506,41 @@ class SIMBADOverlay:
         text_y = int(y + 4)  # Slightly below center for better alignment
         painter.drawText(text_x, text_y, self.name) 
 
+class SourceOverlay:
+    """Overlay for displaying detected sources in the image."""
+    def __init__(self, sources, pixel_coords_list, color=QColor(160, 32, 240), radius=8, highlight_index=None):
+        self.sources = sources  # List of DetectedSource
+        self.pixel_coords_list = pixel_coords_list  # List of (x, y)
+        self.color = color  # Purple color for sources
+        self.radius = radius
+        self.highlight_index = highlight_index
+
+    def draw(self, painter: QPainter):
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(False)
+        painter.setFont(font)
+        
+        for idx, (source, (x, y)) in enumerate(zip(self.sources, self.pixel_coords_list)):
+            if self.highlight_index is not None and idx == self.highlight_index:
+                color = QColor(255, 0, 0)  # Red for highlight
+                pen = QPen(color)
+                pen.setWidth(3)
+            else:
+                color = self.color  # Purple for normal sources
+                pen = QPen(color)
+                pen.setWidth(2)
+            
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
+            
+            # Draw source ID to the right
+            text_x = int(x + self.radius + 4)
+            text_y = int(y + 4)
+            painter.drawText(text_x, text_y, f"S{source.id}")
+
+
 class SSOOverlay:
     def __init__(self, sso_objects, pixel_coords_list, color=QColor(255, 200, 0), radius=10, highlight_index=None):
         self.sso_objects = sso_objects  # List of SolarSystemObject
@@ -608,8 +677,13 @@ class OverlayMixin:
         self.image_label.update()
 
     def on_gaia_row_selected(self, row_index):
-        """Handle selection of a Gaia star row."""
+        """Handle Gaia row selection for highlighting."""
         self._gaia_highlight_index = row_index
+        self.image_label.update()
+
+    def on_source_row_selected(self, row_index):
+        """Handle source row selection for highlighting."""
+        self._source_highlight_index = row_index
         self.image_label.update()
 
     def on_ephemeris_row_selected(self, row_index, ephemeris):
