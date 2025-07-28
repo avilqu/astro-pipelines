@@ -190,7 +190,8 @@ class ImageOperationsMixin:
         self._simbad_overlay = None
         self._simbad_field_overlay = None
         self._overlay_visible = True
-        self.update_overlay_button_visibility()
+        if hasattr(self, 'overlay_toolbar_controller'):
+            self.overlay_toolbar_controller.update_overlay_button_visibility()
         
         # Gather image data and headers
         image_datas = []

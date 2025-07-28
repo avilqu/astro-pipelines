@@ -16,6 +16,7 @@ from lib.gui.viewer.integration import IntegrationMixin
 from lib.gui.viewer.display import DisplayMixin
 from lib.gui.viewer.histogram import HistogramController
 from lib.gui.viewer.toolbar import ToolbarController
+from lib.gui.viewer.overlay_toolbar import OverlayToolbarController
 from lib.gui.viewer.sources import SourceDetectionMixin
 from lib.sci.catalogs import AstrometryCatalog
 
@@ -58,6 +59,9 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         # Initialize toolbar controller first (creates the toolbar)
         self.toolbar_controller = ToolbarController(self)
         
+        # Initialize overlay toolbar controller
+        self.overlay_toolbar_controller = OverlayToolbarController(self)
+        
         # Initialize histogram controller (needs access to toolbar)
         self.histogram_controller = HistogramController(self)
         
@@ -79,7 +83,6 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         self.zoom_region_action = self.toolbar_controller.zoom_region_action
         self.simbad_button = self.toolbar_controller.simbad_button
         self.sso_button = self.toolbar_controller.sso_button
-        self.overlay_toggle_action = self.toolbar_controller.overlay_toggle_action
         self.calibrate_button = self.toolbar_controller.calibrate_button
         self.platesolve_button = self.toolbar_controller.platesolve_button
         self.header_button = self.toolbar_controller.header_button
@@ -118,7 +121,7 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         self._pending_zoom_rect = None  # Store the last selected rectangle
         if fits_path:
             self.open_and_add_file(fits_path)
-        self.update_overlay_button_visibility()
+        self.overlay_toolbar_controller.update_overlay_button_visibility()
         self.update_navigation_buttons()
         self.update_align_button_visibility()
         self.update_platesolve_button_visibility()

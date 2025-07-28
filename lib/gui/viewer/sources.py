@@ -297,6 +297,8 @@ class SourceDetectionMixin:
             # Store source overlay data
             self._source_overlay = (result.sources, pixel_coords_list)
             self._source_highlight_index = None  # Reset highlight
+            if hasattr(self, 'overlay_toolbar_controller'):
+                self.overlay_toolbar_controller.update_overlay_button_visibility()
         
         # Show results window
         self.sources_result_window = SourcesResultWindow(result.sources, parent=self)

@@ -238,7 +238,9 @@ class ImageLabel(QLabel):
             self.parent_viewer and
             hasattr(self.parent_viewer, '_simbad_overlay') and
             self.parent_viewer._simbad_overlay and
-            getattr(self.parent_viewer, '_overlay_visible', True)
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_simbad_visible()
         ):
             try:
                 from lib.gui.viewer.overlay import SIMBADOverlay
@@ -271,7 +273,9 @@ class ImageLabel(QLabel):
             self.parent_viewer and
             hasattr(self.parent_viewer, '_simbad_field_overlay') and
             self.parent_viewer._simbad_field_overlay and
-            getattr(self.parent_viewer, '_overlay_visible', True)
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_simbad_visible()
         ):
             try:
                 from lib.gui.viewer.overlay import SIMBADFieldOverlay
@@ -305,7 +309,9 @@ class ImageLabel(QLabel):
             self.parent_viewer and
             hasattr(self.parent_viewer, '_sso_overlay') and
             self.parent_viewer._sso_overlay and
-            getattr(self.parent_viewer, '_overlay_visible', True)
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_sso_visible()
         ):
             try:
                 from lib.gui.viewer.overlay import SSOOverlay
@@ -339,7 +345,9 @@ class ImageLabel(QLabel):
             self.parent_viewer and
             hasattr(self.parent_viewer, '_source_overlay') and
             self.parent_viewer._source_overlay and
-            getattr(self.parent_viewer, '_overlay_visible', True)
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_source_visible()
         ):
             try:
                 from lib.gui.viewer.overlay import SourceOverlay
@@ -373,7 +381,9 @@ class ImageLabel(QLabel):
             self.parent_viewer and
             hasattr(self.parent_viewer, '_gaia_overlay') and
             self.parent_viewer._gaia_overlay and
-            getattr(self.parent_viewer, '_overlay_visible', True)
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_gaia_visible()
         ):
             try:
                 from lib.gui.viewer.overlay import GaiaOverlay
@@ -407,7 +417,9 @@ class ImageLabel(QLabel):
             self.parent_viewer and
             hasattr(self.parent_viewer, '_ephemeris_overlay') and
             self.parent_viewer._ephemeris_overlay is not None and
-            getattr(self.parent_viewer, '_overlay_visible', True)
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_ephemeris_visible()
         ):
             try:
                 pixmap = self.pixmap()
@@ -652,19 +664,6 @@ class GaiaOverlay:
 
 class OverlayMixin:
     """Mixin class providing overlay functionality for the FITS viewer."""
-    
-    def toggle_overlay_visibility(self):
-        """Toggle the visibility of all overlays."""
-        self._overlay_visible = not self._overlay_visible
-        # Temporarily block signals to avoid circular dependency
-        self.overlay_toggle_action.blockSignals(True)
-        self.overlay_toggle_action.setChecked(self._overlay_visible)
-        self.overlay_toggle_action.blockSignals(False)
-        self.image_label.update()
-
-    def update_overlay_button_visibility(self):
-        """Update the overlay button visibility based on whether overlays are available."""
-        self.toolbar_controller.update_overlay_button_visibility()
 
     def on_sso_row_selected(self, row_index):
         """Handle selection of a Solar System Object row."""
@@ -720,5 +719,6 @@ class OverlayMixin:
         """Store the marker position for overlay drawing."""
         self._ephemeris_marker_coords = pixel_coords
         self._overlay_visible = True
-        self.update_overlay_button_visibility()
+        if hasattr(self, 'overlay_toolbar_controller'):
+            self.overlay_toolbar_controller.update_overlay_button_visibility()
         self.image_label.update() 

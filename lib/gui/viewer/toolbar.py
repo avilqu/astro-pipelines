@@ -44,7 +44,6 @@ class ToolbarController:
         self.zoom_region_action = None
         self.simbad_button = None
         self.sso_button = None
-        self.overlay_toggle_action = None
         self.calibrate_button = None
         self.platesolve_button = None
         self.header_button = None
@@ -382,18 +381,6 @@ class ToolbarController:
         self.sso_button.setMenu(sso_menu)
         self.sso_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.sso_button)
-        
-        # Overlay toggle action
-        self.overlay_toggle_action = QAction(QIcon.fromTheme("shapes"), "", self.parent)
-        self.overlay_toggle_action.setCheckable(True)
-        # Temporarily block signals during initial setup to avoid triggering toggle
-        self.overlay_toggle_action.blockSignals(True)
-        self.overlay_toggle_action.setChecked(True)
-        self.overlay_toggle_action.blockSignals(False)
-        self.overlay_toggle_action.setVisible(False)
-        self.overlay_toggle_action.triggered.connect(self.parent.toggle_overlay_visibility)
-        self.toolbar.addAction(self.overlay_toggle_action)
-        self.toolbar.widgetForAction(self.overlay_toggle_action).setFixedSize(32, 32)
     
     def _create_processing_controls(self):
         """Create image processing controls (calibrate, platesolve, header)."""        
@@ -583,8 +570,7 @@ class ToolbarController:
         self.sso_button.setEnabled(False)
         self.sources_button.setEnabled(False) # Disable sources button
         
-        # Disable overlay toggle
-        self.overlay_toggle_action.setEnabled(False)
+
         
         # Disable calibration and platesolve buttons
         self.calibrate_button.setEnabled(False)
@@ -613,8 +599,7 @@ class ToolbarController:
         self.sso_button.setEnabled(True)
         self.sources_button.setEnabled(True) # Enable sources button
         
-        # Overlay toggle is managed separately based on overlay availability
-        # self.overlay_toggle_action.setEnabled(True)
+
         
         # Enable calibration and platesolve buttons
         self.calibrate_button.setEnabled(True)
@@ -644,21 +629,4 @@ class ToolbarController:
         """Update the close button enabled state based on whether files are loaded."""
         self.close_action.setEnabled(len(self.parent.loaded_files) > 0)
     
-    def update_overlay_button_visibility(self):
-        """Update overlay button visibility based on overlay availability."""
-        has_overlay = (
-            (hasattr(self.parent, '_simbad_overlay') and self.parent._simbad_overlay is not None) or
-            (hasattr(self.parent, '_sso_overlay') and self.parent._sso_overlay is not None) or
-            (hasattr(self.parent, '_ephemeris_overlay') and self.parent._ephemeris_overlay is not None)
-        )
-
-        self.overlay_toggle_action.setVisible(has_overlay)
-        if has_overlay:
-            # Temporarily block signals to avoid circular dependency
-            self.overlay_toggle_action.blockSignals(True)
-            self.overlay_toggle_action.setChecked(self.parent._overlay_visible)
-            self.overlay_toggle_action.blockSignals(False)
-            # Also enable the button when overlays are available
-            self.overlay_toggle_action.setEnabled(True)
-        else:
-            self.overlay_toggle_action.setEnabled(False) 
+ 
