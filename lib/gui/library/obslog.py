@@ -1,11 +1,14 @@
+#!/usr/bin/env python3
 """
-Table widget for displaying FITS files grouped by runs.
+Observation log table widget for displaying FITS files grouped by runs.
 """
 
+import sys
 import os
+import subprocess
 from datetime import datetime
 from PyQt6.QtWidgets import (
-    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu
+    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QMessageBox, QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QItemSelectionModel, QThread, pyqtSignal as Signal
 from PyQt6.QtGui import QFont, QPalette, QColor
@@ -26,6 +29,40 @@ import signal
 from .platesolving_thread import PlatesolvingThread
 from config import to_display_time
 from astropipes import VIEWER_PATH
+
+
+def launch_viewer(fits_paths):
+    """
+    Launch the FITS viewer with the correct Python executable and working directory.
+    
+    Args:
+        fits_paths: Single path string or list of path strings
+    """
+    # Get the project root directory
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    
+    # Path to the virtual environment python
+    venv_python = os.path.join(project_root, '.venv', 'bin', 'python')
+    
+    # Check if virtual environment exists, otherwise use system python
+    if os.path.exists(venv_python):
+        python_executable = venv_python
+    else:
+        python_executable = sys.executable
+    
+    # Convert single path to list if needed
+    if isinstance(fits_paths, str):
+        fits_paths = [fits_paths]
+    
+    # Launch the viewer
+    try:
+        subprocess.Popen([
+            python_executable,
+            '-m', 'lib.gui.viewer.index',
+            *fits_paths
+        ], cwd=project_root)
+    except Exception as e:
+        QMessageBox.warning(None, "Error", f"Failed to launch FITS viewer: {e}")
 
 
 class RunSummaryWidget(QWidget):
@@ -710,14 +747,8 @@ class FitsTableWidget(QTableWidget):
                 dlg = HeaderViewer(header, fits_file.path, self)
                 dlg.exec()
             def show_image():
-                import sys, subprocess
                 fits_file = selected_files[0]
-                fits_path = fits_file.path
-                subprocess.Popen([
-                    sys.executable,
-                    '-m', 'lib.gui.viewer.index',
-                    fits_path
-                ])
+                launch_viewer([fits_file.path])
             def solve_image():
                 fits_file = selected_files[0]
                 fits_path = fits_file.path
@@ -739,21 +770,10 @@ class FitsTableWidget(QTableWidget):
                 fits_file = selected_files[0]
                 
                 def show_file_in_viewer(file_path):
-                    import sys, subprocess
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        file_path
-                    ])
+                    launch_viewer([file_path])
                 
                 def show_both_files_in_viewer(original_path, calibrated_path):
-                    import sys, subprocess
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        original_path,
-                        calibrated_path
-                    ])
+                    launch_viewer([original_path, calibrated_path])
                 
                 calibrate_and_compare_file(self, fits_file, show_image_callback=show_file_in_viewer, show_both_callback=show_both_files_in_viewer)
             
@@ -761,15 +781,10 @@ class FitsTableWidget(QTableWidget):
         elif len(selected_files) > 1:
             from .context_dropdown import platesolve_multiple_files
             def load_in_viewer():
-                import sys, subprocess
                 # Sort selected_files by date_obs (oldest to newest)
                 sorted_files = sorted(selected_files, key=lambda f: f.date_obs or '')
                 fits_paths = [f.path for f in sorted_files]
-                subprocess.Popen([
-                    sys.executable,
-                    '-m', 'lib.gui.viewer.index',
-                    *fits_paths
-                ])
+                launch_viewer(fits_paths)
             def platesolve_all():
                 platesolve_multiple_files(self, selected_files, on_all_finished=lambda results: self.platesolving_completed.emit())
             menu = build_multi_file_menu(self, load_in_viewer_callback=load_in_viewer, platesolve_all_callback=platesolve_all)
@@ -784,10 +799,5 @@ class FitsTableWidget(QTableWidget):
             if data and 'is_file' in data and 'fits_file' in data:
                 fits_file = data['fits_file']
                 fits_path = fits_file.path
-                import sys, subprocess
-                subprocess.Popen([
-                    sys.executable,
-                    '-m', 'lib.gui.viewer.index',
-                    fits_path
-                ])
+                launch_viewer([fits_path])
         super().mouseDoubleClickEvent(event) 

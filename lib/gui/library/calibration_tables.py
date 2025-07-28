@@ -1,13 +1,56 @@
-from .main_table import MainFitsTableWidget
-from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
-from PyQt6.QtCore import Qt
+#!/usr/bin/env python3
+"""
+Calibration tables for displaying master bias, dark, and flat files.
+"""
+
+import sys
 import os
+import subprocess
 from datetime import datetime, date
-from lib.gui.common.header_window import HeaderViewer
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QMessageBox
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QColor, QPalette
+
 from lib.gui.common.console_window import ConsoleOutputWindow
-from .context_dropdown import build_single_file_menu, build_empty_menu, build_calibration_single_file_menu
-from PyQt6.QtGui import QColor
+from lib.gui.common.header_window import HeaderViewer
+from lib.gui.library.main_table import MainFitsTableWidget
+from lib.gui.library.context_dropdown import build_calibration_single_file_menu, build_empty_menu
+from lib.gui.library.platesolving_thread import PlatesolvingThread
+from lib.db.models import CalibrationMaster
 from config import to_display_time
+
+def launch_viewer(fits_paths):
+    """
+    Launch the FITS viewer with the correct Python executable and working directory.
+    
+    Args:
+        fits_paths: Single path string or list of path strings
+    """
+    # Get the project root directory
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    
+    # Path to the virtual environment python
+    venv_python = os.path.join(project_root, '.venv', 'bin', 'python')
+    
+    # Check if virtual environment exists, otherwise use system python
+    if os.path.exists(venv_python):
+        python_executable = venv_python
+    else:
+        python_executable = sys.executable
+    
+    # Convert single path to list if needed
+    if isinstance(fits_paths, str):
+        fits_paths = [fits_paths]
+    
+    # Launch the viewer
+    try:
+        subprocess.Popen([
+            python_executable,
+            '-m', 'lib.gui.viewer.index',
+            *fits_paths
+        ], cwd=project_root)
+    except Exception as e:
+        QMessageBox.warning(None, "Error", f"Failed to launch FITS viewer: {e}")
 
 class MasterDarksTableWidget(MainFitsTableWidget):
     """Table widget for displaying master dark calibration files, using the same model as MainFitsTableWidget."""
@@ -84,14 +127,9 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                 dlg.exec()
             def show_image():
-                import sys, subprocess
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        fits_path
-                    ])
+                    launch_viewer([fits_path])
             def solve_image():
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
@@ -127,14 +165,9 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                     dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                     dlg.exec()
                 def show_image():
-                    import sys, subprocess
                     fits_path = getattr(cal, 'path', None)
                     if fits_path:
-                        subprocess.Popen([
-                            sys.executable,
-                            '-m', 'lib.gui.viewer.index',
-                            fits_path
-                        ])
+                        launch_viewer([fits_path])
                 menu = build_calibration_single_file_menu(self, show_header_callback=show_header, show_image_callback=show_image)
                 menu.exec(self.viewport().mapToGlobal(pos))
                 return
@@ -206,12 +239,7 @@ class MasterDarksTableWidget(MainFitsTableWidget):
                 cal = data['calibration']
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
-                    import sys, subprocess
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        fits_path
-                    ])
+                    launch_viewer([fits_path])
         super().mouseDoubleClickEvent(event)
 
     def get_visible_file_count(self):
@@ -290,14 +318,9 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                 dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                 dlg.exec()
             def show_image():
-                import sys, subprocess
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        fits_path
-                    ])
+                    launch_viewer([fits_path])
             def solve_image():
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
@@ -382,12 +405,7 @@ class MasterBiasTableWidget(MainFitsTableWidget):
                 cal = data['calibration']
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
-                    import sys, subprocess
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        fits_path
-                    ])
+                    launch_viewer([fits_path])
         super().mouseDoubleClickEvent(event)
 
     def get_visible_file_count(self):
@@ -469,14 +487,9 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 dlg = HeaderViewer(header, getattr(cal, 'path', None), self)
                 dlg.exec()
             def show_image():
-                import sys, subprocess
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        fits_path
-                    ])
+                    launch_viewer([fits_path])
             def solve_image():
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
@@ -577,12 +590,7 @@ class MasterFlatsTableWidget(MainFitsTableWidget):
                 cal = data['calibration']
                 fits_path = getattr(cal, 'path', None)
                 if fits_path:
-                    import sys, subprocess
-                    subprocess.Popen([
-                        sys.executable,
-                        '-m', 'lib.gui.viewer.index',
-                        fits_path
-                    ])
+                    launch_viewer([fits_path])
         super().mouseDoubleClickEvent(event) 
 
     def get_visible_file_count(self):
