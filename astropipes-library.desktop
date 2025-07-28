@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Astropipes Library
+Name[en]=Astropipes Library
+Comment=Astronomical Image Library Management Tool
+Comment[en]=Astronomical Image Library Management Tool
+Exec=/home/tan/dev/astro-pipelines/.venv/bin/python /home/tan/dev/astro-pipelines/astropipes.py -G
+Icon=/home/tan/dev/astro-pipelines/lib/legacy/icon.png
+Terminal=false
+Categories=Science;Astronomy;Education;
+Keywords=astronomy;fits;image;library;management;
+StartupNotify=true 
