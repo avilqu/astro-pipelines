@@ -63,9 +63,9 @@ class ToolbarController:
         self._create_file_controls()
         self._create_zoom_controls()
         self._create_histogram_controls()
-        self._create_search_controls()
         self._create_processing_controls()
         self._create_integration_controls()
+        self._create_search_controls()
         self._create_filelist_control()
     
     def _create_toolbar(self):
@@ -370,9 +370,7 @@ class ToolbarController:
         self.toolbar.widgetForAction(self.overlay_toggle_action).setFixedSize(32, 32)
     
     def _create_processing_controls(self):
-        """Create image processing controls (calibrate, platesolve, header)."""
-        self.toolbar.addWidget(make_toolbar_separator(self.parent))
-        
+        """Create image processing controls (calibrate, platesolve, header)."""        
         # Calibrate button with dropdown
         calibrate_icon = QIcon.fromTheme("blur")
         if calibrate_icon.isNull():
@@ -434,10 +432,41 @@ class ToolbarController:
         self.header_button.triggered.connect(self.parent.show_header_dialog)
         self.toolbar.addAction(self.header_button)
         self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
+
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+
     
     def _create_integration_controls(self):
         """Create integration controls."""
-        self.toolbar.addWidget(make_toolbar_separator(self.parent))
+
+        # Align button with dropdown
+        align_icon = QIcon.fromTheme("transform-shear-left")
+        if align_icon.isNull():
+            align_icon = QIcon.fromTheme("transform-shear")
+        
+        self.align_button = QToolButton(self.parent)
+        self.align_button.setIcon(align_icon)
+        self.align_button.setToolTip("Align images")
+        self.align_button.setEnabled(False)  # Initially disabled
+        self.align_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.align_button.setFixedSize(32, 32)
+        
+        # Create align dropdown menu
+        align_menu = QMenu(self.align_button)
+        
+        # Fast alignment option
+        align_fast_action = QAction("Align images (Astroalign)", self.parent)
+        align_fast_action.triggered.connect(self.parent.align_images_fast)
+        align_menu.addAction(align_fast_action)
+        
+        # WCS alignment option
+        align_wcs_action = QAction("Align images (WCS reprojection)", self.parent)
+        align_wcs_action.triggered.connect(self.parent.align_images_wcs)
+        align_menu.addAction(align_wcs_action)
+        
+        self.align_button.setMenu(align_menu)
+        self.align_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
+        self.toolbar.addWidget(self.align_button)
 
         # Integration button with dropdown
         integration_icon = QIcon.fromTheme("black_sum")
@@ -454,18 +483,6 @@ class ToolbarController:
         # Create integration dropdown menu
         integration_menu = QMenu(self.integration_button)
         
-        # Fast alignment option
-        align_fast_action = QAction("Align images (Astroalign)", self.parent)
-        align_fast_action.triggered.connect(self.parent.align_images_fast)
-        integration_menu.addAction(align_fast_action)
-        
-        # WCS alignment option
-        align_wcs_action = QAction("Align images (WCS reprojection)", self.parent)
-        align_wcs_action.triggered.connect(self.parent.align_images_wcs)
-        integration_menu.addAction(align_wcs_action)
-        
-        integration_menu.addSeparator()
-        
         stack_wcs_action = QAction("Stack aligned images", self.parent)
         stack_wcs_action.triggered.connect(self.parent.stack_align_wcs)
         integration_menu.addAction(stack_wcs_action)
@@ -477,6 +494,8 @@ class ToolbarController:
         self.integration_button.setMenu(integration_menu)
         self.integration_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.integration_button)
+
+        self.toolbar.addWidget(make_toolbar_separator(self.parent))
     
     def _create_filelist_control(self):
         """Create file list control and add navigation widget."""
@@ -544,8 +563,10 @@ class ToolbarController:
         self.calibrate_button.setEnabled(False)
         self.platesolve_button.setEnabled(False)
         
-        # Disable integration button
+        # Disable integration buttons
         self.integration_button.setEnabled(False)
+        if hasattr(self, 'align_button'):
+            self.align_button.setEnabled(False)
     
     def update_button_states_for_image_loaded(self):
         """Enable all buttons that require an image to be loaded."""
@@ -571,8 +592,9 @@ class ToolbarController:
         self.calibrate_button.setEnabled(True)
         self.platesolve_button.setEnabled(True)
         
-        # Integration button is managed separately based on number of files
+        # Integration buttons are managed separately based on number of files
         # self.integration_button.setEnabled(True)
+        # self.align_button.setEnabled(True)
     
     def update_align_button_visibility(self):
         """Update integration button visibility based on number of loaded files."""
@@ -581,8 +603,10 @@ class ToolbarController:
         # For QToolButton, always keep visible, but enable/disable
         if hasattr(self, 'integration_button'):
             self.integration_button.setEnabled(visible)
-            self.toolbar.update()
-            self.toolbar.repaint()
+        if hasattr(self, 'align_button'):
+            self.align_button.setEnabled(visible)
+        self.toolbar.update()
+        self.toolbar.repaint()
     
     def update_platesolve_button_visibility(self):
         """Enable platesolve button if at least one file is loaded."""
