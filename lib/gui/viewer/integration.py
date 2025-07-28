@@ -189,7 +189,7 @@ class IntegrationMixin:
                 # Store reference to prevent garbage collection
                 self._orbit_window = dlg
                 # Optionally, select the current file's row by default
-                if self.current_file_index >= 0:
+                if self.current_file_index >= 0 and self.current_file_index < len(predicted_positions):
                     dlg.positions_table.selectRow(self.current_file_index)
                     self.on_ephemeris_row_selected(self.current_file_index, predicted_positions[self.current_file_index])
             

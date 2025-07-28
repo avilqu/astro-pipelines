@@ -61,7 +61,7 @@ SIGMA_HIGH = 3
 # Memory management settings for image integration
 # These settings help prevent memory crashes when processing large numbers of files
 INTEGRATION_MEMORY_LIMIT = 6e9  # 6GB memory limit for integration (in bytes)
-INTEGRATION_CHUNK_SIZE = 30     # Number of images to process in each chunk
+INTEGRATION_CHUNK_SIZE = 15     # Number of images to process in each chunk
 INTEGRATION_ENABLE_CHUNKED = True  # Enable chunked processing for large datasets
 
 # Motion tracking integration settings
