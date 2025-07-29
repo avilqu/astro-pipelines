@@ -3,9 +3,9 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.time import Time
-from PyQt6.QtWidgets import QLabel, QScrollArea, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QMessageBox
+from PyQt6.QtWidgets import QLabel, QScrollArea, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QMessageBox, QMenu, QApplication
 from PyQt6.QtCore import Qt, QPoint, QTimer, QPointF, QRect
-from PyQt6.QtGui import QPixmap, QPainter, QMouseEvent, QKeyEvent, QFont, QPen, QColor, QCursor
+from PyQt6.QtGui import QPixmap, QPainter, QMouseEvent, QKeyEvent, QFont, QPen, QColor, QCursor, QAction
 
 class ImageLabel(QLabel):
     """Custom QLabel that handles mouse events for panning and zooming, and supports overlays"""
@@ -531,6 +531,74 @@ class ImageLabel(QLabel):
             img_y = py / scale
             return (img_x, img_y)
         return to_img_coords(self._zoom_region_start), to_img_coords(self._zoom_region_end)
+
+    def _get_coordinates_at_point(self, pos):
+        """Get sky coordinates at a specific point in the format 'hh:mm:ss.s dd:mm:ss.s'"""
+        if not self.parent_viewer or not self.parent_viewer.wcs:
+            return None
+        
+        pixmap = self.pixmap()
+        if not pixmap or self.parent_viewer.image_data is None:
+            return None
+        
+        img_h, img_w = self.parent_viewer.image_data.shape
+        pixmap_w = pixmap.width()
+        pixmap_h = pixmap.height()
+        label_w = self.width()
+        label_h = self.height()
+        
+        # Compute centering offset and scale (aspect ratio preserved)
+        scale_x = pixmap_w / img_w
+        scale_y = pixmap_h / img_h
+        scale = scale_x  # or scale_y, they should be equal
+        x_offset = (label_w - pixmap_w) // 2
+        y_offset = (label_h - pixmap_h) // 2
+        
+        # Map mouse position to image coordinates
+        pixmap_x = pos.x() - x_offset
+        pixmap_y = pos.y() - y_offset
+        
+        if (0 <= pixmap_x < pixmap_w and 0 <= pixmap_y < pixmap_h):
+            orig_x = pixmap_x / scale
+            orig_y = pixmap_y / scale
+            
+            try:
+                sky_coords = self.parent_viewer.wcs.pixel_to_world(orig_x, orig_y)
+                if hasattr(sky_coords, 'ra') and hasattr(sky_coords, 'dec'):
+                    ra = sky_coords.ra.to_string(unit='hourangle', precision=1, pad=True)
+                    dec = sky_coords.dec.to_string(unit='deg', precision=1, alwayssign=True, pad=True)
+                else:
+                    ra = sky_coords[0].to_string(unit='hourangle', precision=1, pad=True)
+                    dec = sky_coords[1].to_string(unit='deg', precision=1, alwayssign=True, pad=True)
+                return f"{ra} {dec}"
+            except Exception:
+                return None
+        return None
+
+    def contextMenuEvent(self, event):
+        """Handle right-click context menu"""
+        if not self.parent_viewer or not self.parent_viewer.wcs:
+            return
+        
+        # Get coordinates at the right-click position
+        coords = self._get_coordinates_at_point(event.pos())
+        
+        if coords:
+            # Create context menu
+            menu = QMenu(self)
+            
+            # Create "Copy coordinates" action
+            copy_action = QAction("Copy coordinates", self)
+            copy_action.triggered.connect(lambda: self._copy_coordinates_to_clipboard(coords))
+            menu.addAction(copy_action)
+            
+            # Show the menu at the cursor position
+            menu.exec(event.globalPos())
+
+    def _copy_coordinates_to_clipboard(self, coords):
+        """Copy coordinates to clipboard"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(coords)
 
 class SIMBADOverlay:
     def __init__(self, name, pixel_coords, color=QColor(0, 255, 0), radius=12):
