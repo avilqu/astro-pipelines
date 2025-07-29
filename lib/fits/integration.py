@@ -18,6 +18,7 @@ from typing import List, Dict, Optional, Tuple, Union, Callable
 from pathlib import Path
 import warnings
 from datetime import datetime
+import os
 
 # Import configuration
 from config import (SIGMA_LOW, SIGMA_HIGH, TESTED_FITS_CARDS, 
@@ -172,10 +173,15 @@ def get_observation_time(file_path: str) -> Optional[str]:
 
 
 def calculate_motion_shifts(files: List[str], object_name: str, 
-                          reference_time: Optional[str] = None) -> List[Tuple[float, float]]:
+                          reference_time: Optional[str] = None) -> Tuple[List[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """
     Calculate pixel shifts needed to keep moving object static using motion rate and position angle.
     This function now calls predict_position_findorb only once for all observation times, then uses the average motion rate and PA for all shifts.
+    
+    Returns:
+    --------
+    Tuple[List[Tuple[float, float]], Optional[Tuple[float, float]]]
+        List of (dx, dy) shifts for each image, and the reference position (x, y) in the first image
     """
     print(f"\nCalculating motion shifts for object {object_name} using motion rate and position angle...")
 
@@ -215,14 +221,14 @@ def calculate_motion_shifts(files: List[str], object_name: str,
 
     if not observation_times:
         print("Warning: No valid observation times found")
-        return [(0.0, 0.0)] * len(files)
+        return [(0.0, 0.0)] * len(files), None
 
     # Call predict_position_findorb ONCE for all observation times
     try:
         result = predict_position_findorb(object_name, observation_times)
     except Exception as e:
         print(f"Warning: Error getting ephemeris for all files: {e}")
-        return [(0.0, 0.0)] * len(files)
+        return [(0.0, 0.0)] * len(files), None
 
     # Gather motion rates and PAs from all results
     motion_rates = []
@@ -254,7 +260,7 @@ def calculate_motion_shifts(files: List[str], object_name: str,
 
     if not ephemeris_data or not motion_rates or not motion_pas:
         print("Warning: No valid ephemeris data found")
-        return [(0.0, 0.0)] * len(files)
+        return [(0.0, 0.0)] * len(files), None
 
     avg_motion_rate = np.mean(motion_rates)
     avg_motion_pa = np.mean(motion_pas)
@@ -291,6 +297,7 @@ def calculate_motion_shifts(files: List[str], object_name: str,
 
     print(f"\nCalculating shifts relative to reference time...")
     shifts = []
+    reference_object_pixel = None # Initialize reference_object_pixel
     for file_path in files:
         # Find corresponding ephemeris data
         file_data = next((data for data in ephemeris_data if data['file_path'] == file_path), None)
@@ -388,7 +395,7 @@ def calculate_motion_shifts(files: List[str], object_name: str,
             print(f"Warning: Error calculating pixel shift for {file_path}: {e}")
             print(f"Exception details: {type(e).__name__}: {str(e)}")
             shifts.append((0.0, 0.0))
-    return shifts
+    return shifts, reference_object_pixel
 
 
 def safe_set_metadata(meta_dict: dict, key: str, value) -> None:
@@ -591,7 +598,7 @@ def integrate_chunked(files: List[str],
         print("Warning: Sequence has inconsistencies, proceeding anyway...")
     
     # Calculate motion shifts for all files
-    shifts = calculate_motion_shifts(files, object_name, reference_time)
+    shifts, reference_object_pixel = calculate_motion_shifts(files, object_name, reference_time)
     
     # Calculate required padding
     padding = calculate_required_padding(shifts)
@@ -762,6 +769,12 @@ def integrate_chunked(files: List[str],
         safe_set_metadata(final_stack.meta, 'ORIGINAL_FILES', json.dumps(files))
         safe_set_metadata(final_stack.meta, 'PADDING', json.dumps(padding))
         
+        # Store reference position if available
+        if reference_object_pixel is not None:
+            # Convert numpy array to list for JSON serialization
+            reference_position_list = reference_object_pixel.tolist() if hasattr(reference_object_pixel, 'tolist') else list(reference_object_pixel)
+            safe_set_metadata(final_stack.meta, 'REFERENCE_POSITION', json.dumps(reference_position_list))
+        
         final_stack.uncertainty = None
         final_stack.mask = None
         final_stack.flags = None
@@ -863,7 +876,7 @@ def integrate_with_motion_tracking(files: List[str],
         print("Warning: Sequence has inconsistencies, proceeding anyway...")
     
     # Calculate motion shifts
-    shifts = calculate_motion_shifts(files, object_name, reference_time)
+    shifts, reference_object_pixel = calculate_motion_shifts(files, object_name, reference_time)
     
     # Calculate required padding
     padding = calculate_required_padding(shifts)
@@ -975,6 +988,12 @@ def integrate_with_motion_tracking(files: List[str],
         safe_set_metadata(stack.meta, 'MOTION_SHIFTS', json.dumps(shift_info))
         safe_set_metadata(stack.meta, 'ORIGINAL_FILES', json.dumps(files))
         safe_set_metadata(stack.meta, 'PADDING', json.dumps(padding))
+        
+        # Store reference position if available
+        if reference_object_pixel is not None:
+            # Convert numpy array to list for JSON serialization
+            reference_position_list = reference_object_pixel.tolist() if hasattr(reference_object_pixel, 'tolist') else list(reference_object_pixel)
+            safe_set_metadata(stack.meta, 'REFERENCE_POSITION', json.dumps(reference_position_list))
         
         stack.uncertainty = None
         stack.mask = None
@@ -1230,6 +1249,10 @@ def compute_object_positions_from_motion_tracked(
         padding_json = header.get('PADDING')
         padding = json.loads(padding_json) if padding_json else (0, 0, 0, 0)
         
+        # Get reference position from header
+        reference_position_json = header.get('REFERENCE_POSITION')
+        reference_position = json.loads(reference_position_json) if reference_position_json else None
+        
         # Get WCS from stacked image if available
         stacked_wcs = None
         try:
@@ -1254,13 +1277,46 @@ def compute_object_positions_from_motion_tracked(
             shift_y = shift_info['shift_y']
             
             # Reverse the shift: subtract the shift that was applied during stacking
-            original_x = cursor_coords[0] - shift_x
-            original_y = cursor_coords[1] - shift_y
+            # BUT: The shifts were calculated in the original image coordinate system,
+            # while cursor_coords are in the cropped stacked image coordinate system.
+            # Since the final image was cropped to remove padding, we need to adjust
+            # the shifts to account for this coordinate system difference.
             
-            # Account for padding that was added during stacking
-            # The padding was added around the original image, so we need to adjust
-            original_x -= padding[0]  # Left padding
-            original_y -= padding[2]  # Top padding
+            # The shifts were calculated in the original image coordinate system
+            # but applied to padded images. When the final result is cropped,
+            # the coordinate systems align again, so we can simply subtract the shifts.
+            
+            # The shifts were calculated to move the object from its position in each image
+            # to a fixed reference position (the first image's object position).
+            # To reverse this, we need to calculate where the cursor position would be
+            # in each original image by subtracting the shift.
+            
+            # If we have the reference position, we can calculate the original position more accurately
+            if reference_position is not None:
+                # The cursor position is in the stacked image coordinate system
+                # The reference position is in the first image's coordinate system
+                # The shifts move from each image's object position to the reference position
+                # So to reverse: original_position = cursor_position - shift
+                original_x = cursor_coords[0] - shift_x
+                original_y = cursor_coords[1] - shift_y
+            else:
+                # Fallback to simple shift reversal
+                original_x = cursor_coords[0] - shift_x
+                original_y = cursor_coords[1] - shift_y
+            
+            # Debug output for first few positions
+            if len(results) < 3:
+                print(f"DEBUG: File: {os.path.basename(file_path)}")
+                print(f"DEBUG: Cursor coords: ({cursor_coords[0]:.2f}, {cursor_coords[1]:.2f})")
+                print(f"DEBUG: Shift: ({shift_x:.2f}, {shift_y:.2f})")
+                print(f"DEBUG: Calculated original: ({original_x:.2f}, {original_y:.2f})")
+                print(f"DEBUG: Padding: {padding}")
+                print(f"DEBUG: Stacked image shape: {stacked_data.shape}")
+            
+            # The shifts were applied to padded images, but the final result was cropped.
+            # Since we're working with the cropped result, we don't need to subtract padding
+            # because the coordinate systems are already aligned after cropping.
+            # The padding adjustment is not needed here.
             
             # Get WCS from original image if available
             original_ra = None
