@@ -22,6 +22,7 @@ class OverlayToolbarController:
         self.source_toggle_action = None
         self.simbad_toggle_action = None
         self.gaia_toggle_action = None
+        self.gaia_detection_toggle_action = None
         
         # Overlay visibility states (separate from global overlay visibility)
         self._ephemeris_visible = True
@@ -29,6 +30,7 @@ class OverlayToolbarController:
         self._source_visible = True
         self._simbad_visible = True
         self._gaia_visible = True
+        self._gaia_detection_visible = True
         
         # Create the toolbar
         self._create_toolbar()
@@ -139,6 +141,18 @@ class OverlayToolbarController:
         self.gaia_toggle_action.triggered.connect(self._toggle_gaia_overlay)
         self.toolbar.addAction(self.gaia_toggle_action)
         self.toolbar.widgetForAction(self.gaia_toggle_action).setFixedSize(32, 32)
+        
+        # Gaia detection overlay toggle
+        gaia_detection_icon = QIcon.fromTheme("kstars_stars")
+        if gaia_detection_icon.isNull():
+            gaia_detection_icon = QIcon.fromTheme("starred")
+        self.gaia_detection_toggle_action = QAction(gaia_detection_icon, "Toggle Gaia Detection", self.parent)
+        self.gaia_detection_toggle_action.setCheckable(True)
+        self.gaia_detection_toggle_action.setChecked(True)
+        self.gaia_detection_toggle_action.setToolTip("Show/hide matched Gaia stars")
+        self.gaia_detection_toggle_action.triggered.connect(self._toggle_gaia_detection_overlay)
+        self.toolbar.addAction(self.gaia_detection_toggle_action)
+        self.toolbar.widgetForAction(self.gaia_detection_toggle_action).setFixedSize(32, 32)
     
     def _toggle_ephemeris_overlay(self):
         """Toggle ephemeris overlay visibility."""
@@ -163,6 +177,11 @@ class OverlayToolbarController:
     def _toggle_gaia_overlay(self):
         """Toggle Gaia overlay visibility."""
         self._gaia_visible = not self._gaia_visible
+        self.parent.image_label.update()
+    
+    def _toggle_gaia_detection_overlay(self):
+        """Toggle Gaia detection overlay visibility."""
+        self._gaia_detection_visible = not self._gaia_detection_visible
         self.parent.image_label.update()
     
     def update_overlay_button_visibility(self):
@@ -203,6 +222,13 @@ class OverlayToolbarController:
         self.gaia_toggle_action.setVisible(has_gaia)
         if has_gaia:
             self.gaia_toggle_action.setChecked(self._gaia_visible)
+        
+        # Gaia detection button
+        has_gaia_detection = (hasattr(self.parent, '_gaia_detection_overlay') and 
+                             self.parent._gaia_detection_overlay is not None)
+        self.gaia_detection_toggle_action.setVisible(has_gaia_detection)
+        if has_gaia_detection:
+            self.gaia_detection_toggle_action.setChecked(self._gaia_detection_visible)
     
     def is_ephemeris_visible(self):
         """Check if ephemeris overlay should be visible."""
@@ -223,3 +249,7 @@ class OverlayToolbarController:
     def is_gaia_visible(self):
         """Check if Gaia overlay should be visible."""
         return self._gaia_visible and getattr(self.parent, '_overlay_visible', True) 
+
+    def is_gaia_detection_visible(self):
+        """Check if Gaia detection overlay should be visible."""
+        return self._gaia_detection_visible and getattr(self.parent, '_overlay_visible', True) 

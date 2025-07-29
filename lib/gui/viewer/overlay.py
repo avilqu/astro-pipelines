@@ -454,6 +454,46 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        # Draw Gaia detection overlay if enabled
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_gaia_detection_overlay') and
+            self.parent_viewer._gaia_detection_overlay and
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_gaia_detection_visible()
+        ):
+            try:
+                from lib.gui.viewer.overlay import GaiaDetectionOverlay
+                gaia_detection_results = self.parent_viewer._gaia_detection_overlay
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                
+                # Extract pixel coordinates from detected sources and scale them properly
+                pixel_coords_list = [(result[1].x, result[1].y) for result in gaia_detection_results]
+                pixel_coords_disp = [
+                    (x * scale + x_offset, y * scale + y_offset)
+                    for (x, y) in pixel_coords_list
+                ]
+                
+                highlight_index = getattr(self.parent_viewer, '_gaia_detection_highlight_index', None)
+                overlay = GaiaDetectionOverlay(gaia_detection_results, pixel_coords_disp, highlight_index=highlight_index)
+                painter = QPainter(self)
+                overlay.draw(painter)
+                painter.end()
+            except Exception as e:
+                pass
         # Draw zoom region rectangle if active or if selection exists
         if self._zoom_region_mode and (self._zoom_region_active or (self._zoom_region_start and self._zoom_region_end)):
             painter = QPainter(self)
@@ -627,7 +667,7 @@ class SIMBADFieldOverlay:
 
 
 class GaiaOverlay:
-    """Overlay for displaying multiple Gaia stars found in the field."""
+    """Overlay for displaying Gaia stars in the image."""
     def __init__(self, gaia_objects, pixel_coords_list, color=QColor(0, 255, 255), radius=6, highlight_index=None):
         self.gaia_objects = gaia_objects  # List of GaiaObject
         self.pixel_coords_list = pixel_coords_list  # List of (x, y)
@@ -660,6 +700,41 @@ class GaiaOverlay:
                 text_x = int(x + self.radius + 4)
                 text_y = int(y + 4)
                 painter.drawText(text_x, text_y, obj.source_id)
+
+
+class GaiaDetectionOverlay:
+    """Overlay for displaying matched Gaia stars with detected sources."""
+    def __init__(self, gaia_detection_results, pixel_coords_list, color=QColor(160, 32, 240), radius=8, highlight_index=None):
+        self.gaia_detection_results = gaia_detection_results  # List of (GaiaObject, DetectedSource, distance_arcsec)
+        self.pixel_coords_list = pixel_coords_list  # List of (x, y) display coordinates
+        self.color = color  # Purple color like sources
+        self.radius = radius
+        self.highlight_index = highlight_index
+
+    def draw(self, painter: QPainter):
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(False)
+        painter.setFont(font)
+        
+        for idx, ((gaia_obj, detected_source, distance_arcsec), (x, y)) in enumerate(zip(self.gaia_detection_results, self.pixel_coords_list)):
+            if self.highlight_index is not None and idx == self.highlight_index:
+                color = QColor(255, 0, 0)  # Red for highlight
+                pen = QPen(color)
+                pen.setWidth(3)
+            else:
+                color = self.color  # Purple for normal matched sources
+                pen = QPen(color)
+                pen.setWidth(2)
+            
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
+            
+            # Draw Gaia source ID and distance to the right
+            text_x = int(x + self.radius + 4)
+            text_y = int(y + 4)
+            painter.drawText(text_x, text_y, f"G{gaia_obj.source_id} ({distance_arcsec:.1f}\")")
 
 
 class OverlayMixin:

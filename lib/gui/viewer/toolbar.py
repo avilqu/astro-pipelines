@@ -355,6 +355,12 @@ class ToolbarController:
         
         sources_menu.addSeparator()
         
+        detect_gaia_stars_action = QAction("Detect Gaia stars in image", self.parent)
+        detect_gaia_stars_action.triggered.connect(self.parent.detect_gaia_stars_in_image)
+        sources_menu.addAction(detect_gaia_stars_action)
+        
+        sources_menu.addSeparator()
+        
         search_gaia_action = QAction("Search Gaia catalog", self.parent)
         search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
         sources_menu.addAction(search_gaia_action)

@@ -9,6 +9,8 @@ from lib.sci.sources import detect_sources_in_image
 from lib.gui.common.sources_window import SourcesResultWindow
 from lib.gui.common.console_window import ConsoleOutputWindow
 from lib.gui.common.source_detection_dialog import SourceDetectionDialog
+from lib.gui.common.gaia_detection_results_window import GaiaDetectionResultWindow
+from lib.gui.viewer.catalogs import GaiaSearchDialog
 
 
 class SourceDetectionThread(QThread):
@@ -323,4 +325,200 @@ class SourceDetectionMixin:
     def on_source_row_selected(self, row_index):
         """Handle source row selection for highlighting."""
         self._source_highlight_index = row_index
+        self.image_label.update()
+
+    def detect_gaia_stars_in_image(self):
+        """Detect Gaia stars in the image and cross-match with detected sources."""
+        if self.image_data is None:
+            QMessageBox.warning(self, "No Image", "No image loaded for Gaia star detection.")
+            return
+        
+        if self.wcs is None:
+            QMessageBox.warning(self, "No WCS", "No WCS information available. Please solve the image first.")
+            return
+        
+        # Ask user for magnitude limit using existing dialog
+        gaia_dialog = GaiaSearchDialog(self)
+        if gaia_dialog.exec() != QDialog.DialogCode.Accepted or not gaia_dialog.result:
+            return  # User cancelled
+        
+        gaia_objects, pixel_coords_dict = gaia_dialog.result
+        
+        if not gaia_objects:
+            QMessageBox.information(self, "No Gaia Stars", "No Gaia stars found in the field.")
+            return
+        
+        # Now detect sources in the image using the same default parameters as regular source detection
+        self.console_window = ConsoleOutputWindow("Gaia Star Detection Progress", self)
+        self.console_window.show_and_raise()
+        
+        # Connect console window signals
+        self.console_window.cancel_requested.connect(self.cancel_source_detection)
+        
+        # Use the same default parameters calculation as regular source detection
+        img_height, img_width = self.image_data.shape
+        max_dim = max(img_height, img_width)
+        
+        # Determine default parameters based on image size (same as regular detection)
+        if max_dim > 3000:
+            # For very large images, use very conservative parameters
+            bg_box_size = 200
+            bg_filter_size = 7
+            threshold_sigma = 3.0
+            npixels = 10
+            min_area = 20
+            min_snr = 5.0
+            deblend = False
+        elif max_dim > 1000:
+            # For large images, use conservative parameters
+            bg_box_size = min(100, max_dim // 20)
+            bg_filter_size = 5
+            threshold_sigma = 2.5
+            npixels = 8
+            min_area = 15
+            min_snr = 4.0
+            deblend = False
+        else:
+            # For smaller images, use moderately conservative parameters
+            bg_box_size = 25
+            bg_filter_size = 3
+            threshold_sigma = 2.0
+            npixels = 5
+            min_area = 8
+            min_snr = 3.0
+            deblend = True
+        
+        # Use the same default parameters as regular source detection
+        params = {
+            'threshold_sigma': threshold_sigma,
+            'npixels': npixels,
+            'min_area': min_area,
+            'min_snr': min_snr,
+            'max_area': 1000,
+            'min_eccentricity': 0.0,
+            'max_eccentricity': 0.9,
+            'deblend': deblend,
+            'connectivity': 8,
+            'background_box_size': bg_box_size,
+            'background_filter_size': bg_filter_size
+        }
+        
+        # Create detection thread with same timeout as regular detection
+        timeout = 600 if max_dim > 2000 else 300  # 10 minutes for very large images, 5 for others
+        
+        self.detection_thread = SourceDetectionThread(
+            self.image_data,
+            wcs=self.wcs,
+            timeout=timeout,
+            **params
+        )
+        
+        # Connect thread signals
+        self.detection_thread.output_received.connect(self.console_window.append_text)
+        self.detection_thread.detection_complete.connect(
+            lambda result: self.on_gaia_detection_complete(result, gaia_objects, pixel_coords_dict)
+        )
+        self.detection_thread.error_occurred.connect(self.on_detection_error)
+        
+        # Start detection
+        self.console_window.append_text("Starting source detection for Gaia cross-matching...\n")
+        self.console_window.append_text(f"Found {len(gaia_objects)} Gaia stars in the field.\n")
+        self.console_window.append_text("Now detecting sources in the image using optimized settings...\n")
+        self.console_window.append_text(f"Using parameters: threshold_sigma={threshold_sigma}, npixels={npixels}, min_area={min_area}, min_snr={min_snr}\n")
+        
+        # Start a timer to show progress
+        self.progress_timer = QTimer()
+        self.progress_timer.timeout.connect(self.show_progress)
+        self.progress_timer.start(5000)  # Show progress every 5 seconds
+        
+        self.detection_thread.start()
+    
+    def on_gaia_detection_complete(self, detection_result, gaia_objects, pixel_coords_dict):
+        """Handle completion of source detection for Gaia cross-matching."""
+        # Stop progress timer
+        if hasattr(self, 'progress_timer'):
+            self.progress_timer.stop()
+        
+        self.console_window.append_text("\n" + "=" * 50 + "\n")
+        self.console_window.append_text(f"Detection result: {detection_result}\n")
+        
+        if not detection_result.success:
+            self.console_window.append_text(f"Detection failed: {detection_result.message}\n")
+            return
+        
+        if not detection_result.sources:
+            self.console_window.append_text("No sources detected above the threshold.\n")
+            return
+        
+        # Cross-match Gaia stars with detected sources
+        self.console_window.append_text("Cross-matching Gaia stars with detected sources...\n")
+        
+        gaia_detection_results = []
+        match_tolerance_arcsec = 2.0  # 2 arcsecond tolerance for matching
+        
+        for gaia_obj in gaia_objects:
+            gaia_ra = gaia_obj.ra
+            gaia_dec = gaia_obj.dec
+            
+            # Find the closest detected source to this Gaia star
+            closest_source = None
+            min_distance_arcsec = float('inf')
+            
+            for detected_source in detection_result.sources:
+                if detected_source.ra is None or detected_source.dec is None:
+                    continue
+                
+                # Calculate angular distance in arcseconds
+                import numpy as np
+                from astropy.coordinates import SkyCoord
+                from astropy import units as u
+                
+                gaia_coord = SkyCoord(ra=gaia_ra*u.deg, dec=gaia_dec*u.deg)
+                detected_coord = SkyCoord(ra=detected_source.ra*u.deg, dec=detected_source.dec*u.deg)
+                
+                separation = gaia_coord.separation(detected_coord)
+                distance_arcsec = separation.arcsec
+                
+                if distance_arcsec < min_distance_arcsec:
+                    min_distance_arcsec = distance_arcsec
+                    closest_source = detected_source
+            
+            # If we found a match within tolerance, add to results
+            if closest_source is not None and min_distance_arcsec <= match_tolerance_arcsec:
+                gaia_detection_results.append((gaia_obj, closest_source, min_distance_arcsec))
+                self.console_window.append_text(
+                    f"Matched Gaia {gaia_obj.source_id} (mag {gaia_obj.magnitude:.2f}) "
+                    f"with source {closest_source.id} (distance: {min_distance_arcsec:.2f} arcsec)\n"
+                )
+        
+        self.console_window.append_text(f"\nFound {len(gaia_detection_results)} matches.\n")
+        
+        if not gaia_detection_results:
+            self.console_window.append_text("No Gaia stars matched with detected sources.\n")
+            return
+        
+        # Show results window
+        self.gaia_detection_result_window = GaiaDetectionResultWindow(gaia_detection_results, parent=self)
+        
+        # Connect source row selection to highlighting
+        self.gaia_detection_result_window.gaia_detection_row_selected.connect(self.on_gaia_detection_row_selected)
+        
+        self.gaia_detection_result_window.show()
+        
+        # Set up overlay for matched Gaia stars
+        self._gaia_detection_overlay = gaia_detection_results
+        self._gaia_detection_highlight_index = None  # Reset highlight
+        self._overlay_visible = True
+        if hasattr(self, 'overlay_toolbar_controller'):
+            self.overlay_toolbar_controller.update_overlay_button_visibility()
+        
+        self.image_label.update()
+        
+        self.console_window.append_text("Results window opened.\n")
+        self.console_window.append_text("Overlay added to image.\n")
+        self.console_window.append_text("=" * 50 + "\n")
+    
+    def on_gaia_detection_row_selected(self, row_index):
+        """Handle Gaia detection row selection for highlighting."""
+        self._gaia_detection_highlight_index = row_index
         self.image_label.update()
