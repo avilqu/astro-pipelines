@@ -153,6 +153,14 @@ class OrbitDataWindow(QMainWindow):
         lspc_button.clicked.connect(lambda: self._compute_lspc(positions))
         positions_layout.addWidget(lspc_button)
         
+        # Create LSPC solution text area
+        self.lspc_solution_text = QTextEdit()
+        self.lspc_solution_text.setReadOnly(True)
+        self.lspc_solution_text.setFont(QFont("Courier New", 10))
+        self.lspc_solution_text.setMaximumHeight(150)
+        self.lspc_solution_text.setPlaceholderText("LSPC solution will appear here after computation...")
+        positions_layout.addWidget(self.lspc_solution_text)
+        
         # Create table for positions
         self.computed_positions_table = QTableWidget()
         self.computed_positions_table.setColumnCount(8)
@@ -203,6 +211,14 @@ class OrbitDataWindow(QMainWindow):
             lspc_button.setFont(QFont("Arial", 10))
             lspc_button.clicked.connect(lambda: self._compute_lspc(positions))
             positions_layout.addWidget(lspc_button)
+            
+            # Create LSPC solution text area
+            self.lspc_solution_text = QTextEdit()
+            self.lspc_solution_text.setReadOnly(True)
+            self.lspc_solution_text.setFont(QFont("Courier New", 10))
+            self.lspc_solution_text.setMaximumHeight(150)
+            self.lspc_solution_text.setPlaceholderText("LSPC solution will appear here after computation...")
+            positions_layout.addWidget(self.lspc_solution_text)
             
             # Create table for positions
             self.computed_positions_table = QTableWidget()
@@ -403,43 +419,64 @@ class OrbitDataWindow(QMainWindow):
     
     def _show_lspc_info_in_tab(self, lspc_results):
         """Show LSPC information in the current Positions tab."""
-        # Find the current Positions tab
-        positions_tab_index = None
-        for i in range(self.tab_widget.count()):
-            if self.tab_widget.tabText(i) == "Positions":
-                positions_tab_index = i
-                break
+        # Format LSPC solution values for display
+        solution_text = "LSPC SOLUTION VALUES\n"
+        solution_text += "=" * 50 + "\n\n"
         
-        if positions_tab_index is None:
-            return
+        # Plate constants
+        solution_text += "PLATE CONSTANTS:\n"
+        solution_text += "-" * 20 + "\n"
+        constants = lspc_results['plate_constants']
+        solution_text += f"a = {constants['a']:12.8f}  (RA = a*x + b*y + c)\n"
+        solution_text += f"b = {constants['b']:12.8f}  (Dec = d*x + e*y + f)\n"
+        solution_text += f"c = {constants['c']:12.8f}\n"
+        solution_text += f"d = {constants['d']:12.8f}\n"
+        solution_text += f"e = {constants['e']:12.8f}\n"
+        solution_text += f"f = {constants['f']:12.8f}\n\n"
         
-        # Get the positions widget
-        positions_widget = self.tab_widget.widget(positions_tab_index)
-        if not positions_widget:
-            return
+        # RMS residuals
+        solution_text += "RMS RESIDUALS:\n"
+        solution_text += "-" * 15 + "\n"
+        solution_text += f"RA  RMS: {lspc_results['rms_ra']:10.6f} degrees\n"
+        solution_text += f"Dec RMS: {lspc_results['rms_dec']:10.6f} degrees\n"
+        solution_text += f"RA  RMS: {lspc_results['rms_ra']*3600:10.2f} arcseconds\n"
+        solution_text += f"Dec RMS: {lspc_results['rms_dec']*3600:10.2f} arcseconds\n\n"
         
-        # Find the info label and update it with LSPC information
-        layout = positions_widget.layout()
-        if layout:
-            # Look for the info label (should be the first widget)
-            if layout.count() > 0:
-                info_widget = layout.itemAt(0).widget()
-                if isinstance(info_widget, QLabel):
-                    # Update the info label with LSPC results
-                    info_text = f"Cursor position in stacked image: {self.cursor_coords}\n\n"
-                    info_text += f"LSPC Results:\n"
-                    info_text += f"RMS RA: {lspc_results['rms_ra']:.6f} degrees\n"
-                    info_text += f"RMS Dec: {lspc_results['rms_dec']:.6f} degrees\n"
-                    info_text += f"Comparison stars: {len(lspc_results['comparison_stars'])}\n"
-                    info_text += f"Plate constants: a={lspc_results['plate_constants']['a']:.6f}, "
-                    info_text += f"b={lspc_results['plate_constants']['b']:.6f}, "
-                    info_text += f"c={lspc_results['plate_constants']['c']:.6f}, "
-                    info_text += f"d={lspc_results['plate_constants']['d']:.6f}, "
-                    info_text += f"e={lspc_results['plate_constants']['e']:.6f}, "
-                    info_text += f"f={lspc_results['plate_constants']['f']:.6f}"
-                    
-                    info_widget.setText(info_text)
-                    info_widget.setFont(QFont("Courier New", 10))
+        # Comparison stars info
+        solution_text += "COMPARISON STARS:\n"
+        solution_text += "-" * 18 + "\n"
+        solution_text += f"Number of stars: {len(lspc_results['comparison_stars'])}\n\n"
+        
+        # Show individual star residuals
+        solution_text += "STAR RESIDUALS:\n"
+        solution_text += "-" * 16 + "\n"
+        solution_text += "Gaia ID          RA Residual    Dec Residual   Total\n"
+        solution_text += "                 (arcsec)       (arcsec)       (arcsec)\n"
+        solution_text += "-" * 60 + "\n"
+        
+        # Calculate and display residuals for each comparison star
+        for i, star in enumerate(lspc_results['comparison_stars']):
+            # Apply LSPC transformation to measured coordinates
+            a, b, c, d, e, f = (constants['a'], constants['b'], constants['c'], 
+                               constants['d'], constants['e'], constants['f'])
+            
+            predicted_ra = a * star['measured_x'] + b * star['measured_y'] + c
+            predicted_dec = d * star['measured_x'] + e * star['measured_y'] + f
+            
+            ra_residual = (predicted_ra - star['catalog_ra']) * 3600  # Convert to arcseconds
+            dec_residual = (predicted_dec - star['catalog_dec']) * 3600
+            total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
+            
+            # Format Gaia ID (truncate if too long)
+            gaia_id = str(star['gaia_id'])
+            if len(gaia_id) > 15:
+                gaia_id = gaia_id[:12] + "..."
+            
+            solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
+        
+        # Update the LSPC solution text area
+        if hasattr(self, 'lspc_solution_text'):
+            self.lspc_solution_text.setPlainText(solution_text)
     
     def _on_computed_positions_selection_changed(self, selected, deselected):
         """Handle selection changes in the computed positions table."""
