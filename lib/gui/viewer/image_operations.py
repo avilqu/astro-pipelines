@@ -1,3 +1,5 @@
+import os
+
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, Qt
 from PyQt6.QtWidgets import QMessageBox, QProgressDialog, QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QCheckBox
 
