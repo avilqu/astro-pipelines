@@ -161,6 +161,13 @@ class OrbitDataWindow(QMainWindow):
         self.lspc_solution_text.setPlaceholderText("LSPC solution will appear here after computation...")
         positions_layout.addWidget(self.lspc_solution_text)
         
+        # Add Generate Substacks button (initially disabled)
+        self.generate_substacks_button = QPushButton("Generate Substacks")
+        self.generate_substacks_button.setFont(QFont("Arial", 10))
+        self.generate_substacks_button.setEnabled(False)  # Initially disabled
+        self.generate_substacks_button.clicked.connect(lambda: self._generate_substacks(positions))
+        positions_layout.addWidget(self.generate_substacks_button)
+        
         # Create table for positions
         self.computed_positions_table = QTableWidget()
         self.computed_positions_table.setColumnCount(8)
@@ -220,6 +227,13 @@ class OrbitDataWindow(QMainWindow):
             self.lspc_solution_text.setPlaceholderText("LSPC solution will appear here after computation...")
             positions_layout.addWidget(self.lspc_solution_text)
             
+            # Add Generate Substacks button (initially disabled)
+            self.generate_substacks_button = QPushButton("Generate Substacks")
+            self.generate_substacks_button.setFont(QFont("Arial", 10))
+            self.generate_substacks_button.setEnabled(False)  # Initially disabled
+            self.generate_substacks_button.clicked.connect(lambda: self._generate_substacks(positions))
+            positions_layout.addWidget(self.generate_substacks_button)
+            
             # Create table for positions
             self.computed_positions_table = QTableWidget()
             self.computed_positions_table.setColumnCount(8)
@@ -240,6 +254,161 @@ class OrbitDataWindow(QMainWindow):
             
             # Populate the table
             self._populate_computed_positions(positions)
+    
+    def _generate_substacks(self, positions):
+        """Generate three motion tracked substacks from the dataset."""
+        if not hasattr(self, 'parent_viewer') or not self.parent_viewer:
+            QMessageBox.warning(self, "Error", "No parent viewer available.")
+            return
+        
+        if not self.parent_viewer.loaded_files:
+            QMessageBox.warning(self, "No Files", "No FITS files loaded in the viewer.")
+            return
+        
+        # Filter out already stacked images, keeping only individual images
+        individual_files = self._filter_individual_images(self.parent_viewer.loaded_files)
+        
+        if len(individual_files) < 3:
+            QMessageBox.warning(self, "Insufficient Files", 
+                              f"Only {len(individual_files)} individual images found. At least 3 individual images are required to generate substacks.")
+            return
+        
+        # Get the object name from the parent viewer
+        object_name = getattr(self.parent_viewer, '_ephemeris_object_name', 'Unknown_Object')
+        
+        # Create output directory
+        output_dir = "/tmp/astropipes/substacks"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate timestamp for unique filenames
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_object_name = object_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        
+        # Sort files by date_obs to ensure chronological order
+        sorted_files = self._sort_files_by_date(individual_files)
+        
+        # Calculate the size of each substack (one third of the dataset)
+        total_files = len(sorted_files)
+        substack_size = total_files // 3
+        
+        if substack_size < 1:
+            QMessageBox.warning(self, "Insufficient Files", 
+                              f"With only {total_files} individual files, each substack would have less than 1 file.")
+            return
+        
+        # Create substack file lists
+        substack1_files = sorted_files[:substack_size]
+        substack2_files = sorted_files[substack_size:2*substack_size]
+        substack3_files = sorted_files[2*substack_size:]
+        
+        # Create console window for output
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        console_window = ConsoleOutputWindow("Substack Generation", self)
+        console_window.show_and_raise()
+        
+        # Start substack generation in background thread
+        self._substack_thread = QThread()
+        self._substack_worker = SubstacksGenerationWorker(
+            substack1_files, substack2_files, substack3_files,
+            object_name, output_dir, safe_object_name, timestamp,
+            console_window
+        )
+        self._substack_worker.moveToThread(self._substack_thread)
+        self._substack_thread.started.connect(self._substack_worker.run)
+        
+        def on_console_output(text):
+            console_window.append_text(text)
+        
+        def on_finished(success, message, output_files):
+            if success:
+                console_window.append_text(f"\n\033[1;32mSubstack generation completed successfully!\033[0m\n\n{message}\n")
+                # Load the generated substacks into the viewer
+                for file_path in output_files:
+                    self.parent_viewer.open_and_add_file(file_path)
+                # Update viewer UI
+                self.parent_viewer.update_navigation_buttons()
+                self.parent_viewer.update_image_count_label()
+            else:
+                console_window.append_text(f"\n\033[1;31mSubstack generation failed:\033[0m\n\n{message}\n")
+            
+            self._substack_thread.quit()
+            self._substack_thread.wait()
+        
+        def on_cancel():
+            console_window.append_text("\n\033[1;31mCancelling substack generation...\033[0m\n")
+            self._substack_thread.quit()
+            self._substack_thread.wait()
+            console_window.close()
+        
+        self._substack_worker.console_output.connect(on_console_output)
+        self._substack_worker.finished.connect(on_finished)
+        console_window.cancel_requested.connect(on_cancel)
+        self._substack_thread.start()
+    
+    def _filter_individual_images(self, files):
+        """Filter out already stacked images, keeping only individual images."""
+        individual_files = []
+        
+        for file_path in files:
+            try:
+                from astropy.io import fits
+                with fits.open(file_path) as hdul:
+                    header = hdul[0].header
+                    
+                    # Check if this is a stacked image by looking for COMBINED header
+                    combined = header.get('COMBINED', False)
+                    if isinstance(combined, str):
+                        combined = combined.lower() in ('true', '1', 'yes')
+                    
+                    # If not a combined/stacked image, include it
+                    if not combined:
+                        individual_files.append(file_path)
+                    else:
+                        # Log that we're excluding this stacked image
+                        filename = os.path.basename(file_path)
+                        print(f"Excluding stacked image: {filename}")
+                        
+            except Exception as e:
+                # If we can't read the header, assume it's an individual image
+                print(f"Warning: Could not read header for {file_path}: {e}")
+                individual_files.append(file_path)
+        
+        return individual_files
+    
+    def _sort_files_by_date(self, files):
+        """Sort files by DATE-OBS header value."""
+        file_dates = []
+        
+        for file_path in files:
+            date_obs = None
+            try:
+                from astropy.io import fits
+                with fits.open(file_path) as hdul:
+                    header = hdul[0].header
+                    date_obs = header.get('DATE-OBS')
+            except Exception:
+                pass
+            
+            # If not found in header, try database
+            if not date_obs:
+                try:
+                    from lib.db.manager import get_db_manager
+                    db_manager = get_db_manager()
+                    db_entry = db_manager.get_fits_file_by_path(file_path)
+                    if db_entry and db_entry.date_obs:
+                        date_obs = db_entry.date_obs.isoformat(sep='T', timespec='seconds')
+                except Exception:
+                    pass
+            
+            # Use file modification time as fallback
+            if not date_obs:
+                date_obs = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+            
+            file_dates.append((file_path, date_obs))
+        
+        # Sort by date and return file paths
+        file_dates.sort(key=lambda x: x[1])
+        return [file_path for file_path, _ in file_dates]
     
     def _compute_lspc(self, positions):
         """Compute LSPC using matched Gaia stars."""
@@ -276,6 +445,11 @@ class OrbitDataWindow(QMainWindow):
         try:
             lspc_results = self._calculate_lspc(gaia_detection_results, positions)
             self._update_positions_table_with_lspc(lspc_results)
+            
+            # Enable the Generate Substacks button after LSPC is computed
+            if hasattr(self, 'generate_substacks_button'):
+                self.generate_substacks_button.setEnabled(True)
+                
         except Exception as e:
             QMessageBox.critical(self, "LSPC Error", f"Error computing LSPC: {str(e)}")
     
@@ -561,6 +735,133 @@ class OrbitComputationDialog(QDialog):
     
     def get_object_name(self):
         return self.object_input.text().strip()
+
+class SubstacksGenerationWorker(QObject):
+    """Worker thread for generating motion tracked substacks."""
+    console_output = pyqtSignal(str)  # console output text
+    finished = pyqtSignal(bool, str, list)  # success, message, output_files
+    
+    def __init__(self, substack1_files, substack2_files, substack3_files, 
+                 object_name, output_dir, safe_object_name, timestamp, console_window=None):
+        super().__init__()
+        self.substack1_files = substack1_files
+        self.substack2_files = substack2_files
+        self.substack3_files = substack3_files
+        self.object_name = object_name
+        self.output_dir = output_dir
+        self.safe_object_name = safe_object_name
+        self.timestamp = timestamp
+        self.console_window = console_window
+    
+    def run(self):
+        """Run the substack generation."""
+        try:
+            from lib.gui.common.console_window import RealTimeStringIO
+            import sys
+            
+            # Redirect stdout/stderr to console output
+            rtio = RealTimeStringIO(self.console_output.emit)
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout = sys.stderr = rtio
+            
+            try:
+                self.console_output.emit(f"\033[1;34mStarting substack generation for {self.object_name}\033[0m\n")
+                self.console_output.emit(f"\033[1;34mTotal individual files: {len(self.substack1_files) + len(self.substack2_files) + len(self.substack3_files)}\033[0m\n")
+                self.console_output.emit(f"\033[1;34mStacking method: Median\033[0m\n")
+                self.console_output.emit(f"\033[1;34mNote: Only individual images are used (stacked images are excluded)\033[0m\n\n")
+                
+                output_files = []
+                
+                # Generate substack 1
+                self.console_output.emit(f"\033[1;33m=== SUBSTACK 1 ===\033[0m\n")
+                self.console_output.emit(f"Files ({len(self.substack1_files)}):\n")
+                for i, file_path in enumerate(self.substack1_files, 1):
+                    filename = os.path.basename(file_path)
+                    self.console_output.emit(f"  {i:2d}. {filename}\n")
+                self.console_output.emit(f"\n")
+                
+                output_file1 = os.path.join(self.output_dir, f"substack1_{self.safe_object_name}_{self.timestamp}.fits")
+                self.console_output.emit(f"\033[1;33mCreating substack 1 (median)...\033[0m\n")
+                
+                self._create_motion_tracked_stack(self.substack1_files, self.object_name, output_file1)
+                output_files.append(output_file1)
+                
+                self.console_output.emit(f"\033[1;32m✓ Substack 1 completed: {os.path.basename(output_file1)}\033[0m\n\n")
+                
+                # Generate substack 2
+                self.console_output.emit(f"\033[1;33m=== SUBSTACK 2 ===\033[0m\n")
+                self.console_output.emit(f"Files ({len(self.substack2_files)}):\n")
+                for i, file_path in enumerate(self.substack2_files, 1):
+                    filename = os.path.basename(file_path)
+                    self.console_output.emit(f"  {i:2d}. {filename}\n")
+                self.console_output.emit(f"\n")
+                
+                output_file2 = os.path.join(self.output_dir, f"substack2_{self.safe_object_name}_{self.timestamp}.fits")
+                self.console_output.emit(f"\033[1;33mCreating substack 2 (median)...\033[0m\n")
+                
+                self._create_motion_tracked_stack(self.substack2_files, self.object_name, output_file2)
+                output_files.append(output_file2)
+                
+                self.console_output.emit(f"\033[1;32m✓ Substack 2 completed: {os.path.basename(output_file2)}\033[0m\n\n")
+                
+                # Generate substack 3
+                self.console_output.emit(f"\033[1;33m=== SUBSTACK 3 ===\033[0m\n")
+                self.console_output.emit(f"Files ({len(self.substack3_files)}):\n")
+                for i, file_path in enumerate(self.substack3_files, 1):
+                    filename = os.path.basename(file_path)
+                    self.console_output.emit(f"  {i:2d}. {filename}\n")
+                self.console_output.emit(f"\n")
+                
+                output_file3 = os.path.join(self.output_dir, f"substack3_{self.safe_object_name}_{self.timestamp}.fits")
+                self.console_output.emit(f"\033[1;33mCreating substack 3 (median)...\033[0m\n")
+                
+                self._create_motion_tracked_stack(self.substack3_files, self.object_name, output_file3)
+                output_files.append(output_file3)
+                
+                self.console_output.emit(f"\033[1;32m✓ Substack 3 completed: {os.path.basename(output_file3)}\033[0m\n\n")
+                
+                # Success message
+                message = f"Successfully generated 3 motion tracked substacks:\n"
+                message += f"Object: {self.object_name}\n"
+                message += f"Method: Median stacking\n"
+                message += f"Substack 1: {len(self.substack1_files)} files -> {os.path.basename(output_file1)}\n"
+                message += f"Substack 2: {len(self.substack2_files)} files -> {os.path.basename(output_file2)}\n"
+                message += f"Substack 3: {len(self.substack3_files)} files -> {os.path.basename(output_file3)}\n"
+                message += f"Output directory: {self.output_dir}"
+                
+                self.finished.emit(True, message, output_files)
+                
+            finally:
+                # Restore stdout/stderr
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+            
+        except Exception as e:
+            import traceback
+            error_msg = f"Unexpected error during substack generation:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.finished.emit(False, error_msg, [])
+    
+    def _create_motion_tracked_stack(self, files, object_name, output_path):
+        """Create a motion tracked stack from the given files."""
+        try:
+            from lib.fits.integration import integrate_with_motion_tracking
+            
+            # Use median stacking for substacks (override config default)
+            from config import MOTION_TRACKING_SIGMA_CLIP
+            
+            result = integrate_with_motion_tracking(
+                files=files,
+                object_name=object_name,
+                method='median',  # Force median stacking for substacks
+                sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
+                output_path=output_path
+            )
+            
+            return result
+            
+        except Exception as e:
+            raise Exception(f"Error creating motion tracked stack: {str(e)}")
+
 
 class OrbitComputationWorker(QObject):
     finished = pyqtSignal(list, str)  # predicted_positions, pseudo_mpec_text
