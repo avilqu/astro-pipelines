@@ -186,11 +186,13 @@ class OverlayToolbarController:
     
     def update_overlay_button_visibility(self):
         """Update overlay button visibility based on overlay availability."""
-        # Ephemeris button
+        # Ephemeris button (also controls computed positions)
         has_ephemeris = (hasattr(self.parent, '_ephemeris_overlay') and 
                         self.parent._ephemeris_overlay is not None)
-        self.ephemeris_toggle_action.setVisible(has_ephemeris)
-        if has_ephemeris:
+        has_computed_positions = (hasattr(self.parent, '_computed_positions_overlay') and 
+                                 self.parent._computed_positions_overlay is not None)
+        self.ephemeris_toggle_action.setVisible(has_ephemeris or has_computed_positions)
+        if has_ephemeris or has_computed_positions:
             self.ephemeris_toggle_action.setChecked(self._ephemeris_visible)
         
         # SSO button

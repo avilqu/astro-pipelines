@@ -609,6 +609,9 @@ def integrate_chunked(files: List[str],
     total_chunks = (len(files) + chunk_size - 1) // chunk_size
     chunk_results = []
     
+    # Store shift information for later reversal
+    shift_info = []
+    
     for chunk_idx in range(total_chunks):
         start_idx = chunk_idx * chunk_size
         end_idx = min(start_idx + chunk_size, len(files))
@@ -632,6 +635,14 @@ def integrate_chunked(files: List[str],
             try:
                 # Load image
                 ccd = extract_ccd_data(file_path)
+                
+                # Store shift information for this image
+                shift_info.append({
+                    'file_path': file_path,
+                    'shift_x': dx,
+                    'shift_y': dy,
+                    'index': start_idx + i
+                })
                 
                 # Pad image
                 padded_data = pad_image_for_motion_tracking(ccd.data, padding)
@@ -744,6 +755,13 @@ def integrate_chunked(files: List[str],
         safe_set_metadata(final_stack.meta, 'TOTAL_CHUNKS', total_chunks)
         if reference_time:
             safe_set_metadata(final_stack.meta, 'REFERENCE_TIME', reference_time)
+        
+        # Store shift information in header for later reversal
+        import json
+        safe_set_metadata(final_stack.meta, 'MOTION_SHIFTS', json.dumps(shift_info))
+        safe_set_metadata(final_stack.meta, 'ORIGINAL_FILES', json.dumps(files))
+        safe_set_metadata(final_stack.meta, 'PADDING', json.dumps(padding))
+        
         final_stack.uncertainty = None
         final_stack.mask = None
         final_stack.flags = None
@@ -865,6 +883,9 @@ def integrate_with_motion_tracking(files: List[str],
     processed_count = 0
     skipped_count = 0
     
+    # Store shift information for later reversal
+    shift_info = []
+    
     for i, (file_path, (dx, dy)) in enumerate(zip(files, shifts)):
         if progress_callback:
             progress_callback(i / len(files))
@@ -874,6 +895,14 @@ def integrate_with_motion_tracking(files: List[str],
         try:
             # Load image
             ccd = extract_ccd_data(file_path)
+            
+            # Store shift information for this image
+            shift_info.append({
+                'file_path': file_path,
+                'shift_x': dx,
+                'shift_y': dy,
+                'index': i
+            })
             
             # Pad image
             padded_data = pad_image_for_motion_tracking(ccd.data, padding)
@@ -940,6 +969,13 @@ def integrate_with_motion_tracking(files: List[str],
         safe_set_metadata(stack.meta, 'CHUNKED_PROCESSING', False)
         if reference_time:
             safe_set_metadata(stack.meta, 'REFERENCE_TIME', reference_time)
+        
+        # Store shift information in header for later reversal
+        import json
+        safe_set_metadata(stack.meta, 'MOTION_SHIFTS', json.dumps(shift_info))
+        safe_set_metadata(stack.meta, 'ORIGINAL_FILES', json.dumps(files))
+        safe_set_metadata(stack.meta, 'PADDING', json.dumps(padding))
+        
         stack.uncertainty = None
         stack.mask = None
         stack.flags = None
@@ -1123,3 +1159,139 @@ def crop_integrated_image(integrated_image: ccdp.CCDData, original_shape: Tuple[
     print(f"Cropped integrated image from {integrated_image.data.shape} to {cropped_data.shape}")
     
     return cropped_image 
+
+
+def compute_object_positions_from_motion_tracked(
+    stacked_image_path: str, 
+    cursor_coords: Tuple[float, float],
+    original_files: List[str] = None
+) -> List[Dict[str, any]]:
+    """
+    Compute the position of an object in each original image from its position in a motion tracked stacked image.
+    
+    This function reverses the motion tracking process by:
+    1. Reading the shift information from the stacked image header
+    2. Converting the cursor coordinates to the original coordinate system
+    3. Applying the reverse shifts to get the position in each original image
+    
+    Parameters:
+    -----------
+    stacked_image_path : str
+        Path to the motion tracked stacked image
+    cursor_coords : Tuple[float, float]
+        Pixel coordinates (x, y) in the stacked image where the user clicked
+    original_files : List[str], optional
+        List of original file paths. If None, will be read from header.
+        
+    Returns:
+    --------
+    List[Dict[str, any]]
+        List of dictionaries containing position information for each original image:
+        - file_path: Path to the original image
+        - original_x: X coordinate in original image
+        - original_y: Y coordinate in original image
+        - stacked_x: X coordinate in stacked image
+        - stacked_y: Y coordinate in stacked image
+        - shift_x: X shift that was applied during stacking
+        - shift_y: Y shift that was applied during stacking
+        - ra: Right ascension (if WCS available)
+        - dec: Declination (if WCS available)
+    """
+    try:
+        from astropy.io import fits
+        from astropy.wcs import WCS
+        import json
+        
+        # Read the stacked image header
+        with fits.open(stacked_image_path) as hdul:
+            header = hdul[0].header
+            stacked_data = hdul[0].data
+            
+        # Check if this is a motion tracked image
+        motion_tracked = header.get('MOTION_TRACKED', False)
+        if not motion_tracked:
+            raise ValueError("This is not a motion tracked stacked image")
+        
+        # Get shift information from header
+        motion_shifts_json = header.get('MOTION_SHIFTS')
+        if not motion_shifts_json:
+            raise ValueError("No motion shift information found in header")
+        
+        motion_shifts = json.loads(motion_shifts_json)
+        
+        # Get original files from header if not provided
+        if original_files is None:
+            original_files_json = header.get('ORIGINAL_FILES')
+            if not original_files_json:
+                raise ValueError("No original files information found in header")
+            original_files = json.loads(original_files_json)
+        
+        # Get padding information
+        padding_json = header.get('PADDING')
+        padding = json.loads(padding_json) if padding_json else (0, 0, 0, 0)
+        
+        # Get WCS from stacked image if available
+        stacked_wcs = None
+        try:
+            stacked_wcs = WCS(header)
+        except Exception:
+            pass
+        
+        # Convert cursor coordinates to sky coordinates if WCS is available
+        sky_coords = None
+        if stacked_wcs and stacked_wcs.is_celestial:
+            try:
+                sky_coords = stacked_wcs.pixel_to_world(cursor_coords[0], cursor_coords[1])
+            except Exception:
+                pass
+        
+        results = []
+        
+        # For each original image, compute the reverse position
+        for shift_info in motion_shifts:
+            file_path = shift_info['file_path']
+            shift_x = shift_info['shift_x']
+            shift_y = shift_info['shift_y']
+            
+            # Reverse the shift: subtract the shift that was applied during stacking
+            original_x = cursor_coords[0] - shift_x
+            original_y = cursor_coords[1] - shift_y
+            
+            # Account for padding that was added during stacking
+            # The padding was added around the original image, so we need to adjust
+            original_x -= padding[0]  # Left padding
+            original_y -= padding[2]  # Top padding
+            
+            # Get WCS from original image if available
+            original_ra = None
+            original_dec = None
+            try:
+                with fits.open(file_path) as orig_hdul:
+                    orig_header = orig_hdul[0].header
+                    orig_wcs = WCS(orig_header)
+                    if orig_wcs.is_celestial:
+                        # Convert original pixel coordinates to sky coordinates
+                        orig_sky = orig_wcs.pixel_to_world(original_x, original_y)
+                        original_ra = orig_sky.ra.deg if hasattr(orig_sky, 'ra') else orig_sky[0].deg
+                        original_dec = orig_sky.dec.deg if hasattr(orig_sky, 'dec') else orig_sky[1].deg
+            except Exception:
+                pass
+            
+            result = {
+                'file_path': file_path,
+                'original_x': original_x,
+                'original_y': original_y,
+                'stacked_x': cursor_coords[0],
+                'stacked_y': cursor_coords[1],
+                'shift_x': shift_x,
+                'shift_y': shift_y,
+                'ra': original_ra,
+                'dec': original_dec
+            }
+            
+            results.append(result)
+        
+        return results
+        
+    except Exception as e:
+        raise MotionTrackingIntegrationError(f"Error computing object positions: {e}") 

@@ -25,6 +25,7 @@ from .integration import (
     integrate_standard,
     calculate_motion_shifts,
     check_sequence_consistency,
+    compute_object_positions_from_motion_tracked,
     MotionTrackingIntegrationError
 )
 
@@ -51,5 +52,6 @@ __all__ = [
     'integrate_standard',
     'calculate_motion_shifts',
     'check_sequence_consistency',
+    'compute_object_positions_from_motion_tracked',
     'MotionTrackingIntegrationError'
 ] 

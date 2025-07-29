@@ -63,7 +63,7 @@ class OrbitDataWindow(QMainWindow):
         self.positions_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
         
         # Add the tab
-        self.tab_widget.addTab(positions_widget, "Positions")
+        self.tab_widget.addTab(positions_widget, "Ephemerides")
     
     def _create_pseudo_mpec_tab(self):
         """Create the Pseudo MPEC tab with text display."""
@@ -119,6 +119,140 @@ class OrbitDataWindow(QMainWindow):
             row = selected_rows[0].row()
             if 0 <= row < len(self.predicted_positions):
                 self.row_selected.emit(row, self.predicted_positions[row])
+
+    def add_positions_tab(self, positions, cursor_coords):
+        """Add a new tab showing computed object positions."""
+        # Check if the Positions tab already exists
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) == "Positions":
+                # Update existing tab
+                self._update_positions_tab(positions, cursor_coords, i)
+                return
+        
+        # Create new Positions tab
+        self._create_positions_tab_new(positions, cursor_coords)
+    
+    def _create_positions_tab_new(self, positions, cursor_coords):
+        """Create a new Positions tab with the computed positions."""
+        positions_widget = QWidget()
+        positions_layout = QVBoxLayout()
+        positions_widget.setLayout(positions_layout)
+        
+        # Add information about the cursor position
+        info_label = QLabel(f"Cursor position in stacked image: {cursor_coords}")
+        info_label.setFont(QFont("Arial", 10))
+        positions_layout.addWidget(info_label)
+        
+        # Create table for positions
+        self.computed_positions_table = QTableWidget()
+        self.computed_positions_table.setColumnCount(8)
+        self.computed_positions_table.setHorizontalHeaderLabels([
+            "File", "Original X", "Original Y", "Stacked X", "Stacked Y", 
+            "Shift X", "Shift Y", "RA/Dec"
+        ])
+        self.computed_positions_table.setFont(QFont("Courier New", 9))
+        self.computed_positions_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.computed_positions_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        positions_layout.addWidget(self.computed_positions_table)
+        
+        # Connect selection change to enable keyboard navigation
+        self.computed_positions_table.selectionModel().selectionChanged.connect(self._on_computed_positions_selection_changed)
+        
+        # Store the positions data for row selection
+        self.computed_positions_data = positions
+        
+        # Populate the table
+        self._populate_computed_positions(positions)
+        
+        # Add the tab
+        self.tab_widget.addTab(positions_widget, "Positions")
+    
+    def _update_positions_tab(self, positions, cursor_coords, tab_index):
+        """Update an existing Positions tab with new data."""
+        positions_widget = self.tab_widget.widget(tab_index)
+        if positions_widget:
+            # Clear existing layout
+            for i in reversed(range(positions_widget.layout().count())):
+                child = positions_widget.layout().itemAt(i).widget()
+                if child:
+                    child.deleteLater()
+            
+            # Recreate the layout
+            positions_layout = positions_widget.layout()
+            
+            # Add information about the cursor position
+            info_label = QLabel(f"Cursor position in stacked image: {cursor_coords}")
+            info_label.setFont(QFont("Arial", 10))
+            positions_layout.addWidget(info_label)
+            
+            # Create table for positions
+            self.computed_positions_table = QTableWidget()
+            self.computed_positions_table.setColumnCount(8)
+            self.computed_positions_table.setHorizontalHeaderLabels([
+                "File", "Original X", "Original Y", "Stacked X", "Stacked Y", 
+                "Shift X", "Shift Y", "RA/Dec"
+            ])
+            self.computed_positions_table.setFont(QFont("Courier New", 9))
+            self.computed_positions_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.computed_positions_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+            positions_layout.addWidget(self.computed_positions_table)
+            
+            # Connect selection change to enable keyboard navigation
+            self.computed_positions_table.selectionModel().selectionChanged.connect(self._on_computed_positions_selection_changed)
+            
+            # Store the positions data for row selection
+            self.computed_positions_data = positions
+            
+            # Populate the table
+            self._populate_computed_positions(positions)
+    
+    def _on_computed_positions_selection_changed(self, selected, deselected):
+        """Handle selection changes in the computed positions table."""
+        selected_rows = self.computed_positions_table.selectionModel().selectedRows()
+        if selected_rows and hasattr(self, 'computed_positions_data'):
+            row = selected_rows[0].row()
+            if 0 <= row < len(self.computed_positions_data):
+                position_data = self.computed_positions_data[row]
+                # Emit signal to parent viewer to show marker
+                if hasattr(self, 'parent_viewer') and self.parent_viewer:
+                    self.parent_viewer.on_computed_positions_row_selected(row, position_data)
+    
+    def _populate_computed_positions(self, positions):
+        """Populate the computed positions table."""
+        if not positions:
+            self.computed_positions_table.setRowCount(0)
+            return
+        
+        self.computed_positions_table.setRowCount(len(positions))
+        
+        for i, pos in enumerate(positions):
+            # File name (basename only)
+            import os
+            filename = os.path.basename(pos['file_path'])
+            self.computed_positions_table.setItem(i, 0, QTableWidgetItem(filename))
+            
+            # Original coordinates
+            self.computed_positions_table.setItem(i, 1, QTableWidgetItem(f"{pos['original_x']:.2f}"))
+            self.computed_positions_table.setItem(i, 2, QTableWidgetItem(f"{pos['original_y']:.2f}"))
+            
+            # Stacked coordinates
+            self.computed_positions_table.setItem(i, 3, QTableWidgetItem(f"{pos['stacked_x']:.2f}"))
+            self.computed_positions_table.setItem(i, 4, QTableWidgetItem(f"{pos['stacked_y']:.2f}"))
+            
+            # Shifts
+            self.computed_positions_table.setItem(i, 5, QTableWidgetItem(f"{pos['shift_x']:.2f}"))
+            self.computed_positions_table.setItem(i, 6, QTableWidgetItem(f"{pos['shift_y']:.2f}"))
+            
+            # RA/Dec
+            if pos['ra'] is not None and pos['dec'] is not None:
+                ra_str = f"{pos['ra']:.6f}"
+                dec_str = f"{pos['dec']:.6f}"
+                ra_dec_str = f"{ra_str}, {dec_str}"
+            else:
+                ra_dec_str = "N/A"
+            self.computed_positions_table.setItem(i, 7, QTableWidgetItem(ra_dec_str))
+        
+        self.computed_positions_table.resizeColumnsToContents()
 
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None, target_name=None):

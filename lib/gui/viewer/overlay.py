@@ -82,6 +82,13 @@ class ImageLabel(QLabel):
             self.setCursor(Qt.CursorShape.CrossCursor)
             self.update()
             return
+        
+        # Handle right-click events properly
+        if event.button() == Qt.MouseButton.RightButton:
+            # Let the context menu event handle this
+            super().mousePressEvent(event)
+            return
+            
         if event.button() == Qt.MouseButton.LeftButton and self.parent_viewer:
             self.panning = True
             self.pan_start_pos = event.pos()
@@ -454,6 +461,49 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        
+        # Draw computed positions marker overlay if present
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_computed_positions_overlay') and
+            self.parent_viewer._computed_positions_overlay is not None and
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_ephemeris_visible()  # Use same button as ephemeris
+        ):
+            try:
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w = pixmap.width()
+                pixmap_h = pixmap.height()
+                label_w = self.width()
+                label_h = self.height()
+                scale_x = pixmap_w / img_w
+                scale_y = pixmap_h / img_h
+                scale = scale_x
+                x_offset = (label_w - pixmap_w) // 2
+                y_offset = (label_h - pixmap_h) // 2
+                _, (x_img, y_img) = self.parent_viewer._computed_positions_overlay
+                x_disp = x_img * scale + x_offset
+                y_disp = y_img * scale + y_offset
+                painter = QPainter(self)
+                pen = QPen(QColor(0, 255, 0))  # Green color
+                pen.setWidth(1)  # Thinner lines
+                painter.setPen(pen)
+                radius = 24  # Same size as ephemeris marker
+                gap = 6      # Length of the gap at the center
+                # Draw a green cross with missing center (4 segments)
+                # Horizontal segments
+                painter.drawLine(int(x_disp - radius), int(y_disp), int(x_disp - gap), int(y_disp))
+                painter.drawLine(int(x_disp + gap), int(y_disp), int(x_disp + radius), int(y_disp))
+                # Vertical segments
+                painter.drawLine(int(x_disp), int(y_disp - radius), int(x_disp), int(y_disp - gap))
+                painter.drawLine(int(x_disp), int(y_disp + gap), int(x_disp), int(y_disp + radius))
+                painter.end()
+            except Exception as e:
+                pass
         # Draw Gaia detection overlay if enabled
         if (
             self.parent_viewer and
@@ -577,23 +627,173 @@ class ImageLabel(QLabel):
 
     def contextMenuEvent(self, event):
         """Handle right-click context menu"""
-        if not self.parent_viewer or not self.parent_viewer.wcs:
+        if not self.parent_viewer:
             return
         
-        # Get coordinates at the right-click position
-        coords = self._get_coordinates_at_point(event.pos())
+        # Create context menu
+        menu = QMenu(self)
         
+        # Get coordinates at the right-click position
+        coords = None
+        if self.parent_viewer.wcs:
+            coords = self._get_coordinates_at_point(event.pos())
+        
+        # Add "Copy coordinates" action only if coordinates are available
         if coords:
-            # Create context menu
-            menu = QMenu(self)
-            
-            # Create "Copy coordinates" action
             copy_action = QAction("Copy coordinates", self)
             copy_action.triggered.connect(lambda: self._copy_coordinates_to_clipboard(coords))
             menu.addAction(copy_action)
+        
+        # Check if this is a motion tracked stacked image
+        is_motion_tracked = self._is_motion_tracked_stacked_image()
+        
+        if is_motion_tracked:
+            # Add separator if we have coordinates action
+            if coords:
+                menu.addSeparator()
             
-            # Show the menu at the cursor position
+            # Create "Compute object positions" action
+            compute_positions_action = QAction("Compute object positions", self)
+            compute_positions_action.triggered.connect(self._compute_object_positions)
+            menu.addAction(compute_positions_action)
+        
+        # Show the menu at the cursor position (only if we have actions)
+        if menu.actions():
             menu.exec(event.globalPos())
+
+    def _is_motion_tracked_stacked_image(self):
+        """Check if the current image is a motion tracked stacked image."""
+        if not self.parent_viewer:
+            return False
+        
+        if not hasattr(self.parent_viewer, '_current_header'):
+            return False
+        
+        header = self.parent_viewer._current_header
+        if not header:
+            return False
+        
+        # Check for MOTION_TRACKED header field
+        # Header values are stored as (value, comment) tuples
+        motion_tracked_tuple = header.get('MOTION_TRACKED', (False, ''))
+        tracked_object_tuple = header.get('TRACKED_OBJECT', (None, ''))
+        combined_tuple = header.get('COMBINED', (False, ''))
+        
+        # Extract the actual values from the tuples
+        motion_tracked = motion_tracked_tuple[0] if isinstance(motion_tracked_tuple, tuple) else motion_tracked_tuple
+        tracked_object = tracked_object_tuple[0] if isinstance(tracked_object_tuple, tuple) else tracked_object_tuple
+        combined = combined_tuple[0] if isinstance(combined_tuple, tuple) else combined_tuple
+        
+        # Handle the case where boolean values might be stored as strings
+        if isinstance(motion_tracked, str):
+            motion_tracked = motion_tracked.lower() in ('true', '1', 'yes')
+        if isinstance(combined, str):
+            combined = combined.lower() in ('true', '1', 'yes')
+        
+        return motion_tracked and tracked_object and combined
+
+    def _compute_object_positions(self):
+        """Compute object positions from motion tracked coordinates."""
+        if not self.parent_viewer:
+            return
+        
+        # Get the current image path
+        current_file_path = None
+        if (self.parent_viewer.current_file_index >= 0 and 
+            self.parent_viewer.current_file_index < len(self.parent_viewer.loaded_files)):
+            current_file_path = self.parent_viewer.loaded_files[self.parent_viewer.current_file_index]
+        
+        if not current_file_path:
+            QMessageBox.warning(self.parent_viewer, "No Image", "No image is currently loaded.")
+            return
+        
+        # Get the cursor position in image coordinates
+        cursor_pos = self.mapFromGlobal(QCursor.pos())
+        
+        # Convert cursor position to image coordinates
+        pixmap = self.pixmap()
+        if not pixmap or self.parent_viewer.image_data is None:
+            QMessageBox.warning(self.parent_viewer, "No Image Data", "No image data available.")
+            return
+        
+        img_h, img_w = self.parent_viewer.image_data.shape
+        pixmap_w = pixmap.width()
+        pixmap_h = pixmap.height()
+        label_w = self.width()
+        label_h = self.height()
+        
+        # Compute centering offset and scale
+        scale_x = pixmap_w / img_w
+        scale_y = pixmap_h / img_h
+        scale = scale_x
+        x_offset = (label_w - pixmap_w) // 2
+        y_offset = (label_h - pixmap_h) // 2
+        
+        # Map cursor position to image coordinates
+        pixmap_x = cursor_pos.x() - x_offset
+        pixmap_y = cursor_pos.y() - y_offset
+        
+        if not (0 <= pixmap_x < pixmap_w and 0 <= pixmap_y < pixmap_h):
+            QMessageBox.warning(self.parent_viewer, "Invalid Position", 
+                              "Cursor position is outside the image area.")
+            return
+        
+        orig_x = pixmap_x / scale
+        orig_y = pixmap_y / scale
+        
+        # Format cursor coordinates for display
+        cursor_coords = f"({orig_x:.1f}, {orig_y:.1f})"
+        
+        # Compute object positions using the new function
+        try:
+            from lib.fits.integration import compute_object_positions_from_motion_tracked
+            
+            positions = compute_object_positions_from_motion_tracked(
+                current_file_path, 
+                (orig_x, orig_y)
+            )
+            
+            if not positions:
+                QMessageBox.warning(self.parent_viewer, "No Positions", 
+                                  "Could not compute positions for the original images.")
+                return
+            
+            # Get the tracked object name from the header
+            tracked_object = None
+            if hasattr(self.parent_viewer, '_current_header') and self.parent_viewer._current_header:
+                tracked_object_tuple = self.parent_viewer._current_header.get('TRACKED_OBJECT', (None, ''))
+                tracked_object = tracked_object_tuple[0] if isinstance(tracked_object_tuple, tuple) else tracked_object_tuple
+            
+            if not tracked_object:
+                tracked_object = "Unknown Object"
+            
+            # Show the positions in a new tab in the orbital elements window
+            self._show_object_positions_tab(positions, tracked_object, cursor_coords)
+            
+        except Exception as e:
+            QMessageBox.critical(self.parent_viewer, "Error", 
+                               f"Error computing object positions: {str(e)}")
+    
+    def _show_object_positions_tab(self, positions, object_name, cursor_coords):
+        """Show object positions in a new tab in the orbital elements window."""
+        # Check if we have an existing orbital elements window
+        orbit_window = None
+        if hasattr(self.parent_viewer, '_orbit_window'):
+            orbit_window = self.parent_viewer._orbit_window
+        
+        if not orbit_window:
+            # Create a new orbital elements window
+            from .orbital_elements import OrbitDataWindow
+            orbit_window = OrbitDataWindow(object_name, [], "", self.parent_viewer)
+            self.parent_viewer._orbit_window = orbit_window
+        
+        # Add the positions tab
+        orbit_window.add_positions_tab(positions, cursor_coords)
+        
+        # Show the window
+        orbit_window.show()
+        orbit_window.raise_()
+        orbit_window.activateWindow()
 
     def _copy_coordinates_to_clipboard(self, coords):
         """Copy coordinates to clipboard"""
@@ -862,6 +1062,54 @@ class OverlayMixin:
     def _show_ephemeris_marker(self, pixel_coords):
         """Store the marker position for overlay drawing."""
         self._ephemeris_marker_coords = pixel_coords
+        self._overlay_visible = True
+        if hasattr(self, 'overlay_toolbar_controller'):
+            self.overlay_toolbar_controller.update_overlay_button_visibility()
+        self.image_label.update()
+
+    def on_computed_positions_row_selected(self, row_index, position_data):
+        """Handle selection of a computed positions row and show marker at the position."""
+        # Save current brightness before switching
+        self.histogram_controller.save_state_before_switch()
+        # Save current viewport state before switching
+        if hasattr(self, '_zoom'):
+            self._last_zoom = self._zoom
+        self._last_center = self._get_viewport_center()
+        
+        # Get the file path from the position data
+        file_path = position_data.get('file_path')
+        if not file_path:
+            return
+        
+        # Find the file in the loaded files list
+        try:
+            file_index = self.loaded_files.index(file_path)
+        except ValueError:
+            # File not in loaded files, try to load it
+            try:
+                self.open_and_add_file(file_path)
+                file_index = len(self.loaded_files) - 1
+            except Exception as e:
+                print(f"Error loading file {file_path}: {e}")
+                return
+        
+        # Load the corresponding FITS file
+        if 0 <= file_index < len(self.loaded_files):
+            self.current_file_index = file_index
+            self.load_fits(self.loaded_files[file_index], restore_view=True)
+            self.update_close_button_visibility()
+        
+        # Set marker overlay for computed position
+        original_x = position_data.get('original_x', 0.0)
+        original_y = position_data.get('original_y', 0.0)
+        
+        # Store the position data and coordinates for the overlay
+        self._computed_positions_overlay = (position_data, (original_x, original_y))
+        self._show_computed_positions_marker((original_x, original_y))
+
+    def _show_computed_positions_marker(self, pixel_coords):
+        """Store the marker position for overlay drawing."""
+        self._computed_positions_marker_coords = pixel_coords
         self._overlay_visible = True
         if hasattr(self, 'overlay_toolbar_controller'):
             self.overlay_toolbar_controller.update_overlay_button_visibility()

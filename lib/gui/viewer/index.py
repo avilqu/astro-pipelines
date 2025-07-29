@@ -119,6 +119,7 @@ class FITSViewer(NavigationMixin, CatalogSearchMixin, ImageOperationsMixin, File
         self._source_overlay = None  # Store source overlay data
         self._zoom_region_mode = False  # Track if zoom-to-region is active
         self._pending_zoom_rect = None  # Store the last selected rectangle
+        self._computed_positions_overlay = None  # Store computed positions overlay data
         if fits_path:
             self.open_and_add_file(fits_path)
         self.overlay_toolbar_controller.update_overlay_button_visibility()
