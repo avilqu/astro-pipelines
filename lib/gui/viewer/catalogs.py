@@ -404,11 +404,13 @@ class CatalogSearchMixin:
                 dlg.show()
             except ImportError:
                 pass
-            self.overlay_toggle_action.setVisible(True)
-            # Temporarily block signals to avoid circular dependency
-            self.overlay_toggle_action.blockSignals(True)
-            self.overlay_toggle_action.setChecked(True)
-            self.overlay_toggle_action.blockSignals(False)
+            # Update SSO overlay button visibility and state
+            if hasattr(self, 'overlay_toolbar_controller'):
+                self.overlay_toolbar_controller.sso_toggle_action.setVisible(True)
+                # Temporarily block signals to avoid circular dependency
+                self.overlay_toolbar_controller.sso_toggle_action.blockSignals(True)
+                self.overlay_toolbar_controller.sso_toggle_action.setChecked(True)
+                self.overlay_toolbar_controller.sso_toggle_action.blockSignals(False)
         
         def on_error(msg):
             progress.close()
@@ -468,11 +470,13 @@ class CatalogSearchMixin:
                 dlg.show()
             except ImportError:
                 pass
-            self.overlay_toggle_action.setVisible(True)
-            # Temporarily block signals to avoid circular dependency
-            self.overlay_toggle_action.blockSignals(True)
-            self.overlay_toggle_action.setChecked(True)
-            self.overlay_toggle_action.blockSignals(False)
+            # Update SIMBAD overlay button visibility and state
+            if hasattr(self, 'overlay_toolbar_controller'):
+                self.overlay_toolbar_controller.simbad_toggle_action.setVisible(True)
+                # Temporarily block signals to avoid circular dependency
+                self.overlay_toolbar_controller.simbad_toggle_action.blockSignals(True)
+                self.overlay_toolbar_controller.simbad_toggle_action.setChecked(True)
+                self.overlay_toolbar_controller.simbad_toggle_action.blockSignals(False)
         
         def on_error(msg):
             progress.close()
@@ -517,11 +521,13 @@ class CatalogSearchMixin:
                 dlg.show()
             except ImportError:
                 pass
-            self.overlay_toggle_action.setVisible(True)
-            # Temporarily block signals to avoid circular dependency
-            self.overlay_toggle_action.blockSignals(True)
-            self.overlay_toggle_action.setChecked(True)
-            self.overlay_toggle_action.blockSignals(False)
+            # Update Gaia overlay button visibility and state
+            if hasattr(self, 'overlay_toolbar_controller'):
+                self.overlay_toolbar_controller.gaia_toggle_action.setVisible(True)
+                # Temporarily block signals to avoid circular dependency
+                self.overlay_toolbar_controller.gaia_toggle_action.blockSignals(True)
+                self.overlay_toolbar_controller.gaia_toggle_action.setChecked(True)
+                self.overlay_toolbar_controller.gaia_toggle_action.blockSignals(False)
         else:
             if hasattr(self, 'overlay_toolbar_controller'):
                 self.overlay_toolbar_controller.update_overlay_button_visibility()

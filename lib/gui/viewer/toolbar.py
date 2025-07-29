@@ -220,6 +220,14 @@ class ToolbarController:
         self.toolbar.addAction(self.close_action)
         self.toolbar.widgetForAction(self.close_action).setFixedSize(32, 32)
 
+        # Header button - moved from processing controls
+        self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self.parent)
+        self.header_button.setToolTip("Show FITS header")
+        self.header_button.setEnabled(False)
+        self.header_button.triggered.connect(self.parent.show_header_dialog)
+        self.toolbar.addAction(self.header_button)
+        self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
+
         self.toolbar.addWidget(make_toolbar_separator(self.parent))
     
     def _create_zoom_controls(self):
@@ -324,12 +332,6 @@ class ToolbarController:
         find_simbad_field_action.triggered.connect(self.parent.open_simbad_field_search_dialog)
         simbad_menu.addAction(find_simbad_field_action)
         
-        simbad_menu.addSeparator()
-        
-        search_gaia_action = QAction("Search Gaia catalog", self.parent)
-        search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
-        simbad_menu.addAction(search_gaia_action)
-        
         self.simbad_button.setMenu(simbad_menu)
         self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.simbad_button)
@@ -350,6 +352,13 @@ class ToolbarController:
         detect_sources_action = QAction("Detect sources", self.parent)
         detect_sources_action.triggered.connect(self.parent.detect_sources_action)
         sources_menu.addAction(detect_sources_action)
+        
+        sources_menu.addSeparator()
+        
+        search_gaia_action = QAction("Search Gaia catalog", self.parent)
+        search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
+        sources_menu.addAction(search_gaia_action)
+        
         self.sources_button.setMenu(sources_menu)
         self.sources_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.sources_button)
@@ -437,14 +446,6 @@ class ToolbarController:
         self.platesolve_button.setMenu(platesolve_menu)
         self.platesolve_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.platesolve_button)
-
-        # Header button
-        self.header_button = QAction(QIcon.fromTheme("view-financial-list"), "", self.parent)
-        self.header_button.setToolTip("Show FITS header")
-        self.header_button.setEnabled(False)
-        self.header_button.triggered.connect(self.parent.show_header_dialog)
-        self.toolbar.addAction(self.header_button)
-        self.toolbar.widgetForAction(self.header_button).setFixedSize(32, 32)
 
         self.toolbar.addWidget(make_toolbar_separator(self.parent))
 
