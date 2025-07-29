@@ -38,6 +38,7 @@ packaging==25.0
 partd==1.4.2
 photutils==2.2.0
 pillow==11.2.1
+psutil==6.1.0
 pycparser==2.22
 pyds9==1.8.1
 pyerfa==2.0.1.5

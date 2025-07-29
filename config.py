@@ -52,6 +52,13 @@ SHOW_ALIGNMENT_METHOD_DIALOG = False
 # Maximum number of images to align at once (for memory management)
 MAX_ALIGNMENT_IMAGES = 50
 
+# Memory management settings for image alignment
+# These settings help prevent memory crashes during alignment
+ALIGNMENT_MEMORY_LIMIT = 4e9  # 4GB memory limit for alignment (in bytes)
+ALIGNMENT_CHUNK_SIZE = 10     # Number of images to process in each chunk
+ALIGNMENT_ENABLE_CHUNKED = True  # Enable chunked processing for large datasets
+ALIGNMENT_SAVE_PROGRESSIVE = True  # Save aligned images progressively instead of all at once
+
 # Sigma values for pixel rejection are found below. These values are
 # used to reject outstanding pixels during image integration. It is used
 # for both integrating light frames and creating calibration masters.

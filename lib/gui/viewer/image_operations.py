@@ -2,7 +2,8 @@ from PyQt6.QtCore import QObject, pyqtSignal, QThread, Qt
 from PyQt6.QtWidgets import QMessageBox, QProgressDialog, QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QCheckBox
 
 # Import configuration
-from config import DEFAULT_ALIGNMENT_METHOD, FALLBACK_ALIGNMENT_METHOD, SHOW_ALIGNMENT_METHOD_DIALOG, MAX_ALIGNMENT_IMAGES
+from config import (DEFAULT_ALIGNMENT_METHOD, FALLBACK_ALIGNMENT_METHOD, SHOW_ALIGNMENT_METHOD_DIALOG, MAX_ALIGNMENT_IMAGES,
+                   ALIGNMENT_MEMORY_LIMIT, ALIGNMENT_CHUNK_SIZE, ALIGNMENT_ENABLE_CHUNKED, ALIGNMENT_SAVE_PROGRESSIVE)
 
 
 class AlignmentMethodDialog(QDialog):
@@ -88,9 +89,9 @@ class AlignmentMethodDialog(QDialog):
         return self.remember_checkbox.isChecked()
 
 
-class AlignmentWorker(QObject):
-    """Worker class for performing image alignment in a background thread."""
-    progress = pyqtSignal(float)
+class ConsoleAlignmentWorker(QObject):
+    """Worker class for performing image alignment with console output."""
+    output = pyqtSignal(str)  # For console output
     finished = pyqtSignal(list, object, int, int, list)  # aligned_datas, common_wcs, new_nx, new_ny, headers
     error = pyqtSignal(str)
 
@@ -102,52 +103,101 @@ class AlignmentWorker(QObject):
         self.pad_y = pad_y
         self.method = method
 
+    def log(self, message):
+        """Send a log message to the console."""
+        self.output.emit(f"{message}\n")
+
     def run(self):
-        """Execute the image alignment."""
+        """Execute the image alignment with console output."""
         try:
-            if self.method == "astroalign":
-                from lib.fits.align import align_images_with_astroalign, check_astroalign_available
-                from lib.fits.wcs import copy_wcs_from_reference
+            self.log("=" * 60)
+            self.log("STARTING IMAGE ALIGNMENT")
+            self.log("=" * 60)
+            
+            # Determine if we should use chunked processing
+            use_chunked = ALIGNMENT_ENABLE_CHUNKED and len(self.image_datas) > ALIGNMENT_CHUNK_SIZE
+            
+            if use_chunked:
+                self.log(f"Using chunked alignment for {len(self.image_datas)} images")
+                from lib.fits.align import align_images_chunked, get_memory_usage
                 
-                if not check_astroalign_available():
-                    raise ImportError("astroalign package is not available. Please install it with: pip install astroalign")
+                # Monitor initial memory
+                initial_memory = get_memory_usage()
+                self.log(f"Initial memory usage: {initial_memory:.1f} MB")
                 
-                aligned_datas, reference_header = align_images_with_astroalign(
-                    self.image_datas, self.headers, reference_index=0, progress_callback=self.progress.emit
+                aligned_datas, reference_header = align_images_chunked(
+                    self.image_datas, self.headers, 
+                    method=self.method,
+                    reference_index=0,
+                    chunk_size=ALIGNMENT_CHUNK_SIZE,
+                    memory_limit=ALIGNMENT_MEMORY_LIMIT,
+                    progress_callback=lambda frac: self.log(f"Progress: {frac*100:.1f}%"),
+                    log_callback=self.log
                 )
                 
-                # Copy WCS information from reference header to all aligned images
-                updated_headers = []
-                for i, header in enumerate(self.headers):
-                    if i == 0:  # Reference image - keep original header
-                        updated_headers.append(header)
-                    else:  # Aligned images - copy WCS from reference
-                        new_header = copy_wcs_from_reference(reference_header, header)
-                        updated_headers.append(new_header)
+                # Monitor final memory
+                final_memory = get_memory_usage()
+                self.log(f"Final memory usage: {final_memory:.1f} MB")
+                self.log(f"Memory increase: {final_memory - initial_memory:.1f} MB")
                 
-                # Create WCS object from reference header
-                common_wcs = None
-                if reference_header:
-                    from astropy.wcs import WCS
-                    try:
-                        common_wcs = WCS(reference_header)
-                    except:
-                        pass
-                
-                # Use reference image dimensions
-                new_nx = reference_header['NAXIS1'] if reference_header else aligned_datas[0].shape[1]
-                new_ny = reference_header['NAXIS2'] if reference_header else aligned_datas[0].shape[0]
-                
-            else:  # WCS reprojection method
-                from lib.fits.align import compute_padded_reference_wcs, reproject_images_to_common_wcs
-                common_wcs, (new_nx, new_ny) = compute_padded_reference_wcs(self.headers, paddings=(self.pad_x, self.pad_y))
-                aligned_datas = reproject_images_to_common_wcs(
-                    self.image_datas, self.headers, common_wcs, (new_ny, new_nx), progress_callback=self.progress.emit
-                )
-                updated_headers = self.headers  # Headers are already properly handled in WCS reprojection
+            else:
+                self.log(f"Using standard alignment for {len(self.image_datas)} images")
+                if self.method == "astroalign":
+                    from lib.fits.align import align_images_with_astroalign, check_astroalign_available
+                    from lib.fits.wcs import copy_wcs_from_reference
+                    
+                    if not check_astroalign_available():
+                        raise ImportError("astroalign package is not available. Please install it with: pip install astroalign")
+                    
+                    self.log("Starting astroalign-based alignment...")
+                    aligned_datas, reference_header = align_images_with_astroalign(
+                        self.image_datas, self.headers, reference_index=0, progress_callback=lambda frac: self.log(f"Progress: {frac*100:.1f}%")
+                    )
+                    
+                else:  # WCS reprojection method
+                    from lib.fits.align import compute_padded_reference_wcs, reproject_images_to_common_wcs
+                    self.log("Starting WCS reprojection alignment...")
+                    common_wcs, (new_nx, new_ny) = compute_padded_reference_wcs(self.headers, paddings=(self.pad_x, self.pad_y))
+                    aligned_datas = reproject_images_to_common_wcs(
+                        self.image_datas, self.headers, common_wcs, (new_ny, new_nx), progress_callback=lambda frac: self.log(f"Progress: {frac*100:.1f}%")
+                    )
+                    reference_header = self.headers[0]  # Use first header as reference
+            
+            self.log("Alignment completed successfully!")
+            self.log("Copying WCS information to aligned images...")
+            
+            # Copy WCS information from reference header to all aligned images
+            updated_headers = []
+            for i, header in enumerate(self.headers):
+                if i == 0:  # Reference image - keep original header
+                    updated_headers.append(header)
+                else:  # Aligned images - copy WCS from reference
+                    from lib.fits.wcs import copy_wcs_from_reference
+                    new_header = copy_wcs_from_reference(reference_header, header)
+                    updated_headers.append(new_header)
+            
+            # Create WCS object from reference header
+            common_wcs = None
+            if reference_header:
+                from astropy.wcs import WCS
+                try:
+                    common_wcs = WCS(reference_header)
+                    self.log("WCS object created successfully")
+                except Exception as e:
+                    self.log(f"Warning: Could not create WCS object: {e}")
+            
+            # Use reference image dimensions
+            new_nx = reference_header['NAXIS1'] if reference_header else aligned_datas[0].shape[1]
+            new_ny = reference_header['NAXIS2'] if reference_header else aligned_datas[0].shape[0]
+            
+            self.log(f"Final image dimensions: {new_nx} x {new_ny}")
+            self.log("=" * 60)
+            self.log("ALIGNMENT COMPLETED SUCCESSFULLY")
+            self.log("=" * 60)
             
             self.finished.emit(aligned_datas, common_wcs, new_nx, new_ny, updated_headers)
         except Exception as e:
+            self.log(f"ERROR: {str(e)}")
             self.error.emit(str(e))
 
 
@@ -165,6 +215,47 @@ class ImageOperationsMixin:
                 except Exception as e:
                     print(f"Warning: Could not remove temporary directory {temp_dir}: {e}")
             self._temp_aligned_dirs.clear()
+    
+    def check_system_memory(self):
+        """Check system memory availability and provide recommendations."""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            available_gb = memory.available / (1024**3)
+            total_gb = memory.total / (1024**3)
+            used_percent = memory.percent
+            
+            print(f"System memory status:")
+            print(f"  Total: {total_gb:.1f} GB")
+            print(f"  Available: {available_gb:.1f} GB")
+            print(f"  Used: {used_percent:.1f}%")
+            
+            if available_gb < 2.0:
+                QMessageBox.warning(
+                    self, "Low Memory Warning",
+                    f"System has only {available_gb:.1f} GB of available memory.\n\n"
+                    f"Recommendations:\n"
+                    f"• Close other applications\n"
+                    f"• Reduce the number of images to align\n"
+                    f"• Use chunked processing (enabled: {ALIGNMENT_ENABLE_CHUNKED})\n"
+                    f"• Consider using a smaller chunk size (current: {ALIGNMENT_CHUNK_SIZE})"
+                )
+                return False
+            elif available_gb < 4.0:
+                QMessageBox.information(
+                    self, "Memory Notice",
+                    f"System has {available_gb:.1f} GB of available memory.\n\n"
+                    f"Chunked processing is recommended for large datasets."
+                )
+            
+            return True
+            
+        except ImportError:
+            print("psutil not available - cannot check system memory")
+            return True
+        except Exception as e:
+            print(f"Error checking system memory: {e}")
+            return True
     
     def closeEvent(self, event):
         """Override closeEvent to cleanup temporary files."""
@@ -184,7 +275,7 @@ class ImageOperationsMixin:
             Alignment method: "astroalign" (fast, asterism-based) or "wcs_reprojection" (slow, WCS-based)
             If None, uses the method from configuration or shows dialog if enabled.
         """
-        from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, check_astroalign_available, get_alignment_methods
+        from lib.fits.align import check_all_have_wcs, check_pixel_scales_match, check_astroalign_available, get_alignment_methods, get_memory_usage
         
         # Remove overlays before aligning
         self._simbad_overlay = None
@@ -196,6 +287,8 @@ class ImageOperationsMixin:
         # Gather image data and headers
         image_datas = []
         headers = []
+        total_memory_estimate = 0
+        
         for path in self.loaded_files:
             img, hdr, wcs = self._preloaded_fits.get(path, (None, None, None))
             if img is None or hdr is None:
@@ -203,6 +296,36 @@ class ImageOperationsMixin:
                 return
             image_datas.append(img)
             headers.append(hdr)
+            # Estimate memory usage (rough calculation)
+            total_memory_estimate += img.nbytes
+        
+        # Show memory information
+        current_memory = get_memory_usage()
+        estimated_alignment_memory = total_memory_estimate * 2  # Rough estimate for aligned images
+        total_estimated_memory = current_memory + (estimated_alignment_memory / (1024 * 1024))
+        
+        print(f"Memory analysis for alignment:")
+        print(f"  Current memory usage: {current_memory:.1f} MB")
+        print(f"  Images to align: {len(image_datas)}")
+        print(f"  Total image data size: {total_memory_estimate / (1024*1024):.1f} MB")
+        print(f"  Estimated alignment memory: {estimated_alignment_memory / (1024*1024):.1f} MB")
+        print(f"  Total estimated memory: {total_estimated_memory:.1f} MB")
+        print(f"  Memory limit: {ALIGNMENT_MEMORY_LIMIT / (1024*1024):.1f} MB")
+        
+        # Check if we're likely to exceed memory limits
+        if total_estimated_memory > (ALIGNMENT_MEMORY_LIMIT / (1024 * 1024)):
+            reply = QMessageBox.question(
+                self, "High Memory Usage", 
+                f"Estimated memory usage ({total_estimated_memory:.1f} MB) exceeds the limit ({ALIGNMENT_MEMORY_LIMIT / (1024*1024):.1f} MB).\n\n"
+                f"This may cause the application to crash. Consider:\n"
+                f"• Reducing the number of images\n"
+                f"• Using chunked processing (enabled: {ALIGNMENT_ENABLE_CHUNKED})\n"
+                f"• Closing other applications\n\n"
+                f"Continue anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
         
         # Check image count limit
         if len(image_datas) > MAX_ALIGNMENT_IMAGES:
@@ -213,6 +336,10 @@ class ImageOperationsMixin:
             )
             if reply == QMessageBox.StandardButton.No:
                 return
+        
+        # Check system memory availability
+        if not self.check_system_memory():
+            return
         
         # Determine alignment method
         if method is None:
@@ -262,25 +389,20 @@ class ImageOperationsMixin:
         
         pad_x, pad_y = 100, 100
         
-        # Progress dialog
-        method_name = "Asterism-based" if method == "astroalign" else "WCS reprojection"
-        progress = QProgressDialog(f"Aligning images using {method_name}...", None, 0, len(image_datas), self)
-        progress.setWindowTitle("Aligning")
-        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
-        progress.show()
-        QApplication.processEvents()
+        # Create console window for alignment output
+        from lib.gui.common.console_window import ConsoleOutputWindow
+        console_window = ConsoleOutputWindow("Image Alignment", self)
+        console_window.show_and_raise()
         
         # Start worker thread
         self._align_thread = QThread()
-        self._align_worker = AlignmentWorker(image_datas, headers, pad_x, pad_y, method)
+        self._align_worker = ConsoleAlignmentWorker(image_datas, headers, pad_x, pad_y, method)
         self._align_worker.moveToThread(self._align_thread)
         self._align_thread.started.connect(self._align_worker.run)
-        self._align_worker.progress.connect(lambda frac: (progress.setValue(int(frac * len(image_datas))), QApplication.processEvents()))
+        self._align_worker.output.connect(console_window.append_text)
         
         def on_finished(aligned_datas, common_wcs, new_nx, new_ny, headers):
-            progress.close()
+            console_window.append_text("\nSaving aligned images...\n")
             
             # Create temporary directory for aligned files
             import tempfile
@@ -298,54 +420,79 @@ class ImageOperationsMixin:
             self._temp_aligned_dirs.append(temp_dir)  # Track for cleanup
             new_file_paths = []
             
-            for i, path in enumerate(self.loaded_files):
-                # Use the updated header for this specific image
-                new_header = headers[i].copy()
-                new_header['NAXIS1'] = new_nx
-                new_header['NAXIS2'] = new_ny
-                # Add alignment method info to header
-                new_header['ALIGN_MTH'] = method
-                if method == "astroalign":
-                    new_header['COMMENT'] = 'Aligned using astroalign asterism matching'
-                else:
-                    new_header['COMMENT'] = 'Aligned using WCS reprojection'
+            try:
+                for i, path in enumerate(self.loaded_files):
+                    console_window.append_text(f"Saving aligned image {i+1}/{len(self.loaded_files)}: {os.path.basename(path)}\n")
+                    
+                    # Use the updated header for this specific image
+                    new_header = headers[i].copy()
+                    new_header['NAXIS1'] = new_nx
+                    new_header['NAXIS2'] = new_ny
+                    # Add alignment method info to header
+                    new_header['ALIGN_MTH'] = method
+                    if method == "astroalign":
+                        new_header['COMMENT'] = 'Aligned using astroalign asterism matching'
+                    else:
+                        new_header['COMMENT'] = 'Aligned using WCS reprojection'
+                    
+                    # Create WCS object for this specific image
+                    image_wcs = None
+                    try:
+                        from astropy.wcs import WCS
+                        image_wcs = WCS(new_header)
+                    except:
+                        pass
+                    
+                    # Save aligned image to temporary file
+                    original_filename = os.path.basename(path)
+                    name, ext = os.path.splitext(original_filename)
+                    aligned_filename = f"aligned_{name}{ext}"
+                    aligned_path = os.path.join(temp_dir, aligned_filename)
+                    
+                    # Create FITS file with aligned data and updated header
+                    hdu = fits.PrimaryHDU(aligned_datas[i], new_header)
+                    hdu.writeto(aligned_path, overwrite=True)
+                    
+                    new_file_paths.append(aligned_path)
+                    
+                    # Update the preloaded fits cache
+                    self._preloaded_fits[aligned_path] = (aligned_datas[i], new_header, image_wcs)
+                    
+                    # Force garbage collection every few images to prevent memory buildup
+                    if ALIGNMENT_SAVE_PROGRESSIVE and (i + 1) % 5 == 0:
+                        import gc
+                        gc.collect()
+                        console_window.append_text("  Memory cleanup performed\n")
                 
-                # Create WCS object for this specific image
-                image_wcs = None
-                try:
-                    from astropy.wcs import WCS
-                    image_wcs = WCS(new_header)
-                except:
-                    pass
+                # Update loaded_files list to point to the new aligned files
+                self.loaded_files = new_file_paths
                 
-                # Save aligned image to temporary file
-                original_filename = os.path.basename(path)
-                name, ext = os.path.splitext(original_filename)
-                aligned_filename = f"aligned_{name}{ext}"
-                aligned_path = os.path.join(temp_dir, aligned_filename)
+                self.current_file_index = 0
+                self.load_fits(self.loaded_files[0], restore_view=False)
+                self.update_navigation_buttons()
+                self.update_image_count_label()
+                self.update_align_button_visibility()
                 
-                # Create FITS file with aligned data and updated header
-                hdu = fits.PrimaryHDU(aligned_datas[i], new_header)
-                hdu.writeto(aligned_path, overwrite=True)
+                console_window.append_text("\n" + "=" * 60 + "\n")
+                console_window.append_text("ALIGNMENT AND SAVING COMPLETED SUCCESSFULLY\n")
+                console_window.append_text("=" * 60 + "\n")
+                console_window.append_text(f"Aligned {len(new_file_paths)} images\n")
+                console_window.append_text(f"Files saved to: {temp_dir}\n")
                 
-                new_file_paths.append(aligned_path)
-                
-                # Update the preloaded fits cache
-                self._preloaded_fits[aligned_path] = (aligned_datas[i], new_header, image_wcs)
+            except Exception as e:
+                console_window.append_text(f"\nERROR during saving: {str(e)}\n")
+                QMessageBox.critical(self, "Alignment Error", f"Error during saving: {str(e)}")
+            finally:
+                # Final memory cleanup
+                import gc
+                gc.collect()
+                console_window.append_text("Final memory cleanup completed\n")
             
-            # Update loaded_files list to point to the new aligned files
-            self.loaded_files = new_file_paths
-            
-            self.current_file_index = 0
-            self.load_fits(self.loaded_files[0], restore_view=False)
-            self.update_navigation_buttons()
-            self.update_image_count_label()
-            self.update_align_button_visibility()
             self._align_thread.quit()
             self._align_thread.wait()
         
         def on_error(msg):
-            progress.close()
+            console_window.append_text(f"\nERROR: {msg}\n")
             QMessageBox.critical(self, "Alignment Error", f"Error during alignment: {msg}")
             self._align_thread.quit()
             self._align_thread.wait()

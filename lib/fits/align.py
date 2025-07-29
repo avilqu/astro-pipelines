@@ -2,6 +2,15 @@ import numpy as np
 from astropy.wcs import WCS
 from astropy.io import fits
 from typing import List, Tuple, Optional
+import gc
+import os
+
+# Try to import psutil for memory tracking
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 try:
     from reproject import reproject_interp
@@ -14,8 +23,39 @@ try:
 except ImportError:
     ASTROALIGN_AVAILABLE = False
 
+# Import configuration
+from config import (ALIGNMENT_MEMORY_LIMIT, ALIGNMENT_CHUNK_SIZE, 
+                   ALIGNMENT_ENABLE_CHUNKED, ALIGNMENT_SAVE_PROGRESSIVE)
+
 class AlignmentError(Exception):
     pass
+
+def get_memory_usage():
+    """Get current memory usage in MB."""
+    if PSUTIL_AVAILABLE:
+        try:
+            process = psutil.Process(os.getpid())
+            return process.memory_info().rss / (1024 * 1024)
+        except Exception:
+            return 0.0
+    else:
+        return 0.0
+
+def check_memory_limit(current_usage_mb=None, limit_mb=None):
+    """Check if current memory usage exceeds the limit."""
+    if limit_mb is None:
+        limit_mb = ALIGNMENT_MEMORY_LIMIT / (1024 * 1024)
+    
+    if current_usage_mb is None:
+        current_usage_mb = get_memory_usage()
+    
+    return current_usage_mb > limit_mb
+
+def force_garbage_collection():
+    """Force garbage collection to free memory."""
+    gc.collect()
+    if hasattr(gc, 'collect'):
+        gc.collect(2)  # Full collection
 
 def check_all_have_wcs(headers: List[fits.Header]) -> bool:
     """Return True if all headers have valid WCS, else False."""
@@ -241,4 +281,186 @@ def get_alignment_methods() -> List[str]:
     methods = ["wcs_reprojection"]
     if ASTROALIGN_AVAILABLE:
         methods.append("astroalign")
-    return methods 
+    return methods
+
+def align_images_chunked(image_datas: List[np.ndarray], 
+                        headers: List[fits.Header], 
+                        method: str = "astroalign",
+                        reference_index: int = 0,
+                        chunk_size: Optional[int] = None,
+                        memory_limit: Optional[float] = None,
+                        progress_callback=None,
+                        log_callback=None) -> Tuple[List[np.ndarray], fits.Header]:
+    """
+    Align images in chunks to prevent memory issues with large datasets.
+    
+    Parameters:
+    -----------
+    image_datas : List[np.ndarray]
+        List of image arrays to align
+    headers : List[fits.Header]
+        List of FITS headers corresponding to the images
+    method : str
+        Alignment method ("astroalign" or "wcs_reprojection")
+    reference_index : int
+        Index of the reference image
+    chunk_size : Optional[int]
+        Number of images per chunk. If None, uses default ALIGNMENT_CHUNK_SIZE.
+    memory_limit : Optional[float]
+        Memory limit in bytes. If None, uses default ALIGNMENT_MEMORY_LIMIT.
+    progress_callback : callable, optional
+        Progress callback function(progress: float)
+    log_callback : callable, optional
+        Log callback function(message: str) for console output
+        
+    Returns:
+    --------
+    Tuple[List[np.ndarray], fits.Header]
+        List of aligned images and the reference header
+    """
+    def log(message):
+        if log_callback:
+            log_callback(message)
+        else:
+            print(message)
+    
+    if len(image_datas) < 2:
+        return image_datas, headers[0] if headers else None
+    
+    # Use defaults if not specified
+    chunk_size = chunk_size or ALIGNMENT_CHUNK_SIZE
+    memory_limit = memory_limit or ALIGNMENT_MEMORY_LIMIT
+    
+    log(f"\nAligning {len(image_datas)} images with chunked processing")
+    log(f"Chunk size: {chunk_size} images")
+    log(f"Memory limit: {memory_limit / 1e9:.1f} GB")
+    log(f"Method: {method}")
+    
+    # Get reference image and header
+    reference_image = image_datas[reference_index]
+    reference_header = headers[reference_index] if headers else None
+    
+    # Initialize result list with reference image
+    aligned_images = [None] * len(image_datas)
+    aligned_images[reference_index] = reference_image
+    
+    # Process images in chunks
+    total_chunks = (len(image_datas) + chunk_size - 1) // chunk_size
+    processed_count = 0
+    
+    for chunk_idx in range(total_chunks):
+        start_idx = chunk_idx * chunk_size
+        end_idx = min(start_idx + chunk_size, len(image_datas))
+        
+        # Skip reference image if it's in this chunk
+        chunk_indices = [i for i in range(start_idx, end_idx) if i != reference_index]
+        
+        if not chunk_indices:
+            continue
+            
+        log(f"\nProcessing chunk {chunk_idx + 1}/{total_chunks} (indices {chunk_indices})")
+        
+        # Check memory before processing chunk
+        current_memory = get_memory_usage()
+        log(f"Memory before chunk: {current_memory:.1f} MB")
+        
+        if check_memory_limit(current_memory, memory_limit / (1024 * 1024)):
+            log(f"Warning: Memory usage ({current_memory:.1f} MB) is high, forcing garbage collection")
+            force_garbage_collection()
+        
+        # Process each image in the chunk
+        for i, image_idx in enumerate(chunk_indices):
+            try:
+                log(f"  Aligning image {image_idx + 1}/{len(image_datas)}")
+                
+                if method == "astroalign":
+                    aligned_image = _align_single_image_astroalign(
+                        image_datas[image_idx], reference_image, image_idx, log_callback
+                    )
+                else:  # wcs_reprojection
+                    aligned_image = _align_single_image_wcs(
+                        image_datas[image_idx], headers[image_idx], reference_header, image_idx, log_callback
+                    )
+                
+                aligned_images[image_idx] = aligned_image
+                processed_count += 1
+                
+                # Update progress
+                if progress_callback:
+                    progress_callback(processed_count / (len(image_datas) - 1))
+                
+                # Check memory after each image
+                current_memory = get_memory_usage()
+                if check_memory_limit(current_memory, memory_limit / (1024 * 1024)):
+                    log(f"Warning: High memory usage ({current_memory:.1f} MB), forcing cleanup")
+                    force_garbage_collection()
+                
+            except Exception as e:
+                log(f"Warning: Failed to align image {image_idx}: {e}")
+                # Use original image if alignment fails
+                aligned_images[image_idx] = image_datas[image_idx]
+                processed_count += 1
+        
+        # Force cleanup after each chunk
+        log(f"Cleaning up after chunk {chunk_idx + 1}")
+        force_garbage_collection()
+        
+        # Check memory after chunk
+        current_memory = get_memory_usage()
+        log(f"Memory after chunk: {current_memory:.1f} MB")
+    
+    log(f"\nChunked alignment complete. Processed {processed_count} images.")
+    return aligned_images, reference_header
+
+def _align_single_image_astroalign(image: np.ndarray, reference_image: np.ndarray, image_idx: int, log_callback=None) -> np.ndarray:
+    """Align a single image to reference using astroalign."""
+    def log(message):
+        if log_callback:
+            log_callback(message)
+        else:
+            print(message)
+    
+    if not ASTROALIGN_AVAILABLE:
+        raise ImportError("astroalign package is required for asterism-based alignment.")
+    
+    try:
+        # Fix byte order issues for astroalign compatibility
+        image_native = _fix_byte_order_for_astroalign(image)
+        reference_native = _fix_byte_order_for_astroalign(reference_image)
+        
+        # Align current image to reference
+        aligned_image, _ = aa.register(image_native, reference_native)
+        return aligned_image
+        
+    except Exception as e:
+        log(f"Warning: astroalign failed for image {image_idx}: {e}")
+        # Return original image if alignment fails
+        return image
+
+def _align_single_image_wcs(image: np.ndarray, header: fits.Header, reference_header: fits.Header, image_idx: int, log_callback=None) -> np.ndarray:
+    """Align a single image to reference using WCS reprojection."""
+    def log(message):
+        if log_callback:
+            log_callback(message)
+        else:
+            print(message)
+    
+    if reproject_interp is None:
+        raise ImportError("reproject package is required for WCS alignment.")
+    
+    try:
+        # Create WCS objects
+        wcs = WCS(header)
+        ref_wcs = WCS(reference_header)
+        
+        # Get target shape from reference
+        target_shape = (reference_header['NAXIS2'], reference_header['NAXIS1'])
+        
+        # Reproject image
+        aligned_image, _ = reproject_interp((image, wcs), ref_wcs, shape_out=target_shape, order='bilinear')
+        return aligned_image
+        
+    except Exception as e:
+        log(f"Warning: WCS reprojection failed for image {image_idx}: {e}")
+        # Return original image if alignment fails
+        return image 
