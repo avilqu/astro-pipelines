@@ -301,6 +301,9 @@ class OrbitDataWindow(QMainWindow):
         substack2_files = sorted_files[substack_size:2*substack_size]
         substack3_files = sorted_files[2*substack_size:]
         
+        # Calculate object positions for each substack based on the computed positions
+        object_positions = self._calculate_object_positions_for_substacks(positions, substack1_files, substack2_files, substack3_files)
+        
         # Create console window for output
         from lib.gui.common.console_window import ConsoleOutputWindow
         console_window = ConsoleOutputWindow("Substack Generation", self)
@@ -311,7 +314,7 @@ class OrbitDataWindow(QMainWindow):
         self._substack_worker = SubstacksGenerationWorker(
             substack1_files, substack2_files, substack3_files,
             object_name, output_dir, safe_object_name, timestamp,
-            console_window
+            console_window, object_positions
         )
         self._substack_worker.moveToThread(self._substack_thread)
         self._substack_thread.started.connect(self._substack_worker.run)
@@ -323,8 +326,18 @@ class OrbitDataWindow(QMainWindow):
             if success:
                 console_window.append_text(f"\n\033[1;32mSubstack generation completed successfully!\033[0m\n\n{message}\n")
                 # Load the generated substacks into the viewer
-                for file_path in output_files:
+                # First load full-frame substacks, then cropped versions
+                full_frame_files = [f for f in output_files if 'cropped' not in os.path.basename(f)]
+                cropped_files = [f for f in output_files if 'cropped' in os.path.basename(f)]
+                
+                # Load full-frame files first
+                for file_path in full_frame_files:
                     self.parent_viewer.open_and_add_file(file_path)
+                
+                # Then load cropped files at the end
+                for file_path in cropped_files:
+                    self.parent_viewer.open_and_add_file(file_path)
+                
                 # Update viewer UI
                 self.parent_viewer.update_navigation_buttons()
                 self.parent_viewer.update_image_count_label()
@@ -374,6 +387,42 @@ class OrbitDataWindow(QMainWindow):
                 individual_files.append(file_path)
         
         return individual_files
+    
+    def _calculate_object_positions_for_substacks(self, positions, substack1_files, substack2_files, substack3_files):
+        """Calculate the object position for each substack based on the computed positions."""
+        try:
+            # Group positions by substack
+            substack1_positions = [pos for pos in positions if pos['file_path'] in substack1_files]
+            substack2_positions = [pos for pos in positions if pos['file_path'] in substack2_files]
+            substack3_positions = [pos for pos in positions if pos['file_path'] in substack3_files]
+            
+            # Calculate the average object position for each substack
+            # This will show the object's motion across the three time periods
+            def get_average_object_position(pos_list):
+                if not pos_list:
+                    return None
+                
+                # Use the original_x and original_y coordinates (actual object positions in each image)
+                avg_x = sum(pos['original_x'] for pos in pos_list) / len(pos_list)
+                avg_y = sum(pos['original_y'] for pos in pos_list) / len(pos_list)
+                
+                return (avg_x, avg_y)
+            
+            pos1 = get_average_object_position(substack1_positions)
+            pos2 = get_average_object_position(substack2_positions)
+            pos3 = get_average_object_position(substack3_positions)
+            
+            # Debug output
+            print(f"Substack 1 positions: {len(substack1_positions)} files, avg object pos: {pos1}")
+            print(f"Substack 2 positions: {len(substack2_positions)} files, avg object pos: {pos2}")
+            print(f"Substack 3 positions: {len(substack3_positions)} files, avg object pos: {pos3}")
+            
+            return [pos1, pos2, pos3]
+            
+        except Exception as e:
+            # Fallback to using the original cursor position for all substacks
+            print(f"Warning: Could not calculate substack-specific positions: {e}")
+            return [self.cursor_coords, self.cursor_coords, self.cursor_coords]
     
     def _sort_files_by_date(self, files):
         """Sort files by DATE-OBS header value."""
@@ -742,7 +791,8 @@ class SubstacksGenerationWorker(QObject):
     finished = pyqtSignal(bool, str, list)  # success, message, output_files
     
     def __init__(self, substack1_files, substack2_files, substack3_files, 
-                 object_name, output_dir, safe_object_name, timestamp, console_window=None):
+                 object_name, output_dir, safe_object_name, timestamp, console_window=None,
+                 object_positions=None):
         super().__init__()
         self.substack1_files = substack1_files
         self.substack2_files = substack2_files
@@ -752,6 +802,7 @@ class SubstacksGenerationWorker(QObject):
         self.safe_object_name = safe_object_name
         self.timestamp = timestamp
         self.console_window = console_window
+        self.object_positions = object_positions  # List of (x, y) coordinates for each substack
     
     def run(self):
         """Run the substack generation."""
@@ -768,7 +819,12 @@ class SubstacksGenerationWorker(QObject):
                 self.console_output.emit(f"\033[1;34mStarting substack generation for {self.object_name}\033[0m\n")
                 self.console_output.emit(f"\033[1;34mTotal individual files: {len(self.substack1_files) + len(self.substack2_files) + len(self.substack3_files)}\033[0m\n")
                 self.console_output.emit(f"\033[1;34mStacking method: Median\033[0m\n")
-                self.console_output.emit(f"\033[1;34mNote: Only individual images are used (stacked images are excluded)\033[0m\n\n")
+                self.console_output.emit(f"\033[1;34mNote: Only individual images are used (stacked images are excluded)\033[0m\n")
+                if self.object_positions:
+                    # Handle both string and numeric coordinates
+                    for i, (x, y) in enumerate(self.object_positions):
+                        self.console_output.emit(f"\033[1;34mObject position for substack {i+1} (cropped): ({x:.1f}, {y:.1f})\033[0m\n")
+                self.console_output.emit(f"\033[1;34mCrop size: 500x500 pixels\033[0m\n\n")
                 
                 output_files = []
                 
@@ -783,10 +839,20 @@ class SubstacksGenerationWorker(QObject):
                 output_file1 = os.path.join(self.output_dir, f"substack1_{self.safe_object_name}_{self.timestamp}.fits")
                 self.console_output.emit(f"\033[1;33mCreating substack 1 (median)...\033[0m\n")
                 
-                self._create_motion_tracked_stack(self.substack1_files, self.object_name, output_file1)
+                result1 = self._create_motion_tracked_stack(self.substack1_files, self.object_name, output_file1)
                 output_files.append(output_file1)
                 
-                self.console_output.emit(f"\033[1;32m✓ Substack 1 completed: {os.path.basename(output_file1)}\033[0m\n\n")
+                self.console_output.emit(f"\033[1;32m✓ Substack 1 completed: {os.path.basename(output_file1)}\033[0m\n")
+                
+                # Create cropped version of substack 1
+                if self.object_positions and self.object_positions[0]:
+                    cropped_file1 = os.path.join(self.output_dir, f"substack1_cropped_{self.safe_object_name}_{self.timestamp}.fits")
+                    self.console_output.emit(f"\033[1;33mCreating cropped version of substack 1...\033[0m\n")
+                    self._create_cropped_version(result1, cropped_file1, self.object_positions[0])
+                    output_files.append(cropped_file1)
+                    self.console_output.emit(f"\033[1;32m✓ Cropped substack 1 completed: {os.path.basename(cropped_file1)}\033[0m\n")
+                
+                self.console_output.emit(f"\n")
                 
                 # Generate substack 2
                 self.console_output.emit(f"\033[1;33m=== SUBSTACK 2 ===\033[0m\n")
@@ -799,10 +865,20 @@ class SubstacksGenerationWorker(QObject):
                 output_file2 = os.path.join(self.output_dir, f"substack2_{self.safe_object_name}_{self.timestamp}.fits")
                 self.console_output.emit(f"\033[1;33mCreating substack 2 (median)...\033[0m\n")
                 
-                self._create_motion_tracked_stack(self.substack2_files, self.object_name, output_file2)
+                result2 = self._create_motion_tracked_stack(self.substack2_files, self.object_name, output_file2)
                 output_files.append(output_file2)
                 
-                self.console_output.emit(f"\033[1;32m✓ Substack 2 completed: {os.path.basename(output_file2)}\033[0m\n\n")
+                self.console_output.emit(f"\033[1;32m✓ Substack 2 completed: {os.path.basename(output_file2)}\033[0m\n")
+                
+                # Create cropped version of substack 2
+                if self.object_positions and self.object_positions[1]:
+                    cropped_file2 = os.path.join(self.output_dir, f"substack2_cropped_{self.safe_object_name}_{self.timestamp}.fits")
+                    self.console_output.emit(f"\033[1;33mCreating cropped version of substack 2...\033[0m\n")
+                    self._create_cropped_version(result2, cropped_file2, self.object_positions[1])
+                    output_files.append(cropped_file2)
+                    self.console_output.emit(f"\033[1;32m✓ Cropped substack 2 completed: {os.path.basename(cropped_file2)}\033[0m\n")
+                
+                self.console_output.emit(f"\n")
                 
                 # Generate substack 3
                 self.console_output.emit(f"\033[1;33m=== SUBSTACK 3 ===\033[0m\n")
@@ -815,18 +891,34 @@ class SubstacksGenerationWorker(QObject):
                 output_file3 = os.path.join(self.output_dir, f"substack3_{self.safe_object_name}_{self.timestamp}.fits")
                 self.console_output.emit(f"\033[1;33mCreating substack 3 (median)...\033[0m\n")
                 
-                self._create_motion_tracked_stack(self.substack3_files, self.object_name, output_file3)
+                result3 = self._create_motion_tracked_stack(self.substack3_files, self.object_name, output_file3)
                 output_files.append(output_file3)
                 
-                self.console_output.emit(f"\033[1;32m✓ Substack 3 completed: {os.path.basename(output_file3)}\033[0m\n\n")
+                self.console_output.emit(f"\033[1;32m✓ Substack 3 completed: {os.path.basename(output_file3)}\033[0m\n")
+                
+                # Create cropped version of substack 3
+                if self.object_positions and self.object_positions[2]:
+                    cropped_file3 = os.path.join(self.output_dir, f"substack3_cropped_{self.safe_object_name}_{self.timestamp}.fits")
+                    self.console_output.emit(f"\033[1;33mCreating cropped version of substack 3...\033[0m\n")
+                    self._create_cropped_version(result3, cropped_file3, self.object_positions[2])
+                    output_files.append(cropped_file3)
+                    self.console_output.emit(f"\033[1;32m✓ Cropped substack 3 completed: {os.path.basename(cropped_file3)}\033[0m\n")
+                
+                self.console_output.emit(f"\n")
                 
                 # Success message
-                message = f"Successfully generated 3 motion tracked substacks:\n"
+                message = f"Successfully generated 6 motion tracked files:\n"
                 message += f"Object: {self.object_name}\n"
                 message += f"Method: Median stacking\n"
-                message += f"Substack 1: {len(self.substack1_files)} files -> {os.path.basename(output_file1)}\n"
-                message += f"Substack 2: {len(self.substack2_files)} files -> {os.path.basename(output_file2)}\n"
-                message += f"Substack 3: {len(self.substack3_files)} files -> {os.path.basename(output_file3)}\n"
+                message += f"Full frame substacks:\n"
+                message += f"  - Substack 1: {len(self.substack1_files)} files -> {os.path.basename(output_file1)}\n"
+                message += f"  - Substack 2: {len(self.substack2_files)} files -> {os.path.basename(output_file2)}\n"
+                message += f"  - Substack 3: {len(self.substack3_files)} files -> {os.path.basename(output_file3)}\n"
+                if self.object_positions:
+                    message += f"Cropped substacks (500x500px):\n"
+                    message += f"  - Cropped 1: {os.path.basename(output_files[1])}\n"
+                    message += f"  - Cropped 2: {os.path.basename(output_files[3])}\n"
+                    message += f"  - Cropped 3: {os.path.basename(output_files[5])}\n"
                 message += f"Output directory: {self.output_dir}"
                 
                 self.finished.emit(True, message, output_files)
@@ -861,6 +953,109 @@ class SubstacksGenerationWorker(QObject):
             
         except Exception as e:
             raise Exception(f"Error creating motion tracked stack: {str(e)}")
+    
+    def _create_cropped_version(self, stacked_result, output_path, object_position):
+        """Create a cropped version of the stacked image centered on the object position."""
+        try:
+            import numpy as np
+            from astropy.io import fits
+            import re
+            
+            # Get the stacked data
+            stacked_data = stacked_result.data
+            header = stacked_result.meta
+            
+            # Calculate crop boundaries (500x500 pixels centered on object)
+            crop_size = 500
+            
+            # Parse coordinates - handle various formats
+            center_x, center_y = self._parse_coordinates(object_position)
+            
+            # Calculate crop boundaries
+            start_x = max(0, int(center_x - crop_size // 2))
+            end_x = min(stacked_data.shape[1], start_x + crop_size)
+            start_y = max(0, int(center_y - crop_size // 2))
+            end_y = min(stacked_data.shape[0], start_y + crop_size)
+            
+            # Adjust if we're near the edges
+            if end_x - start_x < crop_size:
+                if start_x == 0:
+                    end_x = min(stacked_data.shape[1], crop_size)
+                else:
+                    start_x = max(0, stacked_data.shape[1] - crop_size)
+            
+            if end_y - start_y < crop_size:
+                if start_y == 0:
+                    end_y = min(stacked_data.shape[0], crop_size)
+                else:
+                    start_y = max(0, stacked_data.shape[0] - crop_size)
+            
+            # Crop the data
+            cropped_data = stacked_data[start_y:end_y, start_x:end_x]
+            
+            # Create new header for cropped image
+            cropped_header = header.copy()
+            
+            # Update header with crop information
+            cropped_header['NAXIS1'] = cropped_data.shape[1]
+            cropped_header['NAXIS2'] = cropped_data.shape[0]
+            cropped_header['CROPPED'] = True
+            cropped_header['CROP_X1'] = start_x
+            cropped_header['CROP_Y1'] = start_y
+            cropped_header['CROP_X2'] = end_x
+            cropped_header['CROP_Y2'] = end_y
+            cropped_header['CROP_CENTER_X'] = center_x
+            cropped_header['CROP_CENTER_Y'] = center_y
+            cropped_header['CROP_SIZE'] = crop_size
+            
+            # Update WCS if present
+            if 'WCSAXES' in cropped_header:
+                try:
+                    from astropy.wcs import WCS
+                    wcs = WCS(cropped_header)
+                    # Update WCS for the cropped region
+                    wcs_cropped = wcs.slice((slice(start_y, end_y), slice(start_x, end_x)))
+                    # Update header with new WCS
+                    for key in wcs_cropped.to_header():
+                        cropped_header[key] = wcs_cropped.to_header()[key]
+                except Exception as e:
+                    self.console_output.emit(f"Warning: Could not update WCS for cropped image: {e}\n")
+            
+            # Save cropped image
+            hdu = fits.PrimaryHDU(cropped_data, cropped_header)
+            hdu.writeto(output_path, overwrite=True)
+            
+            self.console_output.emit(f"  Cropped from ({start_x}, {start_y}) to ({end_x}, {end_y})\n")
+            self.console_output.emit(f"  Final crop size: {cropped_data.shape[1]}x{cropped_data.shape[0]} pixels\n")
+            
+        except Exception as e:
+            raise Exception(f"Error creating cropped version: {str(e)}")
+    
+    def _parse_coordinates(self, object_position):
+        """Parse coordinates from various formats and return (x, y) as floats."""
+        try:
+            # If it's already a tuple or list with two elements
+            if isinstance(object_position, (tuple, list)) and len(object_position) == 2:
+                return float(object_position[0]), float(object_position[1])
+            
+            # If it's a string representation of a tuple like "(1158.9, 863.2)"
+            if isinstance(object_position, str):
+                # Use regex to extract numbers from the string
+                import re
+                numbers = re.findall(r'[-+]?\d*\.?\d+', object_position)
+                if len(numbers) >= 2:
+                    return float(numbers[0]), float(numbers[1])
+            
+            # If it's a single string with comma separation
+            if isinstance(object_position, str) and ',' in object_position:
+                parts = object_position.split(',')
+                if len(parts) >= 2:
+                    return float(parts[0].strip()), float(parts[1].strip())
+            
+            raise ValueError(f"Could not parse coordinates from: {object_position}")
+            
+        except (ValueError, TypeError) as e:
+            raise Exception(f"Invalid object position coordinates: {object_position}. Expected numeric values. Error: {str(e)}")
 
 
 class OrbitComputationWorker(QObject):
