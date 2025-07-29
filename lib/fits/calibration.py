@@ -380,6 +380,79 @@ class CalibrationManager:
                     removed_keys.append(key)
             cal.flush()
     
+    def _extract_fits_metadata(self, file_path: str) -> Optional[FitsFile]:
+        """
+        Extract FITS metadata directly from file header to create a FitsFile-like object.
+        This allows calibration of files not in the database.
+        
+        Args:
+            file_path: Path to the FITS file
+            
+        Returns:
+            FitsFile-like object with metadata, or None if file cannot be read
+        """
+        try:
+            with fits.open(file_path) as hdul:
+                header = hdul[0].header
+                
+                # Extract required metadata from header
+                # Use get() with defaults for optional fields
+                
+                # Handle binning - check for XBINNING/YBINNING or BINNING
+                xbinning = header.get('XBINNING', 1)
+                ybinning = header.get('YBINNING', 1)
+                if xbinning == ybinning:
+                    binning = f"{xbinning}x{xbinning}"
+                else:
+                    binning = f"{xbinning}x{ybinning}"
+                
+                filter_name = header.get('FILTER', 'Unknown')
+                gain = header.get('GAIN', 0.0)
+                offset = header.get('OFFSET', 0.0)
+                ccd_temp = header.get('CCD-TEMP', 0.0)
+                exptime = header.get('EXPTIME', 0.0)
+                
+                # Parse date
+                date_str = header.get('DATE-OBS', '')
+                if date_str:
+                    try:
+                        # Try to parse the date
+                        if 'T' in date_str:
+                            date_obs = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                        else:
+                            date_obs = datetime.strptime(date_str, '%Y-%m-%d')
+                    except:
+                        date_obs = datetime.now()
+                else:
+                    date_obs = datetime.now()
+                
+                # Create a simple object with the required attributes
+                class FitsFileLike:
+                    def __init__(self, path, binning, filter_name, gain, offset, ccd_temp, exptime, date_obs):
+                        self.path = path
+                        self.binning = binning
+                        self.filter_name = filter_name
+                        self.gain = gain
+                        self.offset = offset
+                        self.ccd_temp = ccd_temp
+                        self.exptime = exptime
+                        self.date_obs = date_obs
+                
+                return FitsFileLike(
+                    path=file_path,
+                    binning=binning,
+                    filter_name=filter_name,
+                    gain=gain,
+                    offset=offset,
+                    ccd_temp=ccd_temp,
+                    exptime=exptime,
+                    date_obs=date_obs
+                )
+                
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error reading FITS file {file_path}: {e}{Style.RESET_ALL}")
+            return None
+
     def calibrate_file(self, file_path: str, steps: Dict[str, bool] = None) -> Dict[str, Any]:
         """
         Calibrate a FITS file using the found calibration masters.
@@ -399,11 +472,16 @@ class CalibrationManager:
                 'flat': True,
             }
         
-        # Get the FITS file from database
+        # Try to get the FITS file from database first
         fits_file = self.get_fits_file_by_path(file_path)
+        
+        # If not in database, extract metadata directly from the file
         if not fits_file:
-            print(f"{Style.BRIGHT + Fore.RED}File not found in database: {file_path}{Style.RESET_ALL}")
-            return {'error': 'File not found in database'}
+            print(f"{Style.BRIGHT + Fore.YELLOW}File not found in database, extracting metadata from file header...{Style.RESET_ALL}")
+            fits_file = self._extract_fits_metadata(file_path)
+            if not fits_file:
+                print(f"{Style.BRIGHT + Fore.RED}Could not read FITS file: {file_path}{Style.RESET_ALL}")
+                return {'error': 'Could not read FITS file'}
         
         # Find calibration masters
         masters = self.find_calibration_masters(fits_file)
