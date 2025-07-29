@@ -10,10 +10,11 @@ class FileOperationsMixin:
     """Mixin class providing file operations and FITS header functionality."""
     
     def open_file_dialog(self):
-        """Open a file dialog to select and load a FITS file."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open FITS file", "", "FITS files (*.fits *.fit *.fts);;All files (*)")
-        if file_path:
-            self.open_and_add_file(file_path)
+        """Open a file dialog to select and load FITS files."""
+        file_paths, _ = QFileDialog.getOpenFileNames(self, "Open FITS files", "", "FITS files (*.fits *.fit *.fts);;All files (*)")
+        if file_paths:
+            for file_path in file_paths:
+                self.open_and_add_file(file_path)
 
     def open_file(self):
         """Alias for open_file_dialog for keyboard shortcuts."""
