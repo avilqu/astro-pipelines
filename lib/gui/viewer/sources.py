@@ -364,27 +364,27 @@ class SourceDetectionMixin:
             # For very large images, use very conservative parameters
             bg_box_size = 200
             bg_filter_size = 7
-            threshold_sigma = 3.0
+            threshold_sigma = 5.0  # More restrictive than regular detection
             npixels = 10
-            min_area = 20
+            min_area = 30  # More restrictive than regular detection
             min_snr = 5.0
             deblend = False
         elif max_dim > 1000:
             # For large images, use conservative parameters
             bg_box_size = min(100, max_dim // 20)
             bg_filter_size = 5
-            threshold_sigma = 2.5
+            threshold_sigma = 5.0  # More restrictive than regular detection
             npixels = 8
-            min_area = 15
+            min_area = 30  # More restrictive than regular detection
             min_snr = 4.0
             deblend = False
         else:
             # For smaller images, use moderately conservative parameters
             bg_box_size = 25
             bg_filter_size = 3
-            threshold_sigma = 2.0
+            threshold_sigma = 5.0  # More restrictive than regular detection
             npixels = 5
-            min_area = 8
+            min_area = 30  # More restrictive than regular detection
             min_snr = 3.0
             deblend = True
         
@@ -425,6 +425,7 @@ class SourceDetectionMixin:
         self.console_window.append_text(f"Found {len(gaia_objects)} Gaia stars in the field.\n")
         self.console_window.append_text("Now detecting sources in the image using optimized settings...\n")
         self.console_window.append_text(f"Using parameters: threshold_sigma={threshold_sigma}, npixels={npixels}, min_area={min_area}, min_snr={min_snr}\n")
+        self.console_window.append_text("Note: Using more restrictive parameters for Gaia cross-matching to find fewer, higher-quality sources.\n")
         
         # Start a timer to show progress
         self.progress_timer = QTimer()

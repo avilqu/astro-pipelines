@@ -731,10 +731,11 @@ class GaiaDetectionOverlay:
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(int(x - self.radius), int(y - self.radius), int(2 * self.radius), int(2 * self.radius))
             
-            # Draw Gaia source ID and distance to the right
-            text_x = int(x + self.radius + 4)
-            text_y = int(y + 4)
-            painter.drawText(text_x, text_y, f"G{gaia_obj.source_id} ({distance_arcsec:.1f}\")")
+            # Only draw Gaia source ID and distance when highlighted
+            if self.highlight_index is not None and idx == self.highlight_index:
+                text_x = int(x + self.radius + 4)
+                text_y = int(y + 4)
+                painter.drawText(text_x, text_y, f"G{gaia_obj.source_id} ({distance_arcsec:.1f}\")")
 
 
 class OverlayMixin:

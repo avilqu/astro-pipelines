@@ -332,6 +332,12 @@ class ToolbarController:
         find_simbad_field_action.triggered.connect(self.parent.open_simbad_field_search_dialog)
         simbad_menu.addAction(find_simbad_field_action)
         
+        simbad_menu.addSeparator()
+        
+        search_gaia_action = QAction("Search Gaia catalog", self.parent)
+        search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
+        simbad_menu.addAction(search_gaia_action)
+        
         self.simbad_button.setMenu(simbad_menu)
         self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.simbad_button)
@@ -358,12 +364,6 @@ class ToolbarController:
         detect_gaia_stars_action = QAction("Detect Gaia stars in image", self.parent)
         detect_gaia_stars_action.triggered.connect(self.parent.detect_gaia_stars_in_image)
         sources_menu.addAction(detect_gaia_stars_action)
-        
-        sources_menu.addSeparator()
-        
-        search_gaia_action = QAction("Search Gaia catalog", self.parent)
-        search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
-        sources_menu.addAction(search_gaia_action)
         
         self.sources_button.setMenu(sources_menu)
         self.sources_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
