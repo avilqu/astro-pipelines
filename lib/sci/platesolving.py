@@ -73,7 +73,7 @@ class AstrometryEngine:
     """Interface to the astrometry.net solve-field engine."""
     
     def __init__(self, solve_field_path: str = "solve-field", 
-                 output_dir: str = "/tmp/astropipes-solved", timeout: int = 300):
+                 output_dir: str = "/tmp/astropipes/solved", timeout: int = 300):
         """
         Initialize the astrometry engine interface.
         
@@ -335,7 +335,7 @@ class AstrometryEngine:
 
 def solve_single_image(fits_file_path: str, 
                       solve_field_path: str = "solve-field",
-                      output_dir: str = "/tmp/astropipes-solved",
+                      output_dir: str = "/tmp/astropipes/solved",
                       timeout: int = 300,
                       apply_solution: bool = True,
                       output_callback=None,

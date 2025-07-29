@@ -287,7 +287,12 @@ class ImageOperationsMixin:
             import os
             from astropy.io import fits
             
-            temp_dir = tempfile.mkdtemp(prefix="astropipes-aligned-")
+            # Create the base aligned directory
+            base_aligned_dir = "/tmp/astropipes/aligned"
+            os.makedirs(base_aligned_dir, exist_ok=True)
+            
+            # Create a unique subdirectory for this alignment session
+            temp_dir = tempfile.mkdtemp(dir=base_aligned_dir, prefix="")
             if not hasattr(self, '_temp_aligned_dirs'):
                 self._temp_aligned_dirs = []
             self._temp_aligned_dirs.append(temp_dir)  # Track for cleanup

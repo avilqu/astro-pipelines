@@ -224,7 +224,7 @@ class IntegrationMixin:
             return
         
         # Create output directory if it doesn't exist
-        output_dir = "/tmp/astropipes-stacked"
+        output_dir = "/tmp/astropipes/stacked"
         os.makedirs(output_dir, exist_ok=True)
         
         # Generate output filename

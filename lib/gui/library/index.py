@@ -648,7 +648,7 @@ class AstroLibraryGUI(QMainWindow):
             QMessageBox.critical(self, "Refresh Failed", f"Failed to refresh database: {e}")
 
     def cleanup_temp_directories(self):
-        """Delete all files in /tmp/astropipes-solved and /tmp/astropipes-calibrated."""
+        """Delete all files in /tmp/astropipes/solved, /tmp/astropipes/calibrated, /tmp/astropipes/stacked, and /tmp/astropipes/aligned."""
         from . import db_access
         try:
             db_access.cleanup_temp_directories()

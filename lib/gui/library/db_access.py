@@ -117,12 +117,12 @@ def refresh_database():
 
 def cleanup_temp_directories():
     """
-    Delete all files in /tmp/astropipes-solved and /tmp/astropipes-calibrated.
+    Delete all files in /tmp/astropipes/solved, /tmp/astropipes/calibrated, /tmp/astropipes/stacked, and /tmp/astropipes/aligned.
     """
     import shutil
     import glob
     import os
-    temp_dirs = ["/tmp/astropipes-solved", "/tmp/astropipes-calibrated"]
+    temp_dirs = ["/tmp/astropipes/solved", "/tmp/astropipes/calibrated", "/tmp/astropipes/stacked", "/tmp/astropipes/aligned"]
     for temp_dir in temp_dirs:
         if os.path.exists(temp_dir):
             for filename in glob.glob(os.path.join(temp_dir, "*")):

@@ -276,12 +276,12 @@ class CalibrationManager:
     
     def _create_temp_dir(self) -> Path:
         """
-        Create the temporary directory for calibrated files.
+        Create and return a temporary directory for calibration files.
         
         Returns:
             Path to the temporary directory
         """
-        temp_dir = Path("/tmp/astropipes-calibrated")
+        temp_dir = Path("/tmp/astropipes/calibrated")
         temp_dir.mkdir(exist_ok=True)
         return temp_dir
     

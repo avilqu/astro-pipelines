@@ -193,7 +193,7 @@ if __name__ == "__main__":
             result = solve_single_image(
                 fits_file_path=fits_file,
                 solve_field_path="solve-field",
-                output_dir="/tmp/astropipes-solved",
+                output_dir="/tmp/astropipes/solved",
                 timeout=300,
                 apply_solution=True
             )

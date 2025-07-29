@@ -102,7 +102,7 @@ class FileOperationsMixin:
             # Check if current files are temporary aligned files
             current_files_are_temp = all(
                 os.path.basename(path).startswith('aligned_') and 
-                '/tmp/astropipes-aligned-' in path 
+                '/tmp/astropipes/aligned/' in path 
                 for path in self.loaded_files
             )
             if current_files_are_temp:
