@@ -1183,7 +1183,8 @@ def crop_integrated_image(integrated_image: ccdp.CCDData, original_shape: Tuple[
 def compute_object_positions_from_motion_tracked(
     stacked_image_path: str, 
     cursor_coords: Tuple[float, float],
-    original_files: List[str] = None
+    original_files: List[str] = None,
+    loaded_files: List[str] = None
 ) -> List[Dict[str, any]]:
     """
     Compute the position of an object in each original image from its position in a motion tracked stacked image.
@@ -1201,6 +1202,9 @@ def compute_object_positions_from_motion_tracked(
         Pixel coordinates (x, y) in the stacked image where the user clicked
     original_files : List[str], optional
         List of original file paths. If None, will be read from header.
+    loaded_files : List[str], optional
+        List of loaded file paths. If provided, only motion-tracked stacks in this list
+        will be added to the results.
         
     Returns:
     --------
@@ -1346,6 +1350,58 @@ def compute_object_positions_from_motion_tracked(
             }
             
             results.append(result)
+        
+        # Add an entry for the stacked image itself
+        stacked_result = {
+            'file_path': stacked_image_path,
+            'original_x': cursor_coords[0],  # In the stacked image, original = stacked
+            'original_y': cursor_coords[1],
+            'stacked_x': cursor_coords[0],
+            'stacked_y': cursor_coords[1],
+            'shift_x': 0.0,  # No shift for the stacked image
+            'shift_y': 0.0,
+            'ra': sky_coords.ra.deg if sky_coords else None,
+            'dec': sky_coords.dec.deg if sky_coords else None
+        }
+        
+        results.append(stacked_result)
+        
+        # Also add entries for other motion-tracked stacks with the same original files
+        # This ensures that when computing positions on one stack, both stacks get the same positions
+        if loaded_files:
+            try:
+                # Look for other motion-tracked stacks in the loaded files list
+                stacked_basename = os.path.basename(stacked_image_path)
+                
+                # Look for other motion-tracked stacks with the same object name
+                # Extract object name from the current stack filename
+                if 'motion_tracked_' in stacked_basename:
+                    object_part = stacked_basename.split('motion_tracked_')[1]
+                    if '_' in object_part:
+                        object_name = object_part.split('_')[0]
+                        
+                        # Look for other motion-tracked stacks with the same object name in loaded_files
+                        for loaded_file in loaded_files:
+                            if loaded_file != stacked_image_path:
+                                loaded_basename = os.path.basename(loaded_file)
+                                if (loaded_basename.startswith(f"motion_tracked_{object_name}_") and 
+                                    loaded_basename.endswith('.fits')):
+                                    # Add entry for this other stack with the same coordinates
+                                    other_stack_result = {
+                                        'file_path': loaded_file,
+                                        'original_x': cursor_coords[0],
+                                        'original_y': cursor_coords[1],
+                                        'stacked_x': cursor_coords[0],
+                                        'stacked_y': cursor_coords[1],
+                                        'shift_x': 0.0,
+                                        'shift_y': 0.0,
+                                        'ra': sky_coords.ra.deg if sky_coords else None,
+                                        'dec': sky_coords.dec.deg if sky_coords else None
+                                    }
+                                    results.append(other_stack_result)
+            except Exception as e:
+                # If we can't find other stacks, just continue with the current stack
+                pass
         
         return results
         

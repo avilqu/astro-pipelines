@@ -299,23 +299,209 @@ class FileOperationsMixin:
         self.update_close_button_visibility()
         
         # After loading, update ephemeris marker if present
+        self.update_ephemeris_marker()
+        
+        # After loading, update computed positions marker if present
+        self.update_computed_positions_marker()
+
+    def _get_header_value(self, key, default=None):
+        """Helper method to extract header values from (value, comment) tuples."""
+        if not hasattr(self, '_current_header') or not self._current_header:
+            return default
+        
+        value = self._current_header.get(key, default)
+        if isinstance(value, tuple):
+            return value[0]
+        return value
+
+    def update_ephemeris_marker(self):
+        """Update the ephemeris marker for the current file."""
         if hasattr(self, '_ephemeris_predicted_positions') and self._ephemeris_predicted_positions:
-            idx = self.current_file_index
-            if 0 <= idx < len(self._ephemeris_predicted_positions):
-                ephemeris = self._ephemeris_predicted_positions[idx]
-                ra = ephemeris.get("RA", 0.0)
-                dec = ephemeris.get("Dec", 0.0)
-                if self.wcs is not None:
-                    from astropy.wcs.utils import skycoord_to_pixel
-                    from astropy.coordinates import SkyCoord
-                    import astropy.units as u
-                    skycoord = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
-                    x, y = skycoord_to_pixel(skycoord, self.wcs)
+            # Check if this is a motion-tracked stack
+            is_motion_tracked = False
+            reference_position = None
+            
+            # Extract motion tracking flag from header
+            is_motion_tracked = self._get_header_value('MOTION_TRACKED', False)
+            
+            if is_motion_tracked:
+                import json
+                reference_position_json = self._get_header_value('REFERENCE_POSITION')
+                if reference_position_json:
+                    try:
+                        reference_position = json.loads(reference_position_json)
+                    except (json.JSONDecodeError, TypeError):
+                        reference_position = None
+            
+            if is_motion_tracked and reference_position is not None:
+                # For motion-tracked stacks, we need to get the ephemeris position in pixel coordinates
+                # The ephemeris positions are calculated for the original images, but we need the position
+                # in the stacked image coordinate system
+                
+                # Get the ephemeris data for the first original image (index 0)
+                idx = 0  # Use first ephemeris position for motion-tracked stacks
+                if 0 <= idx < len(self._ephemeris_predicted_positions):
+                    ephemeris = self._ephemeris_predicted_positions[idx]
+                    ra = ephemeris.get("RA", 0.0)
+                    dec = ephemeris.get("Dec", 0.0)
+                    
+                    # For motion-tracked stacks, the ephemeris position should be at the reference position
+                    # because that's where the object was tracked to during stacking
+                    # The reference position is the ephemeris-derived position in the stacked image
+                    x, y = reference_position[0], reference_position[1]
+                    
                     self._ephemeris_overlay = ((ra, dec), (x, y))
                     self._show_ephemeris_marker((x, y))
                 else:
-                    self._ephemeris_overlay = None
-                    self._show_ephemeris_marker(None)
+                    # Fallback to using reference position if no ephemeris data available
+                    x, y = reference_position[0], reference_position[1]
+                    # Use the first ephemeris entry for RA/Dec
+                    idx = 0
+                    if idx < len(self._ephemeris_predicted_positions):
+                        ephemeris = self._ephemeris_predicted_positions[idx]
+                        ra = ephemeris.get("RA", 0.0)
+                        dec = ephemeris.get("Dec", 0.0)
+                    else:
+                        ra, dec = 0.0, 0.0
+                    
+                    self._ephemeris_overlay = ((ra, dec), (x, y))
+                    self._show_ephemeris_marker((x, y))
+            else:
+                # For regular images, use the ephemeris data for the current file index
+                idx = self.current_file_index
+                if 0 <= idx < len(self._ephemeris_predicted_positions):
+                    ephemeris = self._ephemeris_predicted_positions[idx]
+                    ra = ephemeris.get("RA", 0.0)
+                    dec = ephemeris.get("Dec", 0.0)
+                    if self.wcs is not None:
+                        from astropy.wcs.utils import skycoord_to_pixel
+                        from astropy.coordinates import SkyCoord
+                        import astropy.units as u
+                        skycoord = SkyCoord(ra*u.deg, dec*u.deg, frame='icrs')
+                        x, y = skycoord_to_pixel(skycoord, self.wcs)
+                        self._ephemeris_overlay = ((ra, dec), (x, y))
+                        self._show_ephemeris_marker((x, y))
+                    else:
+                        self._ephemeris_overlay = None
+                        self._show_ephemeris_marker(None)
+
+    def update_computed_positions_marker(self):
+        """Update the computed positions marker for the current file."""
+        
+        # Check if we have computed positions data available
+        if hasattr(self, '_orbit_window') and self._orbit_window and hasattr(self._orbit_window, 'computed_positions_data'):
+            computed_positions_data = self._orbit_window.computed_positions_data
+            print(f"DEBUG: Found orbit window with {len(computed_positions_data)} computed positions")
+        else:
+            print(f"DEBUG: No orbit window or computed positions data available")
+            # No orbit window or computed positions data
+            self._computed_positions_overlay = None
+            self._show_computed_positions_marker(None)
+            return
+        
+        # Find the position data for the current file
+        current_file_path = None
+        if self.current_file_index >= 0 and self.current_file_index < len(self.loaded_files):
+            current_file_path = self.loaded_files[self.current_file_index]
+        
+        if current_file_path and computed_positions_data:
+            # Check if this is a motion-tracked stack
+            is_motion_tracked = self._get_header_value('MOTION_TRACKED', False)
+            
+            if is_motion_tracked:
+                # For motion-tracked stacks, find the position data for this stacked image
+                # The computed positions data contains the user's clicked position in the stacked image
+                position_data = None
+                print(f"DEBUG: Looking for position data for current file: {current_file_path}")
+                for pos in computed_positions_data:
+                    # For motion-tracked stacks, we're looking for the stacked image position
+                    # The file_path should match the current motion-tracked stack
+                    pos_file_path = pos.get('file_path')
+                    print(f"DEBUG: Checking position data file: {pos_file_path}")
+                    if pos_file_path == current_file_path:
+                        position_data = pos
+                        print(f"DEBUG: Found matching position data")
+                        break
+                
+                if position_data:
+                    # Use the stacked coordinates (where the user clicked in the stacked image)
+                    stacked_x = position_data.get('stacked_x', 0.0)
+                    stacked_y = position_data.get('stacked_y', 0.0)
+                    print(f"DEBUG: Found position data for motion-tracked stack: stacked_x={stacked_x}, stacked_y={stacked_y}")
+                    
+                    # Store the position data and coordinates for the overlay
+                    self._computed_positions_overlay = (position_data, (stacked_x, stacked_y))
+                    self._show_computed_positions_marker((stacked_x, stacked_y))
+                    print(f"DEBUG: Set computed positions marker at ({stacked_x}, {stacked_y})")
+                else:
+                    # No position data for this specific motion-tracked stack
+                    # Check if we have computed positions data for any motion-tracked stack
+                    # If so, use the reference position from the header (which should be the same for all stacks)
+                    print(f"DEBUG: No specific position data found, checking for reference position")
+                    reference_position_json = self._get_header_value('REFERENCE_POSITION')
+                    if reference_position_json:
+                        try:
+                            import json
+                            reference_position = json.loads(reference_position_json)
+                            ref_x, ref_y = reference_position[0], reference_position[1]
+                            print(f"DEBUG: Using reference position for computed positions marker: ({ref_x}, {ref_y})")
+                            
+                            # Create a position data entry for the reference position
+                            ref_position_data = {
+                                'file_path': current_file_path,
+                                'original_x': ref_x,
+                                'original_y': ref_y,
+                                'stacked_x': ref_x,
+                                'stacked_y': ref_y,
+                                'shift_x': 0.0,
+                                'shift_y': 0.0,
+                                'ra': None,
+                                'dec': None
+                            }
+                            
+                            self._computed_positions_overlay = (ref_position_data, (ref_x, ref_y))
+                            self._show_computed_positions_marker((ref_x, ref_y))
+                        except (json.JSONDecodeError, TypeError, IndexError) as e:
+                            print(f"DEBUG: Error parsing reference position: {e}")
+                            self._computed_positions_overlay = None
+                            self._show_computed_positions_marker(None)
+                    else:
+                        # No reference position available, clear the marker
+                        print(f"DEBUG: No reference position available")
+                        self._computed_positions_overlay = None
+                        self._show_computed_positions_marker(None)
+            else:
+                # For regular images, find the position data for the current file
+                position_data = None
+                for pos in computed_positions_data:
+                    if pos.get('file_path') == current_file_path:
+                        position_data = pos
+                        break
+                
+                if position_data:
+                    # Set marker overlay for computed position
+                    original_x = position_data.get('original_x', 0.0)
+                    original_y = position_data.get('original_y', 0.0)
+                    
+                    # Store the position data and coordinates for the overlay
+                    self._computed_positions_overlay = (position_data, (original_x, original_y))
+                    self._show_computed_positions_marker((original_x, original_y))
+                else:
+                    # No position data for this file, clear the marker
+                    self._computed_positions_overlay = None
+                    self._show_computed_positions_marker(None)
+        else:
+            # No computed positions data available
+            self._computed_positions_overlay = None
+            self._show_computed_positions_marker(None)
+
+    def _show_computed_positions_marker(self, pixel_coords):
+        """Store the marker position for overlay drawing."""
+        self._computed_positions_marker_coords = pixel_coords
+        self._overlay_visible = True
+        if hasattr(self, 'overlay_toolbar_controller'):
+            self.overlay_toolbar_controller.update_overlay_button_visibility()
+        self.image_label.update()
 
     def show_header_dialog(self):
         """Show the FITS header dialog for the current file."""
