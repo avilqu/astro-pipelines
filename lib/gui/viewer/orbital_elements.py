@@ -483,6 +483,22 @@ class OrbitDataWindow(QMainWindow):
                               "Please load Gaia stars and match them with detected sources first.")
             return
         
+        # Validate Gaia detection results structure
+        for i, result in enumerate(gaia_detection_results):
+            if not isinstance(result, tuple) or len(result) != 3:
+                QMessageBox.warning(self, "Invalid Gaia Data", 
+                                  f"Gaia detection result {i} has invalid structure: {result}")
+                return
+            gaia_obj, detected_source, distance_arcsec = result
+            if not hasattr(gaia_obj, 'ra') or not hasattr(gaia_obj, 'dec') or not hasattr(gaia_obj, 'source_id'):
+                QMessageBox.warning(self, "Invalid Gaia Data", 
+                                  f"Gaia object {i} missing required attributes")
+                return
+            if not hasattr(detected_source, 'x') or not hasattr(detected_source, 'y'):
+                QMessageBox.warning(self, "Invalid Gaia Data", 
+                                  f"Detected source {i} missing required coordinates")
+                return
+        
         # Check if we have enough stars for LSPC (need at least 3)
         if len(gaia_detection_results) < 3:
             QMessageBox.warning(self, "Insufficient Stars", 
@@ -490,14 +506,43 @@ class OrbitDataWindow(QMainWindow):
                               "At least 3 comparison stars are required for LSPC calculation.")
             return
         
+        # Validate that positions data is available and valid
+        if not positions:
+            QMessageBox.warning(self, "No Positions", 
+                              "No position data available for LSPC calculation.")
+            return
+        
+        # Check that positions have required fields
+        for i, pos in enumerate(positions):
+            if not isinstance(pos, dict):
+                QMessageBox.warning(self, "Invalid Position Data", 
+                                  f"Position {i} is not a valid dictionary.")
+                return
+            if 'original_x' not in pos or 'original_y' not in pos:
+                QMessageBox.warning(self, "Invalid Position Data", 
+                                  f"Position {i} missing required coordinates (original_x, original_y).")
+                return
+            
+            # Check that coordinates are numeric
+            if not isinstance(pos['original_x'], (int, float)) or not isinstance(pos['original_y'], (int, float)):
+                QMessageBox.warning(self, "Invalid Position Data", 
+                                  f"Position {i} has non-numeric coordinates: original_x={pos['original_x']}, original_y={pos['original_y']}")
+                return
+        
         # Compute LSPC
         try:
+            print(f"[DEBUG] Computing LSPC with {len(gaia_detection_results)} Gaia stars and {len(positions)} positions")
+            print(f"[DEBUG] First position sample: {positions[0] if positions else 'No positions'}")
             lspc_results = self._calculate_lspc(gaia_detection_results, positions)
             self._update_positions_table_with_lspc(lspc_results)
             
             # Enable the Generate Substacks button after LSPC is computed
             if hasattr(self, 'generate_substacks_button'):
                 self.generate_substacks_button.setEnabled(True)
+                
+            # Store a backup of the original positions data if not already stored
+            if not hasattr(self, '_original_positions_data'):
+                self._original_positions_data = positions.copy()
                 
         except Exception as e:
             QMessageBox.critical(self, "LSPC Error", f"Error computing LSPC: {str(e)}")
@@ -509,6 +554,12 @@ class OrbitDataWindow(QMainWindow):
         # gaia_detection_results is a list of (GaiaObject, DetectedSource, distance_arcsec) tuples
         comparison_stars = []
         for gaia_obj, detected_source, distance_arcsec in gaia_detection_results:
+            # Validate that all required data is present and numeric
+            if (gaia_obj.ra is None or gaia_obj.dec is None or 
+                detected_source.x is None or detected_source.y is None):
+                print(f"Warning: Skipping star with None coordinates: Gaia RA={gaia_obj.ra}, Dec={gaia_obj.dec}, X={detected_source.x}, Y={detected_source.y}")
+                continue
+                
             comparison_stars.append({
                 'catalog_ra': gaia_obj.ra,      # Catalog RA (degrees)
                 'catalog_dec': gaia_obj.dec,    # Catalog Dec (degrees)
@@ -520,6 +571,10 @@ class OrbitDataWindow(QMainWindow):
         # For now, we'll use a simple linear transformation
         # In practice, you might want to use a more sophisticated plate model
         # This is a simplified version - you can enhance it later
+        
+        # Check if we have enough valid comparison stars after filtering
+        if len(comparison_stars) < 3:
+            raise ValueError(f"Only {len(comparison_stars)} valid comparison stars found after filtering. At least 3 are required for LSPC calculation.")
         
         # Collect data for least squares
         catalog_ras = np.array([star['catalog_ra'] for star in comparison_stars])
@@ -552,15 +607,57 @@ class OrbitDataWindow(QMainWindow):
         ra_rms = np.sqrt(np.mean(final_residuals[:len(comparison_stars)]**2))
         dec_rms = np.sqrt(np.mean(final_residuals[len(comparison_stars):]**2))
         
-        # Apply LSPC to the computed positions
+        # Apply LSPC to the computed positions (only for individual images, not stacked images)
         lspc_positions = []
-        for pos in positions:
-            original_x = pos['original_x']
-            original_y = pos['original_y']
+        individual_positions = []
+        print(f"[DEBUG] Applying LSPC transformation to {len(positions)} positions")
+        
+        # First pass: identify individual vs stacked images
+        for i, pos in enumerate(positions):
+            original_x = pos.get('original_x')
+            original_y = pos.get('original_y')
+            file_path = pos.get('file_path', '')
             
-            # Apply LSPC transformation
+            print(f"[DEBUG] Position {i}: original_x={original_x}, original_y={original_y}, file={os.path.basename(file_path)}")
+            
+            # Skip positions with invalid coordinates
+            if original_x is None or original_y is None:
+                print(f"Warning: Skipping position with None coordinates: {pos}")
+                continue
+            
+            # Check if this is a stacked image
+            is_stacked = False
+            if hasattr(self, 'parent_viewer') and self.parent_viewer:
+                try:
+                    from astropy.io import fits
+                    with fits.open(file_path) as hdul:
+                        header = hdul[0].header
+                        # Check for motion tracking flag or other stacking indicators
+                        if header.get('MOTION_TRACKED', False) or 'STACK' in file_path.upper():
+                            is_stacked = True
+                            print(f"[DEBUG] Skipping stacked image: {os.path.basename(file_path)}")
+                except Exception as e:
+                    print(f"[DEBUG] Could not check header for {file_path}: {e}")
+                    # If we can't check the header, assume it's not stacked
+            
+            if is_stacked:
+                print(f"[DEBUG] Skipping stacked image position {i}")
+                continue
+            
+            # This is an individual image, collect it for LSPC
+            individual_positions.append(pos)
+        
+        # Second pass: apply LSPC transformation to individual images only
+        print(f"[DEBUG] Applying LSPC to {len(individual_positions)} individual images")
+        for pos in individual_positions:
+            original_x = pos.get('original_x')
+            original_y = pos.get('original_y')
+            
+            # Apply LSPC transformation only to individual images
             lspc_ra = a * original_x + b * original_y + c
             lspc_dec = d * original_x + e * original_y + f
+            
+            print(f"[DEBUG] LSPC RA={lspc_ra}, LSPC Dec={lspc_dec}")
             
             lspc_positions.append({
                 **pos,
@@ -568,16 +665,30 @@ class OrbitDataWindow(QMainWindow):
                 'lspc_dec': lspc_dec
             })
         
-        return {
+        result = {
             'plate_constants': {'a': a, 'b': b, 'c': c, 'd': d, 'e': e, 'f': f},
             'rms_ra': ra_rms,
             'rms_dec': dec_rms,
             'comparison_stars': comparison_stars,
             'lspc_positions': lspc_positions
         }
+        
+        print(f"[DEBUG] LSPC calculation completed successfully")
+        print(f"[DEBUG] Result keys: {list(result.keys())}")
+        print(f"[DEBUG] Number of LSPC positions: {len(lspc_positions)}")
+        
+        return result
     
     def _update_positions_table_with_lspc(self, lspc_results):
         """Update the positions table with LSPC results."""
+        print(f"[DEBUG] Updating positions table with LSPC results")
+        print(f"[DEBUG] LSPC results type: {type(lspc_results)}")
+        print(f"[DEBUG] LSPC results keys: {list(lspc_results.keys()) if isinstance(lspc_results, dict) else 'Not a dict'}")
+        
+        if not isinstance(lspc_results, dict):
+            print(f"Error: LSPC results is not a dictionary: {lspc_results}")
+            return
+            
         # Update the table headers to include LSPC columns
         self.computed_positions_table.setColumnCount(12)
         self.computed_positions_table.setHorizontalHeaderLabels([
@@ -586,56 +697,136 @@ class OrbitDataWindow(QMainWindow):
         ])
         
         # Update the table data with LSPC results
-        lspc_positions = lspc_results['lspc_positions']
-        self.computed_positions_table.setRowCount(len(lspc_positions))
+        lspc_positions = lspc_results.get('lspc_positions', [])
+        if not lspc_positions:
+            print("Warning: No LSPC positions found in results")
+            return
         
-        for i, pos in enumerate(lspc_positions):
-            # File name (basename only)
-            filename = os.path.basename(pos['file_path'])
-            self.computed_positions_table.setItem(i, 0, QTableWidgetItem(filename))
+        # Create a mapping from file_path to LSPC results for easy lookup
+        lspc_lookup = {}
+        for lspc_pos in lspc_positions:
+            file_path = lspc_pos.get('file_path')
+            if file_path:
+                lspc_lookup[file_path] = lspc_pos
+        
+        # Use the original positions data for the table, but add LSPC columns
+        if not hasattr(self, 'computed_positions_data') or not self.computed_positions_data:
+            print("Error: No computed positions data available")
+            return
             
-            # Original coordinates
-            self.computed_positions_table.setItem(i, 1, QTableWidgetItem(f"{pos['original_x']:.2f}"))
-            self.computed_positions_table.setItem(i, 2, QTableWidgetItem(f"{pos['original_y']:.2f}"))
-            
-            # Stacked coordinates
-            self.computed_positions_table.setItem(i, 3, QTableWidgetItem(f"{pos['stacked_x']:.2f}"))
-            self.computed_positions_table.setItem(i, 4, QTableWidgetItem(f"{pos['stacked_y']:.2f}"))
-            
-            # Shifts
-            self.computed_positions_table.setItem(i, 5, QTableWidgetItem(f"{pos['shift_x']:.2f}"))
-            self.computed_positions_table.setItem(i, 6, QTableWidgetItem(f"{pos['shift_y']:.2f}"))
-            
-            # WCS coordinates
-            wcs_ra = pos.get('ra', 'N/A')
-            wcs_dec = pos.get('dec', 'N/A')
-            if wcs_ra != 'N/A' and wcs_dec != 'N/A':
-                self.computed_positions_table.setItem(i, 7, QTableWidgetItem(f"{wcs_ra:.6f}"))
-                self.computed_positions_table.setItem(i, 8, QTableWidgetItem(f"{wcs_dec:.6f}"))
-            else:
-                self.computed_positions_table.setItem(i, 7, QTableWidgetItem("N/A"))
-                self.computed_positions_table.setItem(i, 8, QTableWidgetItem("N/A"))
-            
-            # LSPC coordinates
-            self.computed_positions_table.setItem(i, 9, QTableWidgetItem(f"{pos['lspc_ra']:.6f}"))
-            self.computed_positions_table.setItem(i, 10, QTableWidgetItem(f"{pos['lspc_dec']:.6f}"))
-            
-            # Calculate and display difference
-            if wcs_ra != 'N/A' and wcs_dec != 'N/A':
-                ra_diff = (pos['lspc_ra'] - wcs_ra) * 3600  # Convert to arcseconds
-                dec_diff = (pos['lspc_dec'] - wcs_dec) * 3600
-                distance = np.sqrt(ra_diff**2 + dec_diff**2)
-                diff_text = f"{distance:.2f}\""
-            else:
-                diff_text = "N/A"
-            
-            self.computed_positions_table.setItem(i, 11, QTableWidgetItem(diff_text))
+        original_positions = self.computed_positions_data
+        print(f"[DEBUG] Original positions data has {len(original_positions)} entries")
+        self.computed_positions_table.setRowCount(len(original_positions))
+        
+        for i, pos in enumerate(original_positions):
+            print(f"[DEBUG] Processing position {i}: {pos}")
+            try:
+                # File name (basename only)
+                filename = os.path.basename(pos['file_path'])
+                self.computed_positions_table.setItem(i, 0, QTableWidgetItem(filename))
+                
+                # Original coordinates
+                original_x = pos.get('original_x')
+                original_y = pos.get('original_y')
+                if original_x is not None and original_y is not None:
+                    self.computed_positions_table.setItem(i, 1, QTableWidgetItem(f"{original_x:.2f}"))
+                    self.computed_positions_table.setItem(i, 2, QTableWidgetItem(f"{original_y:.2f}"))
+                else:
+                    self.computed_positions_table.setItem(i, 1, QTableWidgetItem("N/A"))
+                    self.computed_positions_table.setItem(i, 2, QTableWidgetItem("N/A"))
+                
+                # Stacked coordinates
+                stacked_x = pos.get('stacked_x')
+                stacked_y = pos.get('stacked_y')
+                if stacked_x is not None and stacked_y is not None:
+                    self.computed_positions_table.setItem(i, 3, QTableWidgetItem(f"{stacked_x:.2f}"))
+                    self.computed_positions_table.setItem(i, 4, QTableWidgetItem(f"{stacked_y:.2f}"))
+                else:
+                    self.computed_positions_table.setItem(i, 3, QTableWidgetItem("N/A"))
+                    self.computed_positions_table.setItem(i, 4, QTableWidgetItem("N/A"))
+                
+                # Shifts
+                shift_x = pos.get('shift_x')
+                shift_y = pos.get('shift_y')
+                if shift_x is not None and shift_y is not None:
+                    self.computed_positions_table.setItem(i, 5, QTableWidgetItem(f"{shift_x:.2f}"))
+                    self.computed_positions_table.setItem(i, 6, QTableWidgetItem(f"{shift_y:.2f}"))
+                else:
+                    self.computed_positions_table.setItem(i, 5, QTableWidgetItem("N/A"))
+                    self.computed_positions_table.setItem(i, 6, QTableWidgetItem("N/A"))
+                
+                # WCS coordinates
+                wcs_ra = pos.get('ra', 'N/A')
+                wcs_dec = pos.get('dec', 'N/A')
+                if wcs_ra != 'N/A' and wcs_dec != 'N/A':
+                    self.computed_positions_table.setItem(i, 7, QTableWidgetItem(f"{wcs_ra:.6f}"))
+                    self.computed_positions_table.setItem(i, 8, QTableWidgetItem(f"{wcs_dec:.6f}"))
+                else:
+                    self.computed_positions_table.setItem(i, 7, QTableWidgetItem("N/A"))
+                    self.computed_positions_table.setItem(i, 8, QTableWidgetItem("N/A"))
+                
+                # LSPC coordinates
+                file_path = pos.get('file_path')
+                lspc_pos = lspc_lookup.get(file_path) if file_path else None
+                
+                # Check if this is a stacked image
+                is_stacked = False
+                if hasattr(self, 'parent_viewer') and self.parent_viewer:
+                    try:
+                        from astropy.io import fits
+                        with fits.open(file_path) as hdul:
+                            header = hdul[0].header
+                            if header.get('MOTION_TRACKED', False) or 'STACK' in file_path.upper():
+                                is_stacked = True
+                    except Exception:
+                        pass
+                
+                if lspc_pos and not is_stacked:
+                    lspc_ra = lspc_pos.get('lspc_ra')
+                    lspc_dec = lspc_pos.get('lspc_dec')
+                    
+                    if lspc_ra is not None and lspc_dec is not None:
+                        self.computed_positions_table.setItem(i, 9, QTableWidgetItem(f"{lspc_ra:.6f}"))
+                        self.computed_positions_table.setItem(i, 10, QTableWidgetItem(f"{lspc_dec:.6f}"))
+                        
+                        # Calculate and display difference
+                        if wcs_ra != 'N/A' and wcs_dec != 'N/A':
+                            ra_diff = (lspc_ra - wcs_ra) * 3600  # Convert to arcseconds
+                            dec_diff = (lspc_dec - wcs_dec) * 3600
+                            distance = np.sqrt(ra_diff**2 + dec_diff**2)
+                            diff_text = f"{distance:.2f}\""
+                        else:
+                            diff_text = "N/A"
+                    else:
+                        self.computed_positions_table.setItem(i, 9, QTableWidgetItem("N/A"))
+                        self.computed_positions_table.setItem(i, 10, QTableWidgetItem("N/A"))
+                        diff_text = "N/A"
+                else:
+                    # No LSPC data available (either no LSPC results or stacked image)
+                    if is_stacked:
+                        self.computed_positions_table.setItem(i, 9, QTableWidgetItem("Stacked"))
+                        self.computed_positions_table.setItem(i, 10, QTableWidgetItem("Stacked"))
+                        diff_text = "N/A"
+                    else:
+                        self.computed_positions_table.setItem(i, 9, QTableWidgetItem("N/A"))
+                        self.computed_positions_table.setItem(i, 10, QTableWidgetItem("N/A"))
+                        diff_text = "N/A"
+                
+                self.computed_positions_table.setItem(i, 11, QTableWidgetItem(diff_text))
+                
+            except Exception as e:
+                print(f"[DEBUG] Error processing position {i}: {e}")
+                # Set all cells to error state
+                for col in range(12):
+                    self.computed_positions_table.setItem(i, col, QTableWidgetItem("ERROR"))
+                continue
         
         # Resize columns to fit content
         self.computed_positions_table.resizeColumnsToContents()
         
-        # Update the stored positions data with LSPC results
-        self.computed_positions_data = lspc_positions
+        # Store the LSPC results separately, but keep the original position data for markers
+        self.lspc_results = lspc_results
+        # Note: We don't overwrite self.computed_positions_data here to preserve marker functionality
         
         # Show LSPC information in the tab
         self._show_lspc_info_in_tab(lspc_results)
@@ -649,26 +840,49 @@ class OrbitDataWindow(QMainWindow):
         # Plate constants
         solution_text += "PLATE CONSTANTS:\n"
         solution_text += "-" * 20 + "\n"
-        constants = lspc_results['plate_constants']
-        solution_text += f"a = {constants['a']:12.8f}  (RA = a*x + b*y + c)\n"
-        solution_text += f"b = {constants['b']:12.8f}  (Dec = d*x + e*y + f)\n"
-        solution_text += f"c = {constants['c']:12.8f}\n"
-        solution_text += f"d = {constants['d']:12.8f}\n"
-        solution_text += f"e = {constants['e']:12.8f}\n"
-        solution_text += f"f = {constants['f']:12.8f}\n\n"
+        constants = lspc_results.get('plate_constants', {})
+        if constants:
+            a = constants.get('a')
+            b = constants.get('b')
+            c = constants.get('c')
+            d = constants.get('d')
+            e = constants.get('e')
+            f = constants.get('f')
+            
+            if all(v is not None for v in [a, b, c, d, e, f]):
+                solution_text += f"a = {a:12.8f}  (RA = a*x + b*y + c)\n"
+                solution_text += f"b = {b:12.8f}  (Dec = d*x + e*y + f)\n"
+                solution_text += f"c = {c:12.8f}\n"
+                solution_text += f"d = {d:12.8f}\n"
+                solution_text += f"e = {e:12.8f}\n"
+                solution_text += f"f = {f:12.8f}\n\n"
+            else:
+                solution_text += "Plate constants: N/A\n\n"
+        else:
+            solution_text += "Plate constants: N/A\n\n"
         
         # RMS residuals
         solution_text += "RMS RESIDUALS:\n"
         solution_text += "-" * 15 + "\n"
-        solution_text += f"RA  RMS: {lspc_results['rms_ra']:10.6f} degrees\n"
-        solution_text += f"Dec RMS: {lspc_results['rms_dec']:10.6f} degrees\n"
-        solution_text += f"RA  RMS: {lspc_results['rms_ra']*3600:10.2f} arcseconds\n"
-        solution_text += f"Dec RMS: {lspc_results['rms_dec']*3600:10.2f} arcseconds\n\n"
+        rms_ra = lspc_results.get('rms_ra')
+        rms_dec = lspc_results.get('rms_dec')
+        
+        if rms_ra is not None and rms_dec is not None:
+            solution_text += f"RA  RMS: {rms_ra:10.6f} degrees\n"
+            solution_text += f"Dec RMS: {rms_dec:10.6f} degrees\n"
+            solution_text += f"RA  RMS: {rms_ra*3600:10.2f} arcseconds\n"
+            solution_text += f"Dec RMS: {rms_dec*3600:10.2f} arcseconds\n\n"
+        else:
+            solution_text += "RA  RMS: N/A degrees\n"
+            solution_text += "Dec RMS: N/A degrees\n"
+            solution_text += "RA  RMS: N/A arcseconds\n"
+            solution_text += "Dec RMS: N/A arcseconds\n\n"
         
         # Comparison stars info
         solution_text += "COMPARISON STARS:\n"
         solution_text += "-" * 18 + "\n"
-        solution_text += f"Number of stars: {len(lspc_results['comparison_stars'])}\n\n"
+        comparison_stars = lspc_results.get('comparison_stars', [])
+        solution_text += f"Number of stars: {len(comparison_stars)}\n\n"
         
         # Show individual star residuals
         solution_text += "STAR RESIDUALS:\n"
@@ -678,24 +892,35 @@ class OrbitDataWindow(QMainWindow):
         solution_text += "-" * 60 + "\n"
         
         # Calculate and display residuals for each comparison star
-        for i, star in enumerate(lspc_results['comparison_stars']):
-            # Apply LSPC transformation to measured coordinates
-            a, b, c, d, e, f = (constants['a'], constants['b'], constants['c'], 
-                               constants['d'], constants['e'], constants['f'])
+        comparison_stars = lspc_results.get('comparison_stars', [])
+        if comparison_stars and constants:
+            a = constants.get('a')
+            b = constants.get('b')
+            c = constants.get('c')
+            d = constants.get('d')
+            e = constants.get('e')
+            f = constants.get('f')
             
-            predicted_ra = a * star['measured_x'] + b * star['measured_y'] + c
-            predicted_dec = d * star['measured_x'] + e * star['measured_y'] + f
-            
-            ra_residual = (predicted_ra - star['catalog_ra']) * 3600  # Convert to arcseconds
-            dec_residual = (predicted_dec - star['catalog_dec']) * 3600
-            total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
-            
-            # Format Gaia ID (truncate if too long)
-            gaia_id = str(star['gaia_id'])
-            if len(gaia_id) > 15:
-                gaia_id = gaia_id[:12] + "..."
-            
-            solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
+            if all(v is not None for v in [a, b, c, d, e, f]):
+                for i, star in enumerate(comparison_stars):
+                    # Apply LSPC transformation to measured coordinates
+                    predicted_ra = a * star['measured_x'] + b * star['measured_y'] + c
+                    predicted_dec = d * star['measured_x'] + e * star['measured_y'] + f
+                    
+                    ra_residual = (predicted_ra - star['catalog_ra']) * 3600  # Convert to arcseconds
+                    dec_residual = (predicted_dec - star['catalog_dec']) * 3600
+                    total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
+                    
+                    # Format Gaia ID (truncate if too long)
+                    gaia_id = str(star['gaia_id'])
+                    if len(gaia_id) > 15:
+                        gaia_id = gaia_id[:12] + "..."
+                    
+                    solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
+            else:
+                solution_text += "Cannot calculate residuals: plate constants are missing\n"
+        else:
+            solution_text += "No comparison stars available for residual calculation\n"
         
         # Update the LSPC solution text area
         if hasattr(self, 'lspc_solution_text'):
@@ -708,6 +933,18 @@ class OrbitDataWindow(QMainWindow):
             row = selected_rows[0].row()
             if 0 <= row < len(self.computed_positions_data):
                 position_data = self.computed_positions_data[row]
+                
+                # Add LSPC data if available
+                if hasattr(self, 'lspc_results') and self.lspc_results:
+                    file_path = position_data.get('file_path')
+                    if file_path:
+                        lspc_positions = self.lspc_results.get('lspc_positions', [])
+                        for lspc_pos in lspc_positions:
+                            if lspc_pos.get('file_path') == file_path:
+                                # Merge LSPC data with original position data
+                                position_data = {**position_data, **lspc_pos}
+                                break
+                
                 # Emit signal to parent viewer to show marker
                 if hasattr(self, 'parent_viewer') and self.parent_viewer:
                     self.parent_viewer.on_computed_positions_row_selected(row, position_data)
