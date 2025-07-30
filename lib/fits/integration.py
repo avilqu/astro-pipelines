@@ -851,8 +851,17 @@ def integrate_with_motion_tracking(files: List[str],
     if not files:
         raise MotionTrackingIntegrationError("No input files provided")
     
-    # Determine if we should use chunked processing
-    use_chunked = force_chunked or (ENABLE_CHUNKED_PROCESSING and len(files) > CHUNK_SIZE)
+    # Determine if we should use chunked processing.
+    #
+    # Rationale: median-of-medians yields incorrect results if the last chunk
+    # contains only a handful of images (e.g. 1–2).  To avoid that artefact we
+    # require that *at least two full chunks* are available before enabling
+    # chunked processing automatically.  For small data sets we process all
+    # frames in one go – this is fast and avoids the statistical bias.
+    min_images_for_chunked = CHUNK_SIZE * 2  # needs ≥ two complete chunks
+    use_chunked = force_chunked or (
+        ENABLE_CHUNKED_PROCESSING and len(files) >= min_images_for_chunked
+    )
     
     if use_chunked:
         print(f"Using chunked processing for {len(files)} images")
