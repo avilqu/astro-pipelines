@@ -794,16 +794,44 @@ class ImageLabel(QLabel):
         orig_x = pixmap_x / scale
         orig_y = pixmap_y / scale
         
-        # Format cursor coordinates for display
-        cursor_coords = f"({orig_x:.1f}, {orig_y:.1f})"
+        # Show coordinate refinement dialog
+        from lib.gui.common.coordinate_refinement_dialog import CoordinateRefinementDialog
         
-        # Compute object positions using the new function
+        refinement_dialog = CoordinateRefinementDialog(
+            self.parent_viewer.image_data, 
+            (orig_x, orig_y), 
+            self.parent_viewer
+        )
+        
+        # Connect the signal to handle refined coordinates
+        refinement_dialog.coordinates_confirmed.connect(self._on_coordinates_refined)
+        
+        # Store the current file path for use in the callback
+        self._pending_compute_file_path = current_file_path
+        
+        # Show the dialog
+        refinement_dialog.exec()
+        
+        # Clean up the stored position
+        if hasattr(self, '_right_click_pos'):
+            delattr(self, '_right_click_pos')
+    
+    def _on_coordinates_refined(self, refined_x, refined_y):
+        """Handle refined coordinates from the coordinate refinement dialog."""
+        current_file_path = getattr(self, '_pending_compute_file_path', None)
+        if not current_file_path:
+            return
+        
+        # Format cursor coordinates for display
+        cursor_coords = f"({refined_x:.1f}, {refined_y:.1f})"
+        
+        # Compute object positions using the refined coordinates
         try:
             from lib.fits.integration import compute_object_positions_from_motion_tracked
             
             positions = compute_object_positions_from_motion_tracked(
                 current_file_path, 
-                (orig_x, orig_y),
+                (refined_x, refined_y),
                 loaded_files=self.parent_viewer.loaded_files
             )
             
@@ -828,9 +856,9 @@ class ImageLabel(QLabel):
             QMessageBox.critical(self.parent_viewer, "Error", 
                                f"Error computing object positions: {str(e)}")
         finally:
-            # Clean up the stored position
-            if hasattr(self, '_right_click_pos'):
-                delattr(self, '_right_click_pos')
+            # Clean up the stored file path
+            if hasattr(self, '_pending_compute_file_path'):
+                delattr(self, '_pending_compute_file_path')
     
     def _show_object_positions_tab(self, positions, object_name, cursor_coords):
         """Show object positions in a new tab in the orbital elements window."""
