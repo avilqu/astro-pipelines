@@ -398,19 +398,25 @@ class OrbitDataWindow(QMainWindow):
             
             # Calculate the average object position for each substack
             # This will show the object's motion across the three time periods
-            def get_average_object_position(pos_list):
-                if not pos_list:
-                    return None
-                
-                # Use the original_x and original_y coordinates (actual object positions in each image)
-                avg_x = sum(pos['original_x'] for pos in pos_list) / len(pos_list)
-                avg_y = sum(pos['original_y'] for pos in pos_list) / len(pos_list)
-                
-                return (avg_x, avg_y)
-            
-            pos1 = get_average_object_position(substack1_positions)
-            pos2 = get_average_object_position(substack2_positions)
-            pos3 = get_average_object_position(substack3_positions)
+            # In a motion-tracked stack the object is shifted so that the pixel
+            # position of the FIRST image becomes the reference for the whole
+            # sub-stack.  Therefore using the average of the coordinates would
+            # introduce a systematic offset ≈½ × (object motion within the
+            # sub-stack).  We instead take the coordinates belonging to the
+            # first file of each substack – they match the reference position
+            # used by the stacking algorithm.
+            def get_reference_position(file_list):
+                """Return (x, y) of the first image in *file_list* that has a
+                matching entry in *positions*.  None if not found."""
+                for fp in file_list:
+                    match = next((p for p in positions if p['file_path'] == fp), None)
+                    if match is not None:
+                        return (match['original_x'], match['original_y'])
+                return None
+
+            pos1 = get_reference_position(substack1_files)
+            pos2 = get_reference_position(substack2_files)
+            pos3 = get_reference_position(substack3_files)
             
             # Debug output
             print(f"Substack 1 positions: {len(substack1_positions)} files, avg object pos: {pos1}")
