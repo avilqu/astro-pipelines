@@ -172,6 +172,192 @@ def get_observation_time(file_path: str) -> Optional[str]:
         return None
 
 
+def compute_mid_observation_time(files: List[str]) -> Optional[str]:
+    """
+    Compute the midpoint DATE-OBS for a sequence of FITS files.
+
+    The midpoint is defined as halfway between the beginning of the first
+    exposure and the end of the last exposure.  The end of the last exposure
+    is calculated as DATE-OBS(last) + EXPTIME(last).
+    
+    Parameters
+    ----------
+    files : List[str]
+        List of FITS filenames. They do not need to be sorted chronologically.
+
+    Returns
+    -------
+    Optional[str]
+        Mid-point observation time in ISO 8601 format (UTC) or ``None`` if it
+        cannot be determined.
+    """
+    if not files:
+        return None
+
+    try:
+        from astropy.io import fits  # Local import keeps import-time deps minimal
+        from astropy.time import Time, TimeDelta
+
+        min_start = None
+        max_end = None
+
+        for fp in files:
+            try:
+                hdr = fits.getheader(fp, ext=0)
+            except Exception:
+                continue
+
+            date_obs = hdr.get('DATE-OBS')
+            if not date_obs:
+                continue
+
+            try:
+                t_start = Time(date_obs, format='isot', scale='utc')
+            except Exception:
+                # Skip unparsable DATE-OBS values
+                continue
+
+            # Exposure keyword variants
+            exp_sec = hdr.get('EXPTIME') or hdr.get('EXPOSURE') or hdr.get('EXP TIME') or 0.0
+            try:
+                exp_sec = float(exp_sec)
+            except Exception:
+                exp_sec = 0.0
+
+            t_end = t_start + TimeDelta(exp_sec, format='sec')
+
+            if min_start is None or t_start < min_start:
+                min_start = t_start
+            if max_end is None or t_end > max_end:
+                max_end = t_end
+
+        if min_start is None or max_end is None:
+            return None
+
+        t_mid = min_start + (max_end - min_start) / 2
+        return t_mid.isot
+
+    except Exception as exc:
+        print(f"Warning: could not compute midpoint DATE-OBS: {exc}")
+        return None
+
+
+def _copy_wcs_header(source_header, *, ra_mid: Optional[float] = None, dec_mid: Optional[float] = None, pad: Tuple[int,int,int,int] = (0,0,0,0)) -> dict:
+    """Return a WCS header dictionary copied from *source_header*.
+
+    The resulting header contains only WCS keywords.  Optionally override
+    CRVAL1/2 with *ra_mid*, *dec_mid* and adjust CRPIX1/2 for any padding
+    applied to the image data (left, right, top, bottom).
+    """
+    try:
+        from astropy.wcs import WCS
+        wcs_obj = WCS(source_header)
+        hdr_out = wcs_obj.to_header()
+    except Exception:
+        # Fallback to manual subset of common keys
+        wcs_keys = [k for k in source_header.keys() if k.startswith(('CRV', 'CRP', 'CTYP', 'CUNI', 'CD', 'PC', 'CDELT', 'CROTA'))]
+        hdr_out = {k: source_header[k] for k in wcs_keys}
+
+    # Override pointing if requested
+    if ra_mid is not None and dec_mid is not None:
+        hdr_out['CRVAL1'] = ra_mid
+        hdr_out['CRVAL2'] = dec_mid
+
+    # Adjust CRPIX for padding (left, right, top, bottom)
+    left, right, top, bottom = pad
+    if left or top:
+        # Astropy uses 1-based pixel coordinates in headers
+        if 'CRPIX1' in hdr_out:
+            hdr_out['CRPIX1'] += left
+        if 'CRPIX2' in hdr_out:
+            hdr_out['CRPIX2'] += top
+    return hdr_out
+
+
+def compute_mid_wcs(files: List[str]) -> Optional[Tuple[float, float]]:
+    """Compute the RA/Dec (CRVAL1/2) at the mid-point of the observing window.
+
+    The mid-point is defined in the same way as for DATE-OBS: halfway between
+    the start of the first exposure and the end of the last exposure.  We
+    assume the plate scale and rotation are constant during the sequence so we
+    only interpolate the pointing (CRVAL).  The function returns a tuple
+    ``(ra_deg, dec_deg)`` in ICRS or ``None`` if the information cannot be
+    derived.
+    """
+    if not files:
+        return None
+
+    try:
+        from astropy.io import fits
+        from astropy.time import Time, TimeDelta
+        from astropy.coordinates import SkyCoord
+        import astropy.units as u
+        import numpy as np
+
+        min_start = None  # Earliest exposure start
+        min_crval = None
+        max_end = None    # Latest exposure end
+        max_crval = None
+
+        for fp in files:
+            try:
+                hdr = fits.getheader(fp, ext=0)
+            except Exception:
+                continue
+
+            # --- timing
+            date_obs = hdr.get('DATE-OBS')
+            if not date_obs:
+                continue
+            try:
+                t_start = Time(date_obs, format='isot', scale='utc')
+            except Exception:
+                continue
+
+            exp_sec = hdr.get('EXPTIME') or hdr.get('EXPOSURE') or hdr.get('EXP TIME') or 0.0
+            try:
+                exp_sec = float(exp_sec)
+            except Exception:
+                exp_sec = 0.0
+            t_end = t_start + TimeDelta(exp_sec, format='sec')
+
+            # --- pointing
+            ra = hdr.get('CRVAL1')
+            dec = hdr.get('CRVAL2')
+            if ra is None or dec is None:
+                continue
+
+            if min_start is None or t_start < min_start:
+                min_start = t_start
+                min_crval = (float(ra), float(dec))
+            if max_end is None or t_end > max_end:
+                max_end = t_end
+                max_crval = (float(ra), float(dec))
+
+        if min_start is None or max_end is None or min_crval is None or max_crval is None:
+            return None
+
+        # Spherical interpolation between the two pointings
+        c1 = SkyCoord(min_crval[0]*u.deg, min_crval[1]*u.deg, frame='icrs')
+        c2 = SkyCoord(max_crval[0]*u.deg, max_crval[1]*u.deg, frame='icrs')
+
+        # Work in Cartesian space to avoid RA wrap problems
+        v1 = c1.cartesian.xyz.value
+        v2 = c2.cartesian.xyz.value
+        v_mid = v1 + v2
+        norm = np.linalg.norm(v_mid)
+        if norm == 0:
+            return min_crval  # identical vectors – just use one of them
+        v_mid /= norm
+
+        c_mid = SkyCoord(x=v_mid[0], y=v_mid[1], z=v_mid[2], representation_type='cartesian', frame='icrs')
+        return (c_mid.ra.deg, c_mid.dec.deg)
+
+    except Exception as exc:
+        print(f"Warning: could not compute midpoint WCS: {exc}")
+        return None
+
+
 def calculate_motion_shifts(files: List[str], object_name: str, 
                           reference_time: Optional[str] = None) -> Tuple[List[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """
@@ -769,6 +955,37 @@ def integrate_chunked(files: List[str],
         safe_set_metadata(final_stack.meta, 'ORIGINAL_FILES', json.dumps(files))
         safe_set_metadata(final_stack.meta, 'PADDING', json.dumps(padding))
         
+        # Update DATE-OBS and WCS to the midpoint of the observing window
+        mid_obs_time = compute_mid_observation_time(files)
+        if mid_obs_time:
+            safe_set_metadata(final_stack.meta, 'DATE-OBS', mid_obs_time)
+        # Always attempt to propagate WCS from one of the input frames
+        try:
+            from astropy.io import fits as _fits_
+            base_hdr = None
+            for _fp in files:
+                try:
+                    _hdr_tmp = _fits_.getheader(_fp, ext=0)
+                except Exception:
+                    continue
+                if 'CRVAL1' in _hdr_tmp and 'CRVAL2' in _hdr_tmp:
+                    base_hdr = _hdr_tmp
+                    break
+            if base_hdr is not None:
+                mid_wcs = compute_mid_wcs(files)
+                if mid_wcs:
+                    ra_mid, dec_mid = mid_wcs
+                    wcs_hdr = _copy_wcs_header(base_hdr, ra_mid=ra_mid, dec_mid=dec_mid, pad=padding)
+                    safe_set_metadata(final_stack.meta, 'MID_WCS', True)
+                else:
+                    wcs_hdr = _copy_wcs_header(base_hdr, pad=padding)
+                for _k, _v in wcs_hdr.items():
+                    safe_set_metadata(final_stack.meta, _k, _v)
+            else:
+                print("Warning: No WCS found in any input file; stack will have no WCS.")
+        except Exception as _e:
+            print(f"Warning: could not copy WCS header: {_e}")
+        
         # Store reference position if available
         if reference_object_pixel is not None:
             # Convert numpy array to list for JSON serialization
@@ -997,6 +1214,37 @@ def integrate_with_motion_tracking(files: List[str],
         safe_set_metadata(stack.meta, 'MOTION_SHIFTS', json.dumps(shift_info))
         safe_set_metadata(stack.meta, 'ORIGINAL_FILES', json.dumps(files))
         safe_set_metadata(stack.meta, 'PADDING', json.dumps(padding))
+        
+        # Update DATE-OBS and WCS to the midpoint of the observing window
+        mid_obs_time = compute_mid_observation_time(files)
+        if mid_obs_time:
+            safe_set_metadata(stack.meta, 'DATE-OBS', mid_obs_time)
+        # Always attempt to propagate WCS from one of the input frames
+        try:
+            from astropy.io import fits as _fits_
+            base_hdr = None
+            for _fp in files:
+                try:
+                    _hdr_tmp = _fits_.getheader(_fp, ext=0)
+                except Exception:
+                    continue
+                if 'CRVAL1' in _hdr_tmp and 'CRVAL2' in _hdr_tmp:
+                    base_hdr = _hdr_tmp
+                    break
+            if base_hdr is not None:
+                mid_wcs = compute_mid_wcs(files)
+                if mid_wcs:
+                    ra_mid, dec_mid = mid_wcs
+                    wcs_hdr = _copy_wcs_header(base_hdr, ra_mid=ra_mid, dec_mid=dec_mid, pad=padding)
+                    safe_set_metadata(stack.meta, 'MID_WCS', True)
+                else:
+                    wcs_hdr = _copy_wcs_header(base_hdr, pad=padding)
+                for _k, _v in wcs_hdr.items():
+                    safe_set_metadata(stack.meta, _k, _v)
+            else:
+                print("Warning: No WCS found in any input file; stack will have no WCS.")
+        except Exception as _e:
+            print(f"Warning: could not copy WCS header: {_e}")
         
         # Store reference position if available
         if reference_object_pixel is not None:
