@@ -13,6 +13,7 @@ import astropy.units as u
 from astropy.time import Time
 import re
 from datetime import datetime
+import json
 from scipy.optimize import least_squares
 
 class OrbitDataWindow(QMainWindow):
@@ -153,6 +154,12 @@ class OrbitDataWindow(QMainWindow):
         lspc_button.clicked.connect(lambda: self._compute_lspc(positions))
         positions_layout.addWidget(lspc_button)
         
+        # Add Measure object positions button
+        measure_button = QPushButton("Measure object positions")
+        measure_button.setFont(QFont("Arial", 10))
+        measure_button.clicked.connect(self._measure_object_positions)
+        positions_layout.addWidget(measure_button)
+        
         # Create LSPC solution text area
         self.lspc_solution_text = QTextEdit()
         self.lspc_solution_text.setReadOnly(True)
@@ -218,6 +225,12 @@ class OrbitDataWindow(QMainWindow):
             lspc_button.setFont(QFont("Arial", 10))
             lspc_button.clicked.connect(lambda: self._compute_lspc(positions))
             positions_layout.addWidget(lspc_button)
+            
+            # Add Measure object positions button
+            measure_button = QPushButton("Measure object positions")
+            measure_button.setFont(QFont("Arial", 10))
+            measure_button.clicked.connect(self._measure_object_positions)
+            positions_layout.addWidget(measure_button)
             
             # Create LSPC solution text area
             self.lspc_solution_text = QTextEdit()
@@ -990,6 +1003,190 @@ class OrbitDataWindow(QMainWindow):
             self.computed_positions_table.setItem(i, 7, QTableWidgetItem(ra_dec_str))
         
         self.computed_positions_table.resizeColumnsToContents()
+
+    # ---------------- Measurement functions ----------------
+    def _measure_object_positions(self):
+        """
+        Compute RA/Dec for each measurement marker found in motion-tracked
+        stacked images (yellow markers) and show the results in a new
+        'Measurements' tab.
+        """
+        if not hasattr(self, 'parent_viewer') or not self.parent_viewer:
+            QMessageBox.warning(self, "Error", "No parent viewer available.")
+            return
+
+        loaded_files = getattr(self.parent_viewer, 'loaded_files', [])
+        if not loaded_files:
+            QMessageBox.warning(self, "No Files", "No files loaded in the viewer.")
+            return
+
+        import numpy as np
+        from astropy.io import fits
+        from astropy.time import Time
+        from lib.fits.integration import compute_object_positions_from_motion_tracked
+
+        measurements = []
+
+        for file_path in loaded_files:
+            try:
+                with fits.open(file_path) as hdul:
+                    header = hdul[0].header
+                    meas_json = header.get('MEAS_POS')
+                    if not meas_json:
+                        continue
+                    x, y = json.loads(meas_json)
+                    substack_date = header.get('DATE-OBS')
+            except Exception:
+                continue
+
+            # Compute positions back to original images
+            try:
+                positions = compute_object_positions_from_motion_tracked(
+                    file_path, (x, y)
+                )
+            except Exception as exc:
+                print(f"Warning: could not compute object positions for {file_path}: {exc}")
+                continue
+
+            # Gather RA/Dec with times from original images
+            times_mjd, ras_deg, decs_deg = [], [], []
+            for pos in positions:
+                ra_deg = pos.get('ra')
+                dec_deg = pos.get('dec')
+                if ra_deg is None or dec_deg is None:
+                    continue
+                orig_path = pos['file_path']
+                try:
+                    with fits.open(orig_path) as hdul_o:
+                        date_obs_orig = hdul_o[0].header.get('DATE-OBS')
+                    if not date_obs_orig:
+                        continue
+                    t = Time(date_obs_orig, format='isot', scale='utc')
+                except Exception:
+                    continue
+                times_mjd.append(t.mjd)
+                ras_deg.append(ra_deg)
+                decs_deg.append(dec_deg)
+
+            if not times_mjd:
+                continue
+
+            # Determine target time (substack DATE-OBS); fall back to mean
+            import numpy as np
+            if substack_date:
+                try:
+                    target_time = Time(substack_date, format='isot', scale='utc').mjd
+                except Exception:
+                    target_time = np.mean(times_mjd)
+            else:
+                target_time = np.mean(times_mjd)
+
+            # Interpolate RA/Dec to target time
+            if len(times_mjd) == 1:
+                ra_interp = ras_deg[0]
+                dec_interp = decs_deg[0]
+            else:
+                # Handle RA wrap-around by working in radians and unwrapping
+                ra_rad = np.deg2rad(ras_deg)
+                ra_rad_unwrapped = np.unwrap(ra_rad)
+                ra_interp_rad = np.interp(target_time, times_mjd, ra_rad_unwrapped)
+                ra_interp = np.rad2deg(ra_interp_rad)
+                dec_interp = np.interp(target_time, times_mjd, decs_deg)
+
+            # Format RA/Dec
+            ra_hms = Angle(ra_interp, unit=u.deg).to_string(unit='hourangle',
+                                                            sep=':', precision=2, pad=True)
+            dec_dms = Angle(dec_interp, unit=u.deg).to_string(unit='deg',
+                                                              sep=':', precision=1, pad=True,
+                                                              alwayssign=True)
+            if not substack_date:
+                substack_date = Time(target_time, format='mjd').isot
+
+            measurements.append({
+                'file_path': file_path,
+                'date_obs': substack_date,
+                'ra_deg': ra_interp,
+                'dec_deg': dec_interp,
+                'ra_hms': ra_hms,
+                'dec_dms': dec_dms
+            })
+
+        if not measurements:
+            QMessageBox.warning(self, "No Measurements",
+                                "No measurement markers found or RA/Dec could not be computed.")
+            return
+
+        self._show_measurements_tab(measurements)
+
+    def _show_measurements_tab(self, measurements):
+        """Create or update the 'Measurements' tab with the provided data."""
+        # Check if a Measurements tab already exists
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) == "Measurements":
+                # Remove it – easier than updating in-place
+                self.tab_widget.removeTab(i)
+                break
+
+        # Create new tab
+        widget = QWidget()
+        layout = QVBoxLayout()
+        widget.setLayout(layout)
+
+        self.measurements_table = QTableWidget()
+        tbl = self.measurements_table
+        tbl.setColumnCount(6)
+        tbl.setHorizontalHeaderLabels([
+            "File", "Date/Time", "RA (deg)", "Dec (deg)", "RA (h:m:s)", "Dec (d:m:s)"
+        ])
+        tbl.setFont(QFont("Courier New", 9))
+        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        tbl.setRowCount(len(measurements))
+
+        for row, m in enumerate(measurements):
+            tbl.setItem(row, 0, QTableWidgetItem(os.path.basename(m['file_path'])))
+            tbl.setItem(row, 1, QTableWidgetItem(str(m['date_obs'])))
+            tbl.setItem(row, 2, QTableWidgetItem(f"{m['ra_deg']:.6f}"))
+            tbl.setItem(row, 3, QTableWidgetItem(f"{m['dec_deg']:.6f}"))
+            tbl.setItem(row, 4, QTableWidgetItem(m['ra_hms']))
+            tbl.setItem(row, 5, QTableWidgetItem(m['dec_dms']))
+
+        tbl.resizeColumnsToContents()
+        layout.addWidget(tbl)
+
+        # Store data for later row selection
+        self.measurements_data = measurements
+        # Connect selection change handler
+        tbl.selectionModel().selectionChanged.connect(self._on_measurements_selection_changed)
+
+        self.tab_widget.addTab(widget, "Measurements")
+        self.tab_widget.setCurrentWidget(widget)
+
+    def _on_measurements_selection_changed(self, selected, deselected):
+        """Handle selection changes in the measurements table and load the chosen substack."""
+        if not hasattr(self, 'measurements_table') or not hasattr(self, 'measurements_data'):
+            return
+        selected_rows = self.measurements_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        row = selected_rows[0].row()
+        if not (0 <= row < len(self.measurements_data)):
+            return
+        entry = self.measurements_data[row]
+        file_path = entry.get('file_path')
+        if not file_path or not hasattr(self, 'parent_viewer') or not self.parent_viewer:
+            return
+        # If the file is already loaded list, switch to it, otherwise load directly
+        try:
+            loaded_files = getattr(self.parent_viewer, 'loaded_files', [])
+            if file_path in loaded_files:
+                idx = loaded_files.index(file_path)
+                self.parent_viewer.current_file_index = idx
+            self.parent_viewer.load_fits(file_path, restore_view=True)
+            if hasattr(self.parent_viewer, 'update_navigation_buttons'):
+                self.parent_viewer.update_navigation_buttons()
+        except Exception as exc:
+            print(f"Warning: could not load {file_path}: {exc}")
 
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None, target_name=None):
