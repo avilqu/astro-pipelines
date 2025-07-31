@@ -1060,8 +1060,8 @@ class SubstacksGenerationWorker(QObject):
                 if self.object_positions:
                     # Handle both string and numeric coordinates
                     for i, (x, y) in enumerate(self.object_positions):
-                        self.console_output.emit(f"\033[1;34mObject position for substack {i+1} (cropped): ({x:.1f}, {y:.1f})\033[0m\n")
-                self.console_output.emit(f"\033[1;34mCrop size: 500x500 pixels\033[0m\n\n")
+                        self.console_output.emit(f"\033[1;34mObject position for substack {i+1}: ({x:.1f}, {y:.1f})\033[0m\n")
+                self.console_output.emit(f"\n")
                 
                 output_files = []
                 
@@ -1081,13 +1081,8 @@ class SubstacksGenerationWorker(QObject):
                 
                 self.console_output.emit(f"\033[1;32m✓ Substack 1 completed: {os.path.basename(output_file1)}\033[0m\n")
                 
-                # Create cropped version of substack 1
-                if self.object_positions and self.object_positions[0]:
-                    cropped_file1 = os.path.join(self.output_dir, f"substack1_cropped_{self.safe_object_name}_{self.timestamp}.fits")
-                    self.console_output.emit(f"\033[1;33mCreating cropped version of substack 1...\033[0m\n")
-                    self._create_cropped_version(result1, cropped_file1, self.object_positions[0])
-                    output_files.append(cropped_file1)
-                    self.console_output.emit(f"\033[1;32m✓ Cropped substack 1 completed: {os.path.basename(cropped_file1)}\033[0m\n")
+                # Add measurement marker to substack 1
+                self._add_measurement_marker(output_file1, self.object_positions[0] if self.object_positions else None)
                 
                 self.console_output.emit(f"\n")
                 
@@ -1107,13 +1102,8 @@ class SubstacksGenerationWorker(QObject):
                 
                 self.console_output.emit(f"\033[1;32m✓ Substack 2 completed: {os.path.basename(output_file2)}\033[0m\n")
                 
-                # Create cropped version of substack 2
-                if self.object_positions and self.object_positions[1]:
-                    cropped_file2 = os.path.join(self.output_dir, f"substack2_cropped_{self.safe_object_name}_{self.timestamp}.fits")
-                    self.console_output.emit(f"\033[1;33mCreating cropped version of substack 2...\033[0m\n")
-                    self._create_cropped_version(result2, cropped_file2, self.object_positions[1])
-                    output_files.append(cropped_file2)
-                    self.console_output.emit(f"\033[1;32m✓ Cropped substack 2 completed: {os.path.basename(cropped_file2)}\033[0m\n")
+                # Add measurement marker to substack 2
+                self._add_measurement_marker(output_file2, self.object_positions[1] if self.object_positions else None)
                 
                 self.console_output.emit(f"\n")
                 
@@ -1133,29 +1123,18 @@ class SubstacksGenerationWorker(QObject):
                 
                 self.console_output.emit(f"\033[1;32m✓ Substack 3 completed: {os.path.basename(output_file3)}\033[0m\n")
                 
-                # Create cropped version of substack 3
-                if self.object_positions and self.object_positions[2]:
-                    cropped_file3 = os.path.join(self.output_dir, f"substack3_cropped_{self.safe_object_name}_{self.timestamp}.fits")
-                    self.console_output.emit(f"\033[1;33mCreating cropped version of substack 3...\033[0m\n")
-                    self._create_cropped_version(result3, cropped_file3, self.object_positions[2])
-                    output_files.append(cropped_file3)
-                    self.console_output.emit(f"\033[1;32m✓ Cropped substack 3 completed: {os.path.basename(cropped_file3)}\033[0m\n")
+                # Add measurement marker to substack 3
+                self._add_measurement_marker(output_file3, self.object_positions[2] if self.object_positions else None)
                 
                 self.console_output.emit(f"\n")
                 
                 # Success message
-                message = f"Successfully generated 6 motion tracked files:\n"
+                message = f"Successfully generated 3 motion-tracked substacks\n"
                 message += f"Object: {self.object_name}\n"
                 message += f"Method: Median stacking\n"
-                message += f"Full frame substacks:\n"
-                message += f"  - Substack 1: {len(self.substack1_files)} files -> {os.path.basename(output_file1)}\n"
-                message += f"  - Substack 2: {len(self.substack2_files)} files -> {os.path.basename(output_file2)}\n"
-                message += f"  - Substack 3: {len(self.substack3_files)} files -> {os.path.basename(output_file3)}\n"
-                if self.object_positions:
-                    message += f"Cropped substacks (500x500px):\n"
-                    message += f"  - Cropped 1: {os.path.basename(output_files[1])}\n"
-                    message += f"  - Cropped 2: {os.path.basename(output_files[3])}\n"
-                    message += f"  - Cropped 3: {os.path.basename(output_files[5])}\n"
+                message += f"  – Substack 1: {len(self.substack1_files)} files → {os.path.basename(output_file1)}\n"
+                message += f"  – Substack 2: {len(self.substack2_files)} files → {os.path.basename(output_file2)}\n"
+                message += f"  – Substack 3: {len(self.substack3_files)} files → {os.path.basename(output_file3)}\n"
                 message += f"Output directory: {self.output_dir}"
                 
                 self.finished.emit(True, message, output_files)
@@ -1191,6 +1170,23 @@ class SubstacksGenerationWorker(QObject):
         except Exception as e:
             raise Exception(f"Error creating motion tracked stack: {str(e)}")
     
+    def _add_measurement_marker(self, fits_path, object_position):
+        """
+        Store the expected object position (pixel coordinates) in the FITS
+        header so that the viewer can show a yellow measurement marker.
+        """
+        if object_position is None:
+            return
+        try:
+            from astropy.io import fits
+            import json
+            x, y = self._parse_coordinates(object_position)
+            with fits.open(fits_path, mode='update') as hdul:
+                hdul[0].header['MEAS_POS'] = json.dumps([float(x), float(y)])
+                hdul.flush()
+        except Exception as exc:
+            print(f"Warning: could not write MEAS_POS to {fits_path}: {exc}")
+
     def _create_cropped_version(self, stacked_result, output_path, object_position):
         """Create a cropped version of the stacked image centered on the object position."""
         try:

@@ -504,6 +504,42 @@ class ImageLabel(QLabel):
                 painter.end()
             except Exception as e:
                 pass
+        
+        # Draw measurement marker (yellow) if present
+        if (
+            self.parent_viewer and
+            hasattr(self.parent_viewer, '_measurement_overlay') and
+            self.parent_viewer._measurement_overlay is not None and
+            getattr(self.parent_viewer, '_overlay_visible', True) and
+            hasattr(self.parent_viewer, 'overlay_toolbar_controller') and
+            self.parent_viewer.overlay_toolbar_controller.is_ephemeris_visible()  # same toggle
+        ):
+            try:
+                pixmap = self.pixmap()
+                if pixmap is None or self.parent_viewer.image_data is None:
+                    return
+                img_h, img_w = self.parent_viewer.image_data.shape
+                pixmap_w, pixmap_h = pixmap.width(), pixmap.height()
+                label_w,  label_h  = self.width(), self.height()
+                scale_x = pixmap_w / img_w
+                x_off   = (label_w  - pixmap_w) // 2
+                y_off   = (label_h  - pixmap_h) // 2
+                _, (x_img, y_img) = self.parent_viewer._measurement_overlay
+                x_disp = x_img * scale_x + x_off
+                y_disp = y_img * scale_x + y_off
+                painter = QPainter(self)
+                pen     = QPen(QColor(255, 255, 0))      # yellow
+                pen.setWidth(1)
+                painter.setPen(pen)
+                radius = 24
+                gap    = 6
+                painter.drawLine(int(x_disp - radius), int(y_disp), int(x_disp - gap), int(y_disp))
+                painter.drawLine(int(x_disp + gap), int(y_disp), int(x_disp + radius), int(y_disp))
+                painter.drawLine(int(x_disp), int(y_disp - radius), int(x_disp), int(y_disp - gap))
+                painter.drawLine(int(x_disp), int(y_disp + gap), int(x_disp), int(y_disp + radius))
+                painter.end()
+            except Exception:
+                pass
         # Draw Gaia detection overlay if enabled
         if (
             self.parent_viewer and
@@ -652,6 +688,9 @@ class ImageLabel(QLabel):
             if coords:
                 menu.addSeparator()
             
+            # Store the right-click position for use in compute_object_positions
+            self._right_click_pos = event.pos()
+            
             # Create "Compute object positions" action
             compute_positions_action = QAction("Compute object positions", self)
             compute_positions_action.triggered.connect(self._compute_object_positions)
@@ -707,8 +746,12 @@ class ImageLabel(QLabel):
             QMessageBox.warning(self.parent_viewer, "No Image", "No image is currently loaded.")
             return
         
-        # Get the cursor position in image coordinates
-        cursor_pos = self.mapFromGlobal(QCursor.pos())
+        # Get the stored right-click position in image coordinates
+        if not hasattr(self, '_right_click_pos'):
+            QMessageBox.warning(self.parent_viewer, "No Position", "No right-click position available.")
+            return
+        
+        cursor_pos = self._right_click_pos
         
         # Convert cursor position to image coordinates
         pixmap = self.pixmap()
@@ -774,6 +817,10 @@ class ImageLabel(QLabel):
         except Exception as e:
             QMessageBox.critical(self.parent_viewer, "Error", 
                                f"Error computing object positions: {str(e)}")
+        finally:
+            # Clean up the stored position
+            if hasattr(self, '_right_click_pos'):
+                delattr(self, '_right_click_pos')
     
     def _show_object_positions_tab(self, positions, object_name, cursor_coords):
         """Show object positions in a new tab in the orbital elements window."""

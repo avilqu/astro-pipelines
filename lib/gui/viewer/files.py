@@ -67,6 +67,7 @@ class FileOperationsMixin:
             self._simbad_field_overlay = None
             self._sso_overlay = None
             self._ephemeris_overlay = None
+            self._measurement_overlay = None
             self._overlay_visible = False
             if hasattr(self, 'overlay_toolbar_controller'):
                 self.overlay_toolbar_controller.update_overlay_button_visibility()
@@ -303,6 +304,9 @@ class FileOperationsMixin:
         
         # After loading, update computed positions marker if present
         self.update_computed_positions_marker()
+        
+        # After loading, update measurement marker if present
+        self.update_measurement_marker()
 
     def _get_header_value(self, key, default=None):
         """Helper method to extract header values from (value, comment) tuples."""
@@ -316,6 +320,16 @@ class FileOperationsMixin:
 
     def update_ephemeris_marker(self):
         """Update the ephemeris marker for the current file."""
+        # Check if this is a substack - if so, don't show ephemeris marker
+        # Substacks have filenames starting with "substack"
+        current_file = self.loaded_files[self.current_file_index] if self.loaded_files and 0 <= self.current_file_index < len(self.loaded_files) else ""
+        is_substack = os.path.basename(current_file).startswith("substack")
+        if is_substack:
+            # This is a substack, don't show ephemeris marker
+            self._ephemeris_overlay = None
+            self._show_ephemeris_marker(None)
+            return
+            
         if hasattr(self, '_ephemeris_predicted_positions') and self._ephemeris_predicted_positions:
             # Check if this is a motion-tracked stack
             is_motion_tracked = False
@@ -387,6 +401,16 @@ class FileOperationsMixin:
 
     def update_computed_positions_marker(self):
         """Update the computed positions marker for the current file."""
+        
+        # Check if this is a substack - if so, don't show computed positions marker
+        # Substacks have filenames starting with "substack"
+        current_file = self.loaded_files[self.current_file_index] if self.loaded_files and 0 <= self.current_file_index < len(self.loaded_files) else ""
+        is_substack = os.path.basename(current_file).startswith("substack")
+        if is_substack:
+            # This is a substack, don't show computed positions marker
+            self._computed_positions_overlay = None
+            self._show_computed_positions_marker(None)
+            return
         
         # Check if we have computed positions data available
         if hasattr(self, '_orbit_window') and self._orbit_window and hasattr(self._orbit_window, 'computed_positions_data'):
@@ -498,6 +522,31 @@ class FileOperationsMixin:
     def _show_computed_positions_marker(self, pixel_coords):
         """Store the marker position for overlay drawing."""
         self._computed_positions_marker_coords = pixel_coords
+        self._overlay_visible = True
+        if hasattr(self, 'overlay_toolbar_controller'):
+            self.overlay_toolbar_controller.update_overlay_button_visibility()
+        self.image_label.update()
+
+    def update_measurement_marker(self):
+        """
+        Read MEAS_POS from the FITS header (if present) and prepare the yellow
+        measurement overlay.
+        """
+        meas_json = self._get_header_value('MEAS_POS', None)
+        if meas_json:
+            import json
+            try:
+                x, y = json.loads(meas_json)
+                self._measurement_overlay = (None, (x, y))
+                self._show_measurement_marker((x, y))
+                return
+            except Exception:
+                pass
+        self._measurement_overlay = None
+        self._show_measurement_marker(None)
+
+    def _show_measurement_marker(self, pixel_coords):
+        self._measurement_marker_coords = pixel_coords
         self._overlay_visible = True
         if hasattr(self, 'overlay_toolbar_controller'):
             self.overlay_toolbar_controller.update_overlay_button_visibility()
