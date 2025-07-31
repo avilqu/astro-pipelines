@@ -956,9 +956,6 @@ def integrate_chunked(files: List[str],
         safe_set_metadata(final_stack.meta, 'PADDING', json.dumps(padding))
         
         # Update DATE-OBS and WCS to the midpoint of the observing window
-        mid_obs_time = compute_mid_observation_time(files)
-        if mid_obs_time:
-            safe_set_metadata(final_stack.meta, 'DATE-OBS', mid_obs_time)
         # Always attempt to propagate WCS from one of the input frames
         try:
             from astropy.io import fits as _fits_
@@ -981,6 +978,10 @@ def integrate_chunked(files: List[str],
                     wcs_hdr = _copy_wcs_header(base_hdr, pad=padding)
                 for _k, _v in wcs_hdr.items():
                     safe_set_metadata(final_stack.meta, _k, _v)
+                # Ensure DATE-OBS reflects midpoint
+                mid_obs_time = compute_mid_observation_time(files)
+                if mid_obs_time:
+                    safe_set_metadata(final_stack.meta, 'DATE-OBS', mid_obs_time)
             else:
                 print("Warning: No WCS found in any input file; stack will have no WCS.")
         except Exception as _e:
@@ -1216,9 +1217,6 @@ def integrate_with_motion_tracking(files: List[str],
         safe_set_metadata(stack.meta, 'PADDING', json.dumps(padding))
         
         # Update DATE-OBS and WCS to the midpoint of the observing window
-        mid_obs_time = compute_mid_observation_time(files)
-        if mid_obs_time:
-            safe_set_metadata(stack.meta, 'DATE-OBS', mid_obs_time)
         # Always attempt to propagate WCS from one of the input frames
         try:
             from astropy.io import fits as _fits_
@@ -1241,6 +1239,10 @@ def integrate_with_motion_tracking(files: List[str],
                     wcs_hdr = _copy_wcs_header(base_hdr, pad=padding)
                 for _k, _v in wcs_hdr.items():
                     safe_set_metadata(stack.meta, _k, _v)
+                # Finally, ensure DATE-OBS reflects true midpoint (may have been overwritten)
+                mid_obs_time = compute_mid_observation_time(files)
+                if mid_obs_time:
+                    safe_set_metadata(stack.meta, 'DATE-OBS', mid_obs_time)
             else:
                 print("Warning: No WCS found in any input file; stack will have no WCS.")
         except Exception as _e:
