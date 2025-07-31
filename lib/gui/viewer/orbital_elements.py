@@ -148,17 +148,20 @@ class OrbitDataWindow(QMainWindow):
         # Store cursor coordinates for later use
         self.cursor_coords = cursor_coords
         
-        # Add Compute LSPC button
-        lspc_button = QPushButton("Compute LSPC")
-        lspc_button.setFont(QFont("Arial", 10))
-        lspc_button.clicked.connect(lambda: self._compute_lspc(positions))
-        positions_layout.addWidget(lspc_button)
         
-        # Add Measure object positions button
-        measure_button = QPushButton("Measure object positions")
-        measure_button.setFont(QFont("Arial", 10))
-        measure_button.clicked.connect(self._measure_object_positions)
-        positions_layout.addWidget(measure_button)
+        # Add Generate Substacks button (initially disabled)
+        self.generate_substacks_button = QPushButton("Generate Substacks")
+        self.generate_substacks_button.setFont(QFont("Arial", 10))
+        self.generate_substacks_button.setEnabled(False)  # Enabled after LSPC computed
+        self.generate_substacks_button.clicked.connect(lambda: self._generate_substacks(positions))
+        positions_layout.addWidget(self.generate_substacks_button)
+        
+        # Add Measure object positions button (disabled until substacks generated)
+        self.measure_button = QPushButton("Measure object positions")
+        self.measure_button.setFont(QFont("Arial", 10))
+        self.measure_button.setEnabled(False)
+        self.measure_button.clicked.connect(self._measure_object_positions)
+        positions_layout.addWidget(self.measure_button)
         
         # Create LSPC solution text area
         self.lspc_solution_text = QTextEdit()
@@ -168,12 +171,6 @@ class OrbitDataWindow(QMainWindow):
         self.lspc_solution_text.setPlaceholderText("LSPC solution will appear here after computation...")
         positions_layout.addWidget(self.lspc_solution_text)
         
-        # Add Generate Substacks button (initially disabled)
-        self.generate_substacks_button = QPushButton("Generate Substacks")
-        self.generate_substacks_button.setFont(QFont("Arial", 10))
-        self.generate_substacks_button.setEnabled(False)  # Initially disabled
-        self.generate_substacks_button.clicked.connect(lambda: self._generate_substacks(positions))
-        positions_layout.addWidget(self.generate_substacks_button)
         
         # Create table for positions
         self.computed_positions_table = QTableWidget()
@@ -195,6 +192,9 @@ class OrbitDataWindow(QMainWindow):
         
         # Populate the table
         self._populate_computed_positions(positions)
+
+        # Automatically compute LSPC once positions are available
+        self._compute_lspc(positions)
         
         # Add the tab
         self.tab_widget.addTab(positions_widget, "Positions")
@@ -220,17 +220,21 @@ class OrbitDataWindow(QMainWindow):
             info_label.setFont(QFont("Arial", 10))
             positions_layout.addWidget(info_label)
             
-            # Add Compute LSPC button
-            lspc_button = QPushButton("Compute LSPC")
-            lspc_button.setFont(QFont("Arial", 10))
-            lspc_button.clicked.connect(lambda: self._compute_lspc(positions))
-            positions_layout.addWidget(lspc_button)
+            # Automatically compute LSPC (button removed)
             
-            # Add Measure object positions button
-            measure_button = QPushButton("Measure object positions")
-            measure_button.setFont(QFont("Arial", 10))
-            measure_button.clicked.connect(self._measure_object_positions)
-            positions_layout.addWidget(measure_button)
+            # Add Generate Substacks button (initially disabled)
+            self.generate_substacks_button = QPushButton("Generate Substacks")
+            self.generate_substacks_button.setFont(QFont("Arial", 10))
+            self.generate_substacks_button.setEnabled(False)
+            self.generate_substacks_button.clicked.connect(lambda: self._generate_substacks(positions))
+            positions_layout.addWidget(self.generate_substacks_button)
+            
+            # Add Measure object positions button (disabled until substacks generated)
+            self.measure_button = QPushButton("Measure object positions")
+            self.measure_button.setFont(QFont("Arial", 10))
+            self.measure_button.setEnabled(False)
+            self.measure_button.clicked.connect(self._measure_object_positions)
+            positions_layout.addWidget(self.measure_button)
             
             # Create LSPC solution text area
             self.lspc_solution_text = QTextEdit()
@@ -240,12 +244,6 @@ class OrbitDataWindow(QMainWindow):
             self.lspc_solution_text.setPlaceholderText("LSPC solution will appear here after computation...")
             positions_layout.addWidget(self.lspc_solution_text)
             
-            # Add Generate Substacks button (initially disabled)
-            self.generate_substacks_button = QPushButton("Generate Substacks")
-            self.generate_substacks_button.setFont(QFont("Arial", 10))
-            self.generate_substacks_button.setEnabled(False)  # Initially disabled
-            self.generate_substacks_button.clicked.connect(lambda: self._generate_substacks(positions))
-            positions_layout.addWidget(self.generate_substacks_button)
             
             # Create table for positions
             self.computed_positions_table = QTableWidget()
@@ -267,6 +265,9 @@ class OrbitDataWindow(QMainWindow):
             
             # Populate the table
             self._populate_computed_positions(positions)
+
+            # Automatically compute LSPC once positions are updated
+            self._compute_lspc(positions)
     
     def _generate_substacks(self, positions):
         """Generate three motion tracked substacks from the dataset."""
@@ -354,6 +355,10 @@ class OrbitDataWindow(QMainWindow):
                 # Update viewer UI
                 self.parent_viewer.update_navigation_buttons()
                 self.parent_viewer.update_image_count_label()
+                
+                # Enable 'Measure object positions' button now that substacks are generated
+                if hasattr(self, 'measure_button'):
+                    self.measure_button.setEnabled(True)
             else:
                 console_window.append_text(f"\n\033[1;31mSubstack generation failed:\033[0m\n\n{message}\n")
             

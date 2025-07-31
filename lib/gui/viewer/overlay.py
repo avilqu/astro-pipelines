@@ -736,6 +736,16 @@ class ImageLabel(QLabel):
         if not self.parent_viewer:
             return
         
+        # Ensure a star catalog is loaded (Gaia detection results exist)
+        if not hasattr(self.parent_viewer, '_gaia_detection_overlay') or not self.parent_viewer._gaia_detection_overlay:
+            QMessageBox.warning(self.parent_viewer, "No Star Catalog",
+                                 "Load a star catalog first before computing object positions.\n\n"
+                                 "To load a star catalog:\n"
+                                 "1. Go to the Catalogs menu\n"
+                                 "2. Select 'Detect Gaia Stars in Image'\n"
+                                 "3. This will load Gaia DR3 stars and match them with detected sources")
+            return
+
         # Get the current image path
         current_file_path = None
         if (self.parent_viewer.current_file_index >= 0 and 
