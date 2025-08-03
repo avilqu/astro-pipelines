@@ -14,12 +14,13 @@ class MotionTrackingStackWorker(QObject):
     console_output = pyqtSignal(str)  # console output text
     finished = pyqtSignal(bool, str, list)  # success, message, output_files
     
-    def __init__(self, files, object_name, output_path, console_window=None):
+    def __init__(self, files, object_name, output_path, console_window=None, ephemerides_data=None):
         super().__init__()
         self.files = files
         self.object_name = object_name
         self.output_path = output_path
         self.console_window = console_window
+        self.ephemerides_data = ephemerides_data
     
     def run(self):
         """Run the motion tracking integration."""
@@ -59,7 +60,8 @@ class MotionTrackingStackWorker(QObject):
                         object_name=self.object_name,
                         method='median',
                         sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
-                        output_path=median_output_path
+                        output_path=median_output_path,
+                        ephemerides_data=self.ephemerides_data
                     )
                     output_files.append(median_output_path)
                     
@@ -74,7 +76,8 @@ class MotionTrackingStackWorker(QObject):
                         object_name=self.object_name,
                         method='average',
                         sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
-                        output_path=average_output_path
+                        output_path=average_output_path,
+                        ephemerides_data=self.ephemerides_data
                     )
                     output_files.append(average_output_path)
                     
@@ -98,6 +101,7 @@ class MotionTrackingStackWorker(QObject):
                         files=self.files,
                         object_name=self.object_name,
                         method=MOTION_TRACKING_METHOD,
+                        ephemerides_data=self.ephemerides_data,
                         sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
                         output_path=self.output_path
                     )
@@ -242,7 +246,8 @@ class IntegrationMixin:
             self.loaded_files, 
             self._ephemeris_object_name, 
             output_file,
-            console_window
+            console_window,
+            self._ephemeris_predicted_positions
         )
         self._stack_worker.moveToThread(self._stack_thread)
         self._stack_thread.started.connect(self._stack_worker.run)

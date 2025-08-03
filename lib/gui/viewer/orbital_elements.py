@@ -328,7 +328,7 @@ class OrbitDataWindow(QMainWindow):
         self._substack_worker = SubstacksGenerationWorker(
             substack1_files, substack2_files, substack3_files,
             object_name, output_dir, safe_object_name, timestamp,
-            console_window, object_positions
+            console_window, object_positions, self.predicted_positions
         )
         self._substack_worker.moveToThread(self._substack_thread)
         self._substack_thread.started.connect(self._substack_worker.run)
@@ -1280,7 +1280,7 @@ class SubstacksGenerationWorker(QObject):
     
     def __init__(self, substack1_files, substack2_files, substack3_files, 
                  object_name, output_dir, safe_object_name, timestamp, console_window=None,
-                 object_positions=None):
+                 object_positions=None, ephemerides_data=None):
         super().__init__()
         self.substack1_files = substack1_files
         self.substack2_files = substack2_files
@@ -1291,6 +1291,7 @@ class SubstacksGenerationWorker(QObject):
         self.timestamp = timestamp
         self.console_window = console_window
         self.object_positions = object_positions  # List of (x, y) coordinates for each substack
+        self.ephemerides_data = ephemerides_data  # Pre-computed ephemerides data
     
     def run(self):
         """Run the substack generation."""
@@ -1413,7 +1414,8 @@ class SubstacksGenerationWorker(QObject):
                 object_name=object_name,
                 method='median',  # Force median stacking for substacks
                 sigma_clip=MOTION_TRACKING_SIGMA_CLIP,
-                output_path=output_path
+                output_path=output_path,
+                ephemerides_data=self.ephemerides_data
             )
             
             return result

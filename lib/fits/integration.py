@@ -359,11 +359,23 @@ def compute_mid_wcs(files: List[str]) -> Optional[Tuple[float, float]]:
 
 
 def calculate_motion_shifts(files: List[str], object_name: str, 
-                          reference_time: Optional[str] = None) -> Tuple[List[Tuple[float, float]], Optional[Tuple[float, float]]]:
+                          reference_time: Optional[str] = None,
+                          ephemerides_data: Optional[List[Dict]] = None) -> Tuple[List[Tuple[float, float]], Optional[Tuple[float, float]]]:
     """
     Calculate pixel shifts needed to keep moving object static using motion rate and position angle.
-    This function now calls predict_position_findorb only once for all observation times, then uses the average motion rate and PA for all shifts.
     
+    Parameters:
+    -----------
+    files : List[str]
+        List of FITS file paths
+    object_name : str
+        Name of the moving object
+    reference_time : Optional[str]
+        Reference time for object position (ISO format). If None, uses first image.
+    ephemerides_data : Optional[List[Dict]]
+        Pre-computed ephemerides data. If provided, this will be used instead of calling FindOrb API.
+        Each dict should contain 'date_obs', 'RA', 'Dec', 'motion_rate', 'motionPA' keys.
+        
     Returns:
     --------
     Tuple[List[Tuple[float, float]], Optional[Tuple[float, float]]]
@@ -409,12 +421,22 @@ def calculate_motion_shifts(files: List[str], object_name: str,
         print("Warning: No valid observation times found")
         return [(0.0, 0.0)] * len(files), None
 
-    # Call predict_position_findorb ONCE for all observation times
-    try:
-        result = predict_position_findorb(object_name, observation_times)
-    except Exception as e:
-        print(f"Warning: Error getting ephemeris for all files: {e}")
-        return [(0.0, 0.0)] * len(files), None
+    # Use provided ephemerides data if available, otherwise call FindOrb API
+    if ephemerides_data is not None:
+        print(f"Using provided ephemerides data for {len(ephemerides_data)} entries")
+        result = {}
+        for entry in ephemerides_data:
+            date_obs = entry.get('date_obs')
+            if date_obs:
+                result[date_obs] = entry
+    else:
+        print("No ephemerides data provided, calling FindOrb API...")
+        # Call predict_position_findorb ONCE for all observation times
+        try:
+            result = predict_position_findorb(object_name, observation_times)
+        except Exception as e:
+            print(f"Warning: Error getting ephemeris for all files: {e}")
+            return [(0.0, 0.0)] * len(files), None
 
     # Gather motion rates and PAs from all results
     motion_rates = []
@@ -736,7 +758,8 @@ def integrate_chunked(files: List[str],
                      output_path: Optional[str] = None,
                      progress_callback: Optional[Callable] = None,
                      chunk_size: Optional[int] = None,
-                     memory_limit: Optional[float] = None) -> ccdp.CCDData:
+                     memory_limit: Optional[float] = None,
+                     ephemerides_data: Optional[List[Dict]] = None) -> ccdp.CCDData:
     """
     Integrate images in chunks to prevent memory issues with large datasets.
     
@@ -762,6 +785,9 @@ def integrate_chunked(files: List[str],
         Number of images per chunk. If None, uses default CHUNK_SIZE.
     memory_limit : Optional[float]
         Memory limit in bytes. If None, uses default MEMORY_LIMIT.
+    ephemerides_data : Optional[List[Dict]]
+        Pre-computed ephemerides data. If provided, this will be used instead of calling FindOrb API.
+        Each dict should contain 'date_obs', 'RA', 'Dec', 'motion_rate', 'motionPA' keys.
         
     Returns:
     --------
@@ -784,7 +810,7 @@ def integrate_chunked(files: List[str],
         print("Warning: Sequence has inconsistencies, proceeding anyway...")
     
     # Calculate motion shifts for all files
-    shifts, reference_object_pixel = calculate_motion_shifts(files, object_name, reference_time)
+    shifts, reference_object_pixel = calculate_motion_shifts(files, object_name, reference_time, ephemerides_data)
     
     # Calculate required padding
     padding = calculate_required_padding(shifts)
@@ -1032,7 +1058,8 @@ def integrate_with_motion_tracking(files: List[str],
                                  progress_callback: Optional[Callable] = None,
                                  force_chunked: bool = False,
                                  chunk_size: Optional[int] = None,
-                                 memory_limit: Optional[float] = None) -> ccdp.CCDData:
+                                 memory_limit: Optional[float] = None,
+                                 ephemerides_data: Optional[List[Dict]] = None) -> ccdp.CCDData:
     """
     Integrate a sequence of images while keeping a moving object static.
     
@@ -1060,6 +1087,9 @@ def integrate_with_motion_tracking(files: List[str],
         Number of images per chunk for chunked processing
     memory_limit : Optional[float]
         Memory limit in bytes for processing
+    ephemerides_data : Optional[List[Dict]]
+        Pre-computed ephemerides data. If provided, this will be used instead of calling FindOrb API.
+        Each dict should contain 'date_obs', 'RA', 'Dec', 'motion_rate', 'motionPA' keys.
         
     Returns:
     --------
@@ -1103,7 +1133,7 @@ def integrate_with_motion_tracking(files: List[str],
         print("Warning: Sequence has inconsistencies, proceeding anyway...")
     
     # Calculate motion shifts
-    shifts, reference_object_pixel = calculate_motion_shifts(files, object_name, reference_time)
+    shifts, reference_object_pixel = calculate_motion_shifts(files, object_name, reference_time, ephemerides_data)
     
     # Calculate required padding
     padding = calculate_required_padding(shifts)
