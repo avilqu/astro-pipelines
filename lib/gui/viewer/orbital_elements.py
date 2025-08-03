@@ -1159,6 +1159,25 @@ class OrbitDataWindow(QMainWindow):
         tbl.resizeColumnsToContents()
         layout.addWidget(tbl)
 
+        # Add MPC Report button
+        mpc_button_layout = QHBoxLayout()
+        
+        # Get object name from parent viewer if available
+        object_name = "Unknown"
+        if hasattr(self, 'parent_viewer') and self.parent_viewer:
+            object_name = getattr(self.parent_viewer, '_ephemeris_object_name', 'Unknown')
+        
+        # Create MPC Report button
+        self.mpc_report_button = QPushButton("Generate MPC Report")
+        self.mpc_report_button.setFont(QFont("Arial", 10))
+        self.mpc_report_button.clicked.connect(lambda: self._open_mpc_report(measurements, object_name))
+        mpc_button_layout.addWidget(self.mpc_report_button)
+        
+        # Add spacer to push button to the left
+        mpc_button_layout.addStretch()
+        
+        layout.addLayout(mpc_button_layout)
+
         # Store data for later row selection
         self.measurements_data = measurements
         # Connect selection change handler
@@ -1192,6 +1211,30 @@ class OrbitDataWindow(QMainWindow):
                 self.parent_viewer.update_navigation_buttons()
         except Exception as exc:
             print(f"Warning: could not load {file_path}: {exc}")
+
+    def _open_mpc_report(self, measurements, object_name):
+        """Open the MPC report window with the given measurements."""
+        try:
+            from lib.gui.common.mpc_report_window import MPCReportWindow
+            from config import OBS_CODE
+            
+            # Create and show the MPC report window
+            mpc_window = MPCReportWindow(measurements, self)
+            
+            # Pre-fill the object designation if available
+            if object_name and object_name != "Unknown":
+                mpc_window.object_designation.setText(object_name)
+            
+            # Pre-fill the observatory code from config
+            mpc_window.observatory_code.setText(OBS_CODE)
+            
+            # Show the window
+            mpc_window.show()
+            mpc_window.raise_()
+            mpc_window.activateWindow()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open MPC report window: {str(e)}")
 
 class OrbitComputationDialog(QDialog):
     def __init__(self, parent=None, target_name=None):
