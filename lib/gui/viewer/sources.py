@@ -327,6 +327,7 @@ class SourceDetectionMixin:
         self._source_highlight_index = row_index
         self.image_label.update()
 
+
     def detect_gaia_stars_in_image(self):
         """Detect Gaia stars in the image and cross-match with detected sources."""
         if self.image_data is None:

@@ -736,14 +736,29 @@ class ImageLabel(QLabel):
         if not self.parent_viewer:
             return
         
-        # Ensure a star catalog is loaded (Gaia detection results exist)
-        if not hasattr(self.parent_viewer, '_gaia_detection_overlay') or not self.parent_viewer._gaia_detection_overlay:
+        # Ensure a star catalog is loaded (check for Gaia catalog from SIMBAD search first, then legacy detection)
+        has_gaia_catalog = False
+        
+        # Check for Gaia catalog loaded via SIMBAD search menu (preferred method)
+        if (hasattr(self.parent_viewer, '_gaia_overlay') and 
+            self.parent_viewer._gaia_overlay):
+            has_gaia_catalog = True
+            print("[DEBUG] Found Gaia catalog from SIMBAD search")
+        
+        # Check for legacy Gaia detection results (source detection + matching)
+        elif (hasattr(self.parent_viewer, '_gaia_detection_overlay') and 
+              self.parent_viewer._gaia_detection_overlay):
+            has_gaia_catalog = True
+            print("[DEBUG] Found legacy Gaia detection results")
+        
+        if not has_gaia_catalog:
             QMessageBox.warning(self.parent_viewer, "No Star Catalog",
                                  "Load a star catalog first before computing object positions.\n\n"
-                                 "To load a star catalog:\n"
-                                 "1. Go to the Catalogs menu\n"
-                                 "2. Select 'Detect Gaia Stars in Image'\n"
-                                 "3. This will load Gaia DR3 stars and match them with detected sources")
+                                 "Recommended workflow:\n"
+                                 "1. Go to SIMBAD search menu → 'Search Gaia catalog'\n"
+                                 "2. Enter magnitude limit (e.g., 16.0)\n"
+                                 "3. Then right-click on motion-tracked image → 'Compute object positions'\n\n"
+                                 "Alternative: Use 'Detect Gaia Stars in Image' (less precise)")
             return
 
         # Get the current image path

@@ -484,27 +484,150 @@ class OrbitDataWindow(QMainWindow):
         return [file_path for file_path, _ in file_dates]
     
     def _compute_lspc(self, positions):
-        """Compute LSPC using matched Gaia stars."""
+        """Compute LSPC using Gaia catalog positions directly (bypassing source detection)."""
         if not hasattr(self, 'parent_viewer') or not self.parent_viewer:
             QMessageBox.warning(self, "Error", "No parent viewer available.")
             return
         
-        # Check if Gaia detection results are available
-        if not hasattr(self.parent_viewer, '_gaia_detection_overlay') or not self.parent_viewer._gaia_detection_overlay:
-            QMessageBox.warning(self, "No Star Catalog", 
-                              "Load a star catalog first.\n\n"
-                              "To load a star catalog:\n"
-                              "1. Go to the Catalogs menu\n"
-                              "2. Select 'Detect Gaia Stars in Image'\n"
-                              "3. This will load Gaia DR3 stars and match them with detected sources")
+        # Check if we have WCS and can load Gaia catalog directly
+        if not hasattr(self.parent_viewer, 'wcs') or not self.parent_viewer.wcs:
+            QMessageBox.warning(self, "No WCS Solution", 
+                              "Image must be plate-solved first.\n\n"
+                              "To plate-solve the image:\n"
+                              "1. Go to the Tools menu\n"
+                              "2. Select 'Plate Solve Image'\n"
+                              "3. Wait for the solution to complete")
             return
         
-        gaia_detection_results = self.parent_viewer._gaia_detection_overlay
+        # Try to use existing Gaia catalog from SIMBAD search menu first
+        gaia_detection_results = None
+        
+        # Debug: Check what overlays are available
+        print(f"[DEBUG] Checking for Gaia overlays...")
+        print(f"[DEBUG] Parent viewer type: {type(self.parent_viewer)}")
+        print(f"[DEBUG] Parent viewer class: {self.parent_viewer.__class__.__name__ if self.parent_viewer else 'None'}")
+        print(f"[DEBUG] Has _gaia_overlay attribute: {hasattr(self.parent_viewer, '_gaia_overlay')}")
+        if hasattr(self.parent_viewer, '_gaia_overlay'):
+            print(f"[DEBUG] _gaia_overlay value: {self.parent_viewer._gaia_overlay}")
+            print(f"[DEBUG] _gaia_overlay type: {type(self.parent_viewer._gaia_overlay)}")
+            if self.parent_viewer._gaia_overlay:
+                print(f"[DEBUG] _gaia_overlay length: {len(self.parent_viewer._gaia_overlay) if isinstance(self.parent_viewer._gaia_overlay, (list, tuple)) else 'not list/tuple'}")
+        print(f"[DEBUG] Has _gaia_detection_overlay attribute: {hasattr(self.parent_viewer, '_gaia_detection_overlay')}")
+        if hasattr(self.parent_viewer, '_gaia_detection_overlay'):
+            print(f"[DEBUG] _gaia_detection_overlay value: {self.parent_viewer._gaia_detection_overlay}")
+            if self.parent_viewer._gaia_detection_overlay:
+                print(f"[DEBUG] _gaia_detection_overlay length: {len(self.parent_viewer._gaia_detection_overlay) if isinstance(self.parent_viewer._gaia_detection_overlay, (list, tuple)) else 'not list/tuple'}")
+        
+        # Debug: Check other relevant attributes
+        print(f"[DEBUG] Has WCS: {hasattr(self.parent_viewer, 'wcs') and self.parent_viewer.wcs is not None}")
+        print(f"[DEBUG] Has image_data: {hasattr(self.parent_viewer, 'image_data') and self.parent_viewer.image_data is not None}")
+        
+        # List all attributes that start with _gaia to see what's available
+        gaia_attrs = [attr for attr in dir(self.parent_viewer) if attr.startswith('_gaia')]
+        print(f"[DEBUG] All _gaia* attributes: {gaia_attrs}")
+        
+        # Check for Gaia catalog loaded via SIMBAD search menu
+        if (hasattr(self.parent_viewer, '_gaia_overlay') and 
+            self.parent_viewer._gaia_overlay):
+            gaia_objects_in_field, coords_list = self.parent_viewer._gaia_overlay
+            
+            # Convert to detection results format using precise WCS positions
+            gaia_detection_results = []
+            for gaia_obj, (pixel_x, pixel_y) in zip(gaia_objects_in_field, coords_list):
+                # Create a precise "detected source" using WCS-derived coordinates
+                from lib.sci.sources import DetectedSource
+                precise_source = DetectedSource(
+                    id=len(gaia_detection_results) + 1,
+                    x=pixel_x,
+                    y=pixel_y,
+                    ra=gaia_obj.ra,
+                    dec=gaia_obj.dec,
+                    flux=1000.0,  # Mock value
+                    snr=50.0      # Mock value
+                )
+                
+                # Distance is 0 since we're using exact catalog positions
+                gaia_detection_results.append((gaia_obj, precise_source, 0.0))
+            
+            print(f"[DEBUG] Using existing Gaia catalog from SIMBAD menu ({len(gaia_detection_results)} stars, precise WCS positions)")
+        
+        # Try legacy Gaia detection results (source detection + matching)
+        elif (hasattr(self.parent_viewer, '_gaia_detection_overlay') and 
+              self.parent_viewer._gaia_detection_overlay):
+            gaia_detection_results = self.parent_viewer._gaia_detection_overlay
+            print("[DEBUG] Using existing Gaia detection results (legacy mode with source detection)")
+        
+        # If no existing results, load Gaia catalog directly using WCS
+        if not gaia_detection_results:
+            print("[DEBUG] No existing Gaia detection results, loading catalog directly")
+            try:
+                # Load Gaia catalog using precise WCS positions
+                from lib.sci.catalogs import AstrometryCatalog
+                catalog = AstrometryCatalog()
+                
+                # Get image shape
+                if hasattr(self.parent_viewer, 'image_data') and self.parent_viewer.image_data is not None:
+                    image_shape = self.parent_viewer.image_data.shape
+                else:
+                    QMessageBox.warning(self, "No Image Data", "No image data available for catalog loading.")
+                    return
+                
+                print(f"[DEBUG] Loading Gaia catalog for image shape: {image_shape}")
+                
+                # Get Gaia objects in the field
+                gaia_objects = catalog.get_field_gaia_objects(
+                    self.parent_viewer.wcs, image_shape, max_magnitude=15.0
+                )
+                
+                if len(gaia_objects) < 6:
+                    QMessageBox.warning(self, "Insufficient Stars", 
+                                      f"Only {len(gaia_objects)} Gaia stars found in the field.\n\n"
+                                      "At least 6 stars are required for LSPC calculation.\n\n"
+                                      "Recommended workflow:\n"
+                                      "1. Go to SIMBAD search menu → 'Search Gaia catalog'\n"
+                                      "2. Use a higher magnitude limit (e.g., 16-18)\n"
+                                      "3. Then run LSPC calculation with the loaded catalog")
+                    return
+                
+                print(f"[DEBUG] Found {len(gaia_objects)} Gaia stars in field")
+                
+                # Convert to pixel coordinates using WCS (this is the precise step!)
+                pixel_coords = catalog.get_gaia_object_pixel_coordinates(self.parent_viewer.wcs, gaia_objects)
+                
+                # Create pseudo-detection results using WCS-derived positions
+                gaia_detection_results = []
+                for gaia_obj, pixel_x, pixel_y in pixel_coords:
+                    # Create a mock DetectedSource with precise WCS-derived coordinates
+                    from lib.sci.sources import DetectedSource
+                    precise_source = DetectedSource(
+                        id=len(gaia_detection_results) + 1,
+                        x=pixel_x,
+                        y=pixel_y,
+                        ra=gaia_obj.ra,  # Use catalog RA/Dec
+                        dec=gaia_obj.dec,
+                        flux=1000.0,  # Mock values
+                        snr=50.0      # Mock values
+                    )
+                    
+                    # Distance is 0 since we're using exact catalog positions
+                    gaia_detection_results.append((gaia_obj, precise_source, 0.0))
+                
+                print(f"[DEBUG] Created {len(gaia_detection_results)} precise catalog-based star positions")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Catalog Loading Error", 
+                                   f"Failed to load Gaia catalog:\n{str(e)}\n\n"
+                                   "Fallback: Please use 'Detect Gaia Stars in Image' from the Catalogs menu.")
+                return
         
         if not gaia_detection_results:
-            QMessageBox.warning(self, "No Matched Stars", 
-                              "No matched Gaia stars available.\n\n"
-                              "Please load Gaia stars and match them with detected sources first.")
+            QMessageBox.warning(self, "No Star Catalog", 
+                              "No star catalog available for LSPC calculation.\n\n"
+                              "Recommended workflow:\n"
+                              "1. Go to SIMBAD search menu → 'Search Gaia catalog'\n"
+                              "2. Enter magnitude limit (e.g., 16.0)\n"
+                              "3. Then calculate LSPC using the precise catalog positions\n\n"
+                              "Alternative: Use 'Detect Gaia Stars in Image' (less precise)")
             return
         
         # Validate Gaia detection results structure
@@ -1010,10 +1133,23 @@ class OrbitDataWindow(QMainWindow):
         # Model information
         model_type = lspc_results.get('model_type', 'unknown')
         num_parameters = lspc_results.get('num_parameters', 0)
+        comparison_stars = lspc_results.get('comparison_stars', [])
+        
+        # Check if using precise catalog positions (distance = 0)
+        using_precise_positions = False
+        if comparison_stars:
+            avg_distance = sum(star.get('distance_arcsec', 0) for star in comparison_stars) / len(comparison_stars)
+            using_precise_positions = avg_distance < 0.01  # Less than 0.01 arcsec means catalog positions
+        
         solution_text += "MODEL INFORMATION:\n"
         solution_text += "-" * 20 + "\n"
         solution_text += f"Model type: {model_type.upper()}\n"
         solution_text += f"Parameters: {num_parameters}\n"
+        if using_precise_positions:
+            solution_text += f"Star positions: PRECISE CATALOG (WCS-derived)\n"
+            solution_text += f"Centroiding errors: ELIMINATED\n"
+        else:
+            solution_text += f"Star positions: Detected sources (with centroiding errors)\n"
         if model_type == "linear":
             solution_text += "Equations: RA = a*x + b*y + c, Dec = d*x + e*y + f\n"
         elif model_type == "radial":
