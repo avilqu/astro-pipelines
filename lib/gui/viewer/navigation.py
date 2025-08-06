@@ -40,8 +40,8 @@ class NavigationMixin:
             scale = scale_x  # or scale_y, they should be equal
             
             # Calculate the offset to center the image within the padded label
-            x_offset = (label_w - pixmap_w) // 2
-            y_offset = (label_h - pixmap_h) // 2
+            x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+            y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
             
             # Get the center of the viewport in label coordinates
             center_x = hbar.value() + viewport_w // 2
@@ -81,8 +81,8 @@ class NavigationMixin:
             scale = scale_x  # or scale_y, they should be equal
             
             # Calculate the offset to center the image within the padded label
-            x_offset = (label_w - pixmap_w) // 2
-            y_offset = (label_h - pixmap_h) // 2
+            x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+            y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
             
             # Convert image coordinates to label coordinates (same as overlay conversion)
             center_x = int(img_cx * scale) + x_offset
@@ -91,8 +91,8 @@ class NavigationMixin:
             hbar = self.scroll_area.horizontalScrollBar()
             vbar = self.scroll_area.verticalScrollBar()
             # Allow centering beyond image boundaries by not constraining to minimum values
-            hbar.setValue(center_x - viewport_w // 2)
-            vbar.setValue(center_y - viewport_h // 2)
+            hbar.setValue(int(center_x - viewport_w // 2))
+            vbar.setValue(int(center_y - viewport_h // 2))
 
     def _center_image_in_viewport(self):
         """Center the image in the viewport, accounting for padding"""

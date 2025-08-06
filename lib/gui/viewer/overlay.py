@@ -159,8 +159,8 @@ class ImageLabel(QLabel):
         scale_x = pixmap_w / img_w
         scale_y = pixmap_h / img_h
         scale = scale_x  # or scale_y, they should be equal
-        x_offset = (label_w - pixmap_w) // 2
-        y_offset = (label_h - pixmap_h) // 2
+        x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+        y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
         # Map mouse position to image coordinates
         pixmap_x = mouse_pos.x() - x_offset
         pixmap_y = mouse_pos.y() - y_offset
@@ -263,8 +263,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 x_img, y_img = pixel_coords
                 # Use direct y (no flip)
                 x_disp = x_img * scale + x_offset
@@ -298,8 +298,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 pixel_coords_disp = [
                     (x * scale + x_offset, y * scale + y_offset)
                     for (x, y) in pixel_coords_list
@@ -334,8 +334,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 pixel_coords_disp = [
                     (x * scale + x_offset, y * scale + y_offset)
                     for (x, y) in pixel_coords_list
@@ -370,8 +370,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 pixel_coords_disp = [
                     (x * scale + x_offset, y * scale + y_offset)
                     for (x, y) in pixel_coords_list
@@ -406,8 +406,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 pixel_coords_disp = [
                     (x * scale + x_offset, y * scale + y_offset)
                     for (x, y) in pixel_coords_list
@@ -440,8 +440,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 _, (x_img, y_img) = self.parent_viewer._ephemeris_overlay
                 x_disp = x_img * scale + x_offset
                 y_disp = y_img * scale + y_offset
@@ -483,8 +483,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 _, (x_img, y_img) = self.parent_viewer._computed_positions_overlay
                 x_disp = x_img * scale + x_offset
                 y_disp = y_img * scale + y_offset
@@ -522,8 +522,8 @@ class ImageLabel(QLabel):
                 pixmap_w, pixmap_h = pixmap.width(), pixmap.height()
                 label_w,  label_h  = self.width(), self.height()
                 scale_x = pixmap_w / img_w
-                x_off   = (label_w  - pixmap_w) // 2
-                y_off   = (label_h  - pixmap_h) // 2
+                x_off   = (label_w  - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_off   = (label_h  - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 _, (x_img, y_img) = self.parent_viewer._measurement_overlay
                 x_disp = x_img * scale_x + x_off
                 y_disp = y_img * scale_x + y_off
@@ -563,8 +563,8 @@ class ImageLabel(QLabel):
                 scale_x = pixmap_w / img_w
                 scale_y = pixmap_h / img_h
                 scale = scale_x
-                x_offset = (label_w - pixmap_w) // 2
-                y_offset = (label_h - pixmap_h) // 2
+                x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+                y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
                 
                 # Extract pixel coordinates from detected sources and scale them properly
                 pixel_coords_list = [(result[1].x, result[1].y) for result in gaia_detection_results]
@@ -608,8 +608,8 @@ class ImageLabel(QLabel):
         scale_x = pixmap_w / img_w
         scale_y = pixmap_h / img_h
         scale = scale_x
-        x_offset = (label_w - pixmap_w) // 2
-        y_offset = (label_h - pixmap_h) // 2
+        x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+        y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
         def to_img_coords(qpoint):
             px = qpoint.x() - x_offset
             py = qpoint.y() - y_offset
@@ -637,8 +637,8 @@ class ImageLabel(QLabel):
         scale_x = pixmap_w / img_w
         scale_y = pixmap_h / img_h
         scale = scale_x  # or scale_y, they should be equal
-        x_offset = (label_w - pixmap_w) // 2
-        y_offset = (label_h - pixmap_h) // 2
+        x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+        y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
         
         # Map mouse position to image coordinates
         pixmap_x = pos.x() - x_offset
@@ -779,8 +779,8 @@ class ImageLabel(QLabel):
         scale_x = pixmap_w / img_w
         scale_y = pixmap_h / img_h
         scale = scale_x
-        x_offset = (label_w - pixmap_w) // 2
-        y_offset = (label_h - pixmap_h) // 2
+        x_offset = (label_w - pixmap_w) / 2.0  # Use float division to avoid integer truncation
+        y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
         
         # Map cursor position to image coordinates
         pixmap_x = cursor_pos.x() - x_offset
