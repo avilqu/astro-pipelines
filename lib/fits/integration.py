@@ -1528,7 +1528,8 @@ def compute_object_positions_from_motion_tracked(
     stacked_image_path: str, 
     cursor_coords: Tuple[float, float],
     original_files: List[str] = None,
-    loaded_files: List[str] = None
+    loaded_files: List[str] = None,
+    lspc_constants: Dict[str, float] = None
 ) -> List[Dict[str, any]]:
     """
     Compute the position of an object in each original image from its position in a motion tracked stacked image.
@@ -1549,6 +1550,9 @@ def compute_object_positions_from_motion_tracked(
     loaded_files : List[str], optional
         List of loaded file paths. If provided, only motion-tracked stacks in this list
         will be added to the results.
+    lspc_constants : Dict[str, float], optional
+        LSPC plate constants (a, b, c, d, e, f) for improved astrometric precision.
+        If provided, will be used to calculate LSPC RA/Dec coordinates.
         
     Returns:
     --------
@@ -1563,6 +1567,8 @@ def compute_object_positions_from_motion_tracked(
         - shift_y: Y shift that was applied during stacking
         - ra: Right ascension (if WCS available)
         - dec: Declination (if WCS available)
+        - lspc_ra: LSPC-corrected right ascension (if LSPC constants provided)
+        - lspc_dec: LSPC-corrected declination (if LSPC constants provided)
     """
     try:
         from astropy.io import fits
@@ -1681,6 +1687,21 @@ def compute_object_positions_from_motion_tracked(
             except Exception:
                 pass
             
+            # Apply LSPC transformation if constants are provided
+            lspc_ra = None
+            lspc_dec = None
+            if lspc_constants:
+                a = lspc_constants.get('a')
+                b = lspc_constants.get('b')
+                c = lspc_constants.get('c')
+                d = lspc_constants.get('d')
+                e = lspc_constants.get('e')
+                f = lspc_constants.get('f')
+                
+                if all(v is not None for v in [a, b, c, d, e, f]):
+                    lspc_ra = a * original_x + b * original_y + c
+                    lspc_dec = d * original_x + e * original_y + f
+            
             result = {
                 'file_path': file_path,
                 'original_x': original_x,
@@ -1690,7 +1711,9 @@ def compute_object_positions_from_motion_tracked(
                 'shift_x': shift_x,
                 'shift_y': shift_y,
                 'ra': original_ra,
-                'dec': original_dec
+                'dec': original_dec,
+                'lspc_ra': lspc_ra,
+                'lspc_dec': lspc_dec
             }
             
             results.append(result)

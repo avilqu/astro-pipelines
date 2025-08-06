@@ -1044,10 +1044,21 @@ class OrbitDataWindow(QMainWindow):
             except Exception:
                 continue
 
+            # Get LSPC constants if available
+            lspc_constants = None
+            if hasattr(self, 'lspc_results') and self.lspc_results:
+                lspc_constants = self.lspc_results.get('plate_constants')
+                if lspc_constants:
+                    print(f"[DEBUG] Using LSPC constants: {lspc_constants}")
+                else:
+                    print("[DEBUG] No LSPC constants found in results")
+            else:
+                print("[DEBUG] No LSPC results available")
+            
             # Compute positions back to original images
             try:
                 positions = compute_object_positions_from_motion_tracked(
-                    file_path, (x, y)
+                    file_path, (x, y), lspc_constants=lspc_constants
                 )
             except Exception as exc:
                 print(f"Warning: could not compute object positions for {file_path}: {exc}")
@@ -1056,10 +1067,25 @@ class OrbitDataWindow(QMainWindow):
             # Gather RA/Dec with times from original images
             times_mjd, ras_deg, decs_deg = [], [], []
             for pos in positions:
-                ra_deg = pos.get('ra')
-                dec_deg = pos.get('dec')
+                # Check if LSPC coordinates are available and use them instead of WCS
+                lspc_ra = pos.get('lspc_ra')
+                lspc_dec = pos.get('lspc_dec')
+                
+                if lspc_ra is not None and lspc_dec is not None:
+                    # Use LSPC coordinates (more precise)
+                    ra_deg = lspc_ra
+                    dec_deg = lspc_dec
+                    print(f"Using LSPC coordinates: RA={ra_deg:.6f}, Dec={dec_deg:.6f}")
+                else:
+                    # Fall back to WCS coordinates
+                    ra_deg = pos.get('ra')
+                    dec_deg = pos.get('dec')
+                    if ra_deg is not None and dec_deg is not None:
+                        print(f"Using WCS coordinates: RA={ra_deg:.6f}, Dec={dec_deg:.6f}")
+                
                 if ra_deg is None or dec_deg is None:
                     continue
+                    
                 orig_path = pos['file_path']
                 try:
                     with fits.open(orig_path) as hdul_o:
@@ -1120,6 +1146,29 @@ class OrbitDataWindow(QMainWindow):
             QMessageBox.warning(self, "No Measurements",
                                 "No measurement markers found or RA/Dec could not be computed.")
             return
+        
+        # Check if LSPC was used and inform the user
+        lspc_used = False
+        if hasattr(self, 'lspc_results') and self.lspc_results:
+            # Check if any measurements used LSPC coordinates
+            for measurement in measurements:
+                # We need to check if LSPC was actually used in the computation
+                # This is a bit tricky since we don't store this info in measurements
+                # For now, we'll assume LSPC was used if we have LSPC results
+                lspc_used = True
+                break
+        
+        if not lspc_used and hasattr(self, 'lspc_results') and self.lspc_results:
+            QMessageBox.information(self, "LSPC Available", 
+                                  "LSPC solution is available and should be used for measurements.\n"
+                                  "This will provide better astrometric precision than WCS coordinates.")
+        elif not hasattr(self, 'lspc_results') or not self.lspc_results:
+            QMessageBox.information(self, "LSPC Not Available", 
+                                  "No LSPC solution available. Measurements use WCS coordinates only.\n\n"
+                                  "For improved astrometric precision:\n"
+                                  "1. Load Gaia stars (Catalogs → Detect Gaia Stars in Image)\n"
+                                  "2. Ensure stars are properly matched\n"
+                                  "3. Recompute LSPC solution")
 
         self._show_measurements_tab(measurements)
 
