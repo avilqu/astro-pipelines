@@ -572,7 +572,7 @@ class OrbitDataWindow(QMainWindow):
             QMessageBox.critical(self, "LSPC Error", f"Error computing LSPC: {str(e)}")
     
     def _calculate_lspc(self, gaia_detection_results, positions):
-        """Calculate LSPC using matched Gaia stars."""
+        """Calculate LSPC using matched Gaia stars with higher-order distortion model."""
         
         # Extract comparison star data
         # gaia_detection_results is a list of (GaiaObject, DetectedSource, distance_arcsec) tuples
@@ -589,47 +589,158 @@ class OrbitDataWindow(QMainWindow):
                 'catalog_dec': gaia_obj.dec,    # Catalog Dec (degrees)
                 'measured_x': detected_source.x, # Measured pixel X
                 'measured_y': detected_source.y, # Measured pixel Y
-                'gaia_id': gaia_obj.source_id
+                'gaia_id': gaia_obj.source_id,
+                'distance_arcsec': distance_arcsec  # Matching distance for weighting
             })
         
-        # For now, we'll use a simple linear transformation
-        # In practice, you might want to use a more sophisticated plate model
-        # This is a simplified version - you can enhance it later
-        
         # Check if we have enough valid comparison stars after filtering
-        if len(comparison_stars) < 3:
-            raise ValueError(f"Only {len(comparison_stars)} valid comparison stars found after filtering. At least 3 are required for LSPC calculation.")
+        min_stars_needed = 6  # Need at least 6 stars for higher-order model
+        if len(comparison_stars) < min_stars_needed:
+            raise ValueError(f"Only {len(comparison_stars)} valid comparison stars found after filtering. At least {min_stars_needed} are required for higher-order LSPC calculation.")
+        
+        print(f"[DEBUG] Using {len(comparison_stars)} stars for higher-order plate model")
         
         # Collect data for least squares
         catalog_ras = np.array([star['catalog_ra'] for star in comparison_stars])
         catalog_decs = np.array([star['catalog_dec'] for star in comparison_stars])
         measured_xs = np.array([star['measured_x'] for star in comparison_stars])
         measured_ys = np.array([star['measured_y'] for star in comparison_stars])
+        distances = np.array([star['distance_arcsec'] for star in comparison_stars])
         
-        # Simple linear transformation: RA = a*x + b*y + c, Dec = d*x + e*y + f
+        # Calculate image center for normalized coordinates
+        image_center_x = np.mean(measured_xs)
+        image_center_y = np.mean(measured_ys)
+        
+        # Normalize coordinates to improve numerical stability
+        # This helps with convergence and reduces correlation between parameters
+        norm_scale = max(np.std(measured_xs), np.std(measured_ys))
+        if norm_scale == 0:
+            norm_scale = 1000  # fallback if all stars are at same position
+        
+        norm_xs = (measured_xs - image_center_x) / norm_scale
+        norm_ys = (measured_ys - image_center_y) / norm_scale
+        
+        print(f"[DEBUG] Image center: ({image_center_x:.1f}, {image_center_y:.1f})")
+        print(f"[DEBUG] Normalization scale: {norm_scale:.1f}")
+        
+        # Choose plate model based on number of available stars
+        if len(comparison_stars) >= 12:
+            # 12-parameter model with quadratic distortion
+            model_type = "quadratic"
+            print("[DEBUG] Using 12-parameter quadratic distortion model")
+        elif len(comparison_stars) >= 8:
+            # 8-parameter model with radial distortion
+            model_type = "radial"
+            print("[DEBUG] Using 8-parameter radial distortion model")
+        else:
+            # 6-parameter linear model (fallback)
+            model_type = "linear"
+            print("[DEBUG] Using 6-parameter linear model (fallback)")
+        
+        # Define the plate model transformation function
+        def apply_plate_model(params, x_norm, y_norm, model_type):
+            """Apply the selected plate model to normalized coordinates."""
+            if model_type == "linear":
+                # 6-parameter linear model: RA = a*x + b*y + c, Dec = d*x + e*y + f
+                a, b, c, d, e, f = params
+                ra_pred = a * x_norm + b * y_norm + c
+                dec_pred = d * x_norm + e * y_norm + f
+                
+            elif model_type == "radial":
+                # 8-parameter model with radial distortion
+                # RA = a*x + b*y + c + k1*r²*x
+                # Dec = d*x + e*y + f + k2*r²*y
+                # where r² = x² + y²
+                a, b, c, d, e, f, k1, k2 = params
+                r_squared = x_norm**2 + y_norm**2
+                ra_pred = a * x_norm + b * y_norm + c + k1 * r_squared * x_norm
+                dec_pred = d * x_norm + e * y_norm + f + k2 * r_squared * y_norm
+                
+            elif model_type == "quadratic":
+                # 12-parameter model with full quadratic terms
+                # RA = a*x + b*y + c + d*x² + e*xy + f*y²
+                # Dec = g*x + h*y + i + j*x² + k*xy + l*y²
+                a, b, c, d, e, f, g, h, i, j, k, l = params
+                ra_pred = (a * x_norm + b * y_norm + c + 
+                          d * x_norm**2 + e * x_norm * y_norm + f * y_norm**2)
+                dec_pred = (g * x_norm + h * y_norm + i + 
+                           j * x_norm**2 + k * x_norm * y_norm + l * y_norm**2)
+            
+            return ra_pred, dec_pred
+        
+        # Define residuals function with robust weighting
         def residuals(params):
-            a, b, c, d, e, f = params
-            predicted_ra = a * measured_xs + b * measured_ys + c
-            predicted_dec = d * measured_xs + e * measured_ys + f
-            ra_residuals = predicted_ra - catalog_ras
-            dec_residuals = predicted_dec - catalog_decs
-            return np.concatenate([ra_residuals, dec_residuals])
+            ra_pred, dec_pred = apply_plate_model(params, norm_xs, norm_ys, model_type)
+            
+            ra_residuals = ra_pred - catalog_ras
+            dec_residuals = dec_pred - catalog_decs
+            
+            # Apply weights based on matching distance (closer matches get higher weight)
+            # Convert distances to weights: smaller distance = higher weight
+            weights = 1.0 / (1.0 + distances**2)  # Avoid division by zero
+            weights = weights / np.mean(weights)  # Normalize weights
+            
+            # Apply weights to residuals
+            weighted_ra_residuals = ra_residuals * np.sqrt(weights)
+            weighted_dec_residuals = dec_residuals * np.sqrt(weights)
+            
+            return np.concatenate([weighted_ra_residuals, weighted_dec_residuals])
         
-        # Initial guess (simple scaling)
-        initial_guess = [0.001, 0.0, np.mean(catalog_ras), 0.0, -0.001, np.mean(catalog_decs)]
+        # Set initial parameter guesses based on model type
+        if model_type == "linear":
+            # 6 parameters: a, b, c, d, e, f
+            initial_guess = [0.001, 0.0, np.mean(catalog_ras), 
+                           0.0, -0.001, np.mean(catalog_decs)]
+        elif model_type == "radial":
+            # 8 parameters: a, b, c, d, e, f, k1, k2
+            initial_guess = [0.001, 0.0, np.mean(catalog_ras), 
+                           0.0, -0.001, np.mean(catalog_decs),
+                           0.0, 0.0]  # k1, k2 distortion coefficients
+        elif model_type == "quadratic":
+            # 12 parameters: a, b, c, d, e, f, g, h, i, j, k, l
+            initial_guess = [0.001, 0.0, np.mean(catalog_ras), 0.0, 0.0, 0.0,  # RA terms
+                           0.0, -0.001, np.mean(catalog_decs), 0.0, 0.0, 0.0]  # Dec terms
         
-        # Solve least squares
-        result = least_squares(residuals, initial_guess)
+        print(f"[DEBUG] Initial parameter guess: {len(initial_guess)} parameters")
         
-        if not result.success:
-            raise ValueError("LSPC calculation failed to converge")
+        # Solve least squares with robust fitting
+        try:
+            result = least_squares(residuals, initial_guess, method='lm', max_nfev=1000)
+            
+            if not result.success:
+                print(f"[DEBUG] First attempt failed: {result.message}")
+                # Try with different method
+                result = least_squares(residuals, initial_guess, method='trf', max_nfev=2000)
+                
+            if not result.success:
+                raise ValueError(f"LSPC calculation failed to converge: {result.message}")
+                
+        except Exception as e:
+            print(f"[DEBUG] Higher-order model failed: {e}")
+            # Fallback to linear model
+            if model_type != "linear":
+                print("[DEBUG] Falling back to linear model")
+                model_type = "linear"
+                initial_guess = [0.001, 0.0, np.mean(catalog_ras), 
+                               0.0, -0.001, np.mean(catalog_decs)]
+                result = least_squares(residuals, initial_guess, method='lm')
+                if not result.success:
+                    raise ValueError(f"Even linear LSPC calculation failed: {result.message}")
+            else:
+                raise e
         
-        a, b, c, d, e, f = result.x
+        fitted_params = result.x
+        print(f"[DEBUG] Fitted {len(fitted_params)} parameters successfully")
         
-        # Calculate RMS residuals
-        final_residuals = residuals(result.x)
-        ra_rms = np.sqrt(np.mean(final_residuals[:len(comparison_stars)]**2))
-        dec_rms = np.sqrt(np.mean(final_residuals[len(comparison_stars):]**2))
+        # Calculate RMS residuals (unweighted for display purposes)
+        ra_pred_final, dec_pred_final = apply_plate_model(fitted_params, norm_xs, norm_ys, model_type)
+        ra_residuals_final = ra_pred_final - catalog_ras
+        dec_residuals_final = dec_pred_final - catalog_decs
+        
+        ra_rms = np.sqrt(np.mean(ra_residuals_final**2))
+        dec_rms = np.sqrt(np.mean(dec_residuals_final**2))
+        
+        print(f"[DEBUG] Final RMS residuals: RA = {ra_rms*3600:.2f} arcsec, Dec = {dec_rms*3600:.2f} arcsec")
         
         # Apply LSPC to the computed positions (only for individual images, not stacked images)
         lspc_positions = []
@@ -677,11 +788,16 @@ class OrbitDataWindow(QMainWindow):
             original_x = pos.get('original_x')
             original_y = pos.get('original_y')
             
-            # Apply LSPC transformation only to individual images
-            lspc_ra = a * original_x + b * original_y + c
-            lspc_dec = d * original_x + e * original_y + f
+            # Normalize coordinates for transformation
+            norm_x = (original_x - image_center_x) / norm_scale
+            norm_y = (original_y - image_center_y) / norm_scale
             
-            print(f"[DEBUG] LSPC RA={lspc_ra}, LSPC Dec={lspc_dec}")
+            # Apply LSPC transformation using the fitted model
+            lspc_ra, lspc_dec = apply_plate_model(fitted_params, np.array([norm_x]), np.array([norm_y]), model_type)
+            lspc_ra = lspc_ra[0]  # Extract scalar from array
+            lspc_dec = lspc_dec[0]
+            
+            print(f"[DEBUG] LSPC RA={lspc_ra:.6f}, LSPC Dec={lspc_dec:.6f}")
             
             lspc_positions.append({
                 **pos,
@@ -689,12 +805,42 @@ class OrbitDataWindow(QMainWindow):
                 'lspc_dec': lspc_dec
             })
         
+        # Store plate constants in a format compatible with the coordinate transformation
+        if model_type == "linear":
+            plate_constants = {
+                'a': fitted_params[0], 'b': fitted_params[1], 'c': fitted_params[2],
+                'd': fitted_params[3], 'e': fitted_params[4], 'f': fitted_params[5]
+            }
+        elif model_type == "radial":
+            plate_constants = {
+                'a': fitted_params[0], 'b': fitted_params[1], 'c': fitted_params[2],
+                'd': fitted_params[3], 'e': fitted_params[4], 'f': fitted_params[5],
+                'k1': fitted_params[6], 'k2': fitted_params[7]
+            }
+        elif model_type == "quadratic":
+            plate_constants = {
+                'a': fitted_params[0], 'b': fitted_params[1], 'c': fitted_params[2],
+                'd': fitted_params[3], 'e': fitted_params[4], 'f': fitted_params[5],
+                'g': fitted_params[6], 'h': fitted_params[7], 'i': fitted_params[8],
+                'j': fitted_params[9], 'k': fitted_params[10], 'l': fitted_params[11]
+            }
+        
+        # Add normalization parameters needed for coordinate transformation
+        plate_constants.update({
+            'model_type': model_type,
+            'image_center_x': image_center_x,
+            'image_center_y': image_center_y,
+            'norm_scale': norm_scale
+        })
+        
         result = {
-            'plate_constants': {'a': a, 'b': b, 'c': c, 'd': d, 'e': e, 'f': f},
+            'plate_constants': plate_constants,
             'rms_ra': ra_rms,
             'rms_dec': dec_rms,
             'comparison_stars': comparison_stars,
-            'lspc_positions': lspc_positions
+            'lspc_positions': lspc_positions,
+            'model_type': model_type,
+            'num_parameters': len(fitted_params)
         }
         
         print(f"[DEBUG] LSPC calculation completed successfully")
@@ -858,30 +1004,93 @@ class OrbitDataWindow(QMainWindow):
     def _show_lspc_info_in_tab(self, lspc_results):
         """Show LSPC information in the current Positions tab."""
         # Format LSPC solution values for display
-        solution_text = "LSPC SOLUTION VALUES\n"
+        solution_text = "HIGHER-ORDER LSPC SOLUTION\n"
         solution_text += "=" * 50 + "\n\n"
+        
+        # Model information
+        model_type = lspc_results.get('model_type', 'unknown')
+        num_parameters = lspc_results.get('num_parameters', 0)
+        solution_text += "MODEL INFORMATION:\n"
+        solution_text += "-" * 20 + "\n"
+        solution_text += f"Model type: {model_type.upper()}\n"
+        solution_text += f"Parameters: {num_parameters}\n"
+        if model_type == "linear":
+            solution_text += "Equations: RA = a*x + b*y + c, Dec = d*x + e*y + f\n"
+        elif model_type == "radial":
+            solution_text += "Equations: RA = a*x + b*y + c + k1*r²*x\n"
+            solution_text += "           Dec = d*x + e*y + f + k2*r²*y\n"
+        elif model_type == "quadratic":
+            solution_text += "Equations: RA = a*x + b*y + c + d*x² + e*xy + f*y²\n"
+            solution_text += "           Dec = g*x + h*y + i + j*x² + k*xy + l*y²\n"
+        solution_text += "\n"
         
         # Plate constants
         solution_text += "PLATE CONSTANTS:\n"
         solution_text += "-" * 20 + "\n"
         constants = lspc_results.get('plate_constants', {})
         if constants:
-            a = constants.get('a')
-            b = constants.get('b')
-            c = constants.get('c')
-            d = constants.get('d')
-            e = constants.get('e')
-            f = constants.get('f')
+            if model_type == "linear":
+                a, b, c = constants.get('a'), constants.get('b'), constants.get('c')
+                d, e, f = constants.get('d'), constants.get('e'), constants.get('f')
+                
+                if all(v is not None for v in [a, b, c, d, e, f]):
+                    solution_text += f"a = {a:12.8f}  (RA linear terms)\n"
+                    solution_text += f"b = {b:12.8f}\n"
+                    solution_text += f"c = {c:12.8f}\n"
+                    solution_text += f"d = {d:12.8f}  (Dec linear terms)\n"
+                    solution_text += f"e = {e:12.8f}\n"
+                    solution_text += f"f = {f:12.8f}\n\n"
+                else:
+                    solution_text += "Linear constants: N/A\n\n"
+                    
+            elif model_type == "radial":
+                a, b, c = constants.get('a'), constants.get('b'), constants.get('c')
+                d, e, f = constants.get('d'), constants.get('e'), constants.get('f')
+                k1, k2 = constants.get('k1'), constants.get('k2')
+                
+                if all(v is not None for v in [a, b, c, d, e, f, k1, k2]):
+                    solution_text += f"a = {a:12.8f}  (RA linear terms)\n"
+                    solution_text += f"b = {b:12.8f}\n"
+                    solution_text += f"c = {c:12.8f}\n"
+                    solution_text += f"d = {d:12.8f}  (Dec linear terms)\n"
+                    solution_text += f"e = {e:12.8f}\n"
+                    solution_text += f"f = {f:12.8f}\n"
+                    solution_text += f"k1 = {k1:12.8f}  (RA radial distortion)\n"
+                    solution_text += f"k2 = {k2:12.8f}  (Dec radial distortion)\n\n"
+                else:
+                    solution_text += "Radial constants: N/A\n\n"
+                    
+            elif model_type == "quadratic":
+                params = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
+                values = [constants.get(p) for p in params]
+                
+                if all(v is not None for v in values):
+                    solution_text += f"a = {values[0]:12.8f}  (RA linear & quadratic)\n"
+                    solution_text += f"b = {values[1]:12.8f}\n"
+                    solution_text += f"c = {values[2]:12.8f}\n"
+                    solution_text += f"d = {values[3]:12.8f}\n"
+                    solution_text += f"e = {values[4]:12.8f}\n"
+                    solution_text += f"f = {values[5]:12.8f}\n"
+                    solution_text += f"g = {values[6]:12.8f}  (Dec linear & quadratic)\n"
+                    solution_text += f"h = {values[7]:12.8f}\n"
+                    solution_text += f"i = {values[8]:12.8f}\n"
+                    solution_text += f"j = {values[9]:12.8f}\n"
+                    solution_text += f"k = {values[10]:12.8f}\n"
+                    solution_text += f"l = {values[11]:12.8f}\n\n"
+                else:
+                    solution_text += "Quadratic constants: N/A\n\n"
             
-            if all(v is not None for v in [a, b, c, d, e, f]):
-                solution_text += f"a = {a:12.8f}  (RA = a*x + b*y + c)\n"
-                solution_text += f"b = {b:12.8f}  (Dec = d*x + e*y + f)\n"
-                solution_text += f"c = {c:12.8f}\n"
-                solution_text += f"d = {d:12.8f}\n"
-                solution_text += f"e = {e:12.8f}\n"
-                solution_text += f"f = {f:12.8f}\n\n"
-            else:
-                solution_text += "Plate constants: N/A\n\n"
+            # Normalization parameters
+            image_center_x = constants.get('image_center_x')
+            image_center_y = constants.get('image_center_y')
+            norm_scale = constants.get('norm_scale')
+            
+            if all(v is not None for v in [image_center_x, image_center_y, norm_scale]):
+                solution_text += "NORMALIZATION PARAMETERS:\n"
+                solution_text += "-" * 25 + "\n"
+                solution_text += f"Image center X: {image_center_x:10.2f} pixels\n"
+                solution_text += f"Image center Y: {image_center_y:10.2f} pixels\n"
+                solution_text += f"Scale factor:   {norm_scale:10.2f} pixels\n\n"
         else:
             solution_text += "Plate constants: N/A\n\n"
         
@@ -918,30 +1127,99 @@ class OrbitDataWindow(QMainWindow):
         # Calculate and display residuals for each comparison star
         comparison_stars = lspc_results.get('comparison_stars', [])
         if comparison_stars and constants:
-            a = constants.get('a')
-            b = constants.get('b')
-            c = constants.get('c')
-            d = constants.get('d')
-            e = constants.get('e')
-            f = constants.get('f')
+            # Get normalization parameters
+            image_center_x = constants.get('image_center_x', 0)
+            image_center_y = constants.get('image_center_y', 0)
+            norm_scale = constants.get('norm_scale', 1000)
             
-            if all(v is not None for v in [a, b, c, d, e, f]):
-                for i, star in enumerate(comparison_stars):
-                    # Apply LSPC transformation to measured coordinates
-                    predicted_ra = a * star['measured_x'] + b * star['measured_y'] + c
-                    predicted_dec = d * star['measured_x'] + e * star['measured_y'] + f
+            # Calculate residuals based on model type
+            residuals_calculated = False
+            
+            if model_type == "linear":
+                a, b, c = constants.get('a'), constants.get('b'), constants.get('c')
+                d, e, f = constants.get('d'), constants.get('e'), constants.get('f')
+                
+                if all(v is not None for v in [a, b, c, d, e, f]):
+                    residuals_calculated = True
+                    for i, star in enumerate(comparison_stars):
+                        # Normalize coordinates
+                        norm_x = (star['measured_x'] - image_center_x) / norm_scale
+                        norm_y = (star['measured_y'] - image_center_y) / norm_scale
+                        
+                        # Apply LSPC transformation
+                        predicted_ra = a * norm_x + b * norm_y + c
+                        predicted_dec = d * norm_x + e * norm_y + f
+                        
+                        ra_residual = (predicted_ra - star['catalog_ra']) * 3600
+                        dec_residual = (predicted_dec - star['catalog_dec']) * 3600
+                        total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
+                        
+                        # Format Gaia ID (truncate if too long)
+                        gaia_id = str(star['gaia_id'])
+                        if len(gaia_id) > 15:
+                            gaia_id = gaia_id[:12] + "..."
+                        
+                        solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
+                        
+            elif model_type == "radial":
+                a, b, c = constants.get('a'), constants.get('b'), constants.get('c')
+                d, e, f = constants.get('d'), constants.get('e'), constants.get('f')
+                k1, k2 = constants.get('k1'), constants.get('k2')
+                
+                if all(v is not None for v in [a, b, c, d, e, f, k1, k2]):
+                    residuals_calculated = True
+                    for i, star in enumerate(comparison_stars):
+                        # Normalize coordinates
+                        norm_x = (star['measured_x'] - image_center_x) / norm_scale
+                        norm_y = (star['measured_y'] - image_center_y) / norm_scale
+                        r_squared = norm_x**2 + norm_y**2
+                        
+                        # Apply LSPC transformation
+                        predicted_ra = a * norm_x + b * norm_y + c + k1 * r_squared * norm_x
+                        predicted_dec = d * norm_x + e * norm_y + f + k2 * r_squared * norm_y
+                        
+                        ra_residual = (predicted_ra - star['catalog_ra']) * 3600
+                        dec_residual = (predicted_dec - star['catalog_dec']) * 3600
+                        total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
+                        
+                        # Format Gaia ID (truncate if too long)
+                        gaia_id = str(star['gaia_id'])
+                        if len(gaia_id) > 15:
+                            gaia_id = gaia_id[:12] + "..."
+                        
+                        solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
+                        
+            elif model_type == "quadratic":
+                params = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
+                values = [constants.get(p) for p in params]
+                
+                if all(v is not None for v in values):
+                    residuals_calculated = True
+                    a, b, c, d, e, f, g, h, i, j, k, l = values
                     
-                    ra_residual = (predicted_ra - star['catalog_ra']) * 3600  # Convert to arcseconds
-                    dec_residual = (predicted_dec - star['catalog_dec']) * 3600
-                    total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
-                    
-                    # Format Gaia ID (truncate if too long)
-                    gaia_id = str(star['gaia_id'])
-                    if len(gaia_id) > 15:
-                        gaia_id = gaia_id[:12] + "..."
-                    
-                    solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
-            else:
+                    for idx, star in enumerate(comparison_stars):
+                        # Normalize coordinates
+                        norm_x = (star['measured_x'] - image_center_x) / norm_scale
+                        norm_y = (star['measured_y'] - image_center_y) / norm_scale
+                        
+                        # Apply LSPC transformation
+                        predicted_ra = (a * norm_x + b * norm_y + c + 
+                                      d * norm_x**2 + e * norm_x * norm_y + f * norm_y**2)
+                        predicted_dec = (g * norm_x + h * norm_y + i + 
+                                       j * norm_x**2 + k * norm_x * norm_y + l * norm_y**2)
+                        
+                        ra_residual = (predicted_ra - star['catalog_ra']) * 3600
+                        dec_residual = (predicted_dec - star['catalog_dec']) * 3600
+                        total_residual = np.sqrt(ra_residual**2 + dec_residual**2)
+                        
+                        # Format Gaia ID (truncate if too long)
+                        gaia_id = str(star['gaia_id'])
+                        if len(gaia_id) > 15:
+                            gaia_id = gaia_id[:12] + "..."
+                        
+                        solution_text += f"{gaia_id:15s} {ra_residual:10.2f} {dec_residual:10.2f} {total_residual:10.2f}\n"
+            
+            if not residuals_calculated:
                 solution_text += "Cannot calculate residuals: plate constants are missing\n"
         else:
             solution_text += "No comparison stars available for residual calculation\n"

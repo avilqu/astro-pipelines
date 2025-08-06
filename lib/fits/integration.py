@@ -1691,16 +1691,62 @@ def compute_object_positions_from_motion_tracked(
             lspc_ra = None
             lspc_dec = None
             if lspc_constants:
-                a = lspc_constants.get('a')
-                b = lspc_constants.get('b')
-                c = lspc_constants.get('c')
-                d = lspc_constants.get('d')
-                e = lspc_constants.get('e')
-                f = lspc_constants.get('f')
+                model_type = lspc_constants.get('model_type', 'linear')
+                image_center_x = lspc_constants.get('image_center_x', 0)
+                image_center_y = lspc_constants.get('image_center_y', 0)
+                norm_scale = lspc_constants.get('norm_scale', 1000)
                 
-                if all(v is not None for v in [a, b, c, d, e, f]):
-                    lspc_ra = a * original_x + b * original_y + c
-                    lspc_dec = d * original_x + e * original_y + f
+                # Normalize coordinates
+                norm_x = (original_x - image_center_x) / norm_scale
+                norm_y = (original_y - image_center_y) / norm_scale
+                
+                # Apply the appropriate plate model
+                if model_type == "linear":
+                    a = lspc_constants.get('a')
+                    b = lspc_constants.get('b')
+                    c = lspc_constants.get('c')
+                    d = lspc_constants.get('d')
+                    e = lspc_constants.get('e')
+                    f = lspc_constants.get('f')
+                    
+                    if all(v is not None for v in [a, b, c, d, e, f]):
+                        lspc_ra = a * norm_x + b * norm_y + c
+                        lspc_dec = d * norm_x + e * norm_y + f
+                        
+                elif model_type == "radial":
+                    a = lspc_constants.get('a')
+                    b = lspc_constants.get('b')
+                    c = lspc_constants.get('c')
+                    d = lspc_constants.get('d')
+                    e = lspc_constants.get('e')
+                    f = lspc_constants.get('f')
+                    k1 = lspc_constants.get('k1')
+                    k2 = lspc_constants.get('k2')
+                    
+                    if all(v is not None for v in [a, b, c, d, e, f, k1, k2]):
+                        r_squared = norm_x**2 + norm_y**2
+                        lspc_ra = a * norm_x + b * norm_y + c + k1 * r_squared * norm_x
+                        lspc_dec = d * norm_x + e * norm_y + f + k2 * r_squared * norm_y
+                        
+                elif model_type == "quadratic":
+                    a = lspc_constants.get('a')
+                    b = lspc_constants.get('b')
+                    c = lspc_constants.get('c')
+                    d = lspc_constants.get('d')
+                    e = lspc_constants.get('e')
+                    f = lspc_constants.get('f')
+                    g = lspc_constants.get('g')
+                    h = lspc_constants.get('h')
+                    i = lspc_constants.get('i')
+                    j = lspc_constants.get('j')
+                    k = lspc_constants.get('k')
+                    l = lspc_constants.get('l')
+                    
+                    if all(v is not None for v in [a, b, c, d, e, f, g, h, i, j, k, l]):
+                        lspc_ra = (a * norm_x + b * norm_y + c + 
+                                  d * norm_x**2 + e * norm_x * norm_y + f * norm_y**2)
+                        lspc_dec = (g * norm_x + h * norm_y + i + 
+                                   j * norm_x**2 + k * norm_x * norm_y + l * norm_y**2)
             
             result = {
                 'file_path': file_path,
