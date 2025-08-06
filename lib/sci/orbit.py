@@ -534,8 +534,8 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
     # Add padding to ensure we have entries before the first date and after the last date
     time_span = max(time_span + 4, 6)  # at least 6 hours coverage with 2 hours padding on each side
     
-    # Calculate number of steps needed (1 step per hour, minimum 8 steps)
-    n_steps = max(int(time_span) + 2, 8)
+    # Calculate number of steps needed (1 step per minute for high precision, minimum 360 steps = 6 hours)
+    n_steps = max(int(time_span * 60) + 120, 360)  # Convert hours to minutes + 2 hours padding
     
     findorb_url = "https://www.projectpluto.com/cgi-bin/fo/fo_serve.cgi"
     data = {
@@ -543,7 +543,7 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
         "obj_name": object_designation,
         "year": start_date.strftime('%Y-%m-%dT%H:%M:%S'),
         "n_steps": str(n_steps),
-        "stepsize": "1h",  # 1 hour steps
+        "stepsize": "1m",  # 1 minute steps for high precision
         "mpc_code": "R56",
         "faint_limit": "99",
         "ephem_type": "0",
@@ -569,7 +569,7 @@ def predict_position_findorb(object_designation: str, dates_obs: list):
     
     print(f"[DEBUG] Making Find_Orb API call for {len(dates_obs)} dates")
     print(f"[DEBUG] Date range: {start_date} to {sorted_dates[-1]} (span: {time_span:.1f} hours)")
-    print(f"[DEBUG] Querying ephemeris starting from {start_date} with {n_steps} steps")
+    print(f"[DEBUG] Querying ephemeris starting from {start_date} with {n_steps} steps at 1-minute resolution")
     
     try:
         resp = requests.post(findorb_url, data=data, files=files, headers=headers, timeout=60)

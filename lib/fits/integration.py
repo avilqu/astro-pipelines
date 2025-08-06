@@ -172,6 +172,61 @@ def get_observation_time(file_path: str) -> Optional[str]:
         return None
 
 
+def get_mid_exposure_time(file_path: str) -> Optional[str]:
+    """
+    Extract mid-exposure time from FITS file (start time + half exposure time).
+    
+    Parameters:
+    -----------
+    file_path : str
+        Path to FITS file
+        
+    Returns:
+    --------
+    Optional[str]
+        ISO format mid-exposure time string, or None if not found
+    """
+    try:
+        header = fits.getheader(file_path, ext=0)
+        date_obs = header.get('DATE-OBS')
+        
+        if not date_obs:
+            return None
+            
+        # Get exposure time
+        exp_sec = header.get('EXPTIME') or header.get('EXPOSURE') or header.get('EXP TIME') or 0.0
+        try:
+            exp_sec = float(exp_sec)
+        except Exception:
+            exp_sec = 0.0
+        
+        # Parse the start time
+        import re
+        from datetime import datetime, timedelta
+        
+        match = re.match(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?", date_obs)
+        if match:
+            seconds = match.group(3) if match.group(3) is not None else '00'
+            start_time_str = f"{match.group(1)}T{match.group(2)}:{seconds}"
+        else:
+            # Fallback parsing
+            try:
+                dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
+                start_time_str = dt.strftime('%Y-%m-%dT%H:%M:%S')
+            except Exception:
+                start_time_str = date_obs[:10] + 'T' + date_obs[11:16] + ':00'
+        
+        # Calculate mid-exposure time
+        start_dt = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+        mid_dt = start_dt + timedelta(seconds=exp_sec / 2.0)
+        
+        return mid_dt.strftime('%Y-%m-%dT%H:%M:%S')
+                
+    except Exception as e:
+        print(f"Warning: Could not extract mid-exposure time from {file_path}: {e}")
+        return None
+
+
 def compute_mid_observation_time(files: List[str]) -> Optional[str]:
     """
     Compute the midpoint DATE-OBS for a sequence of FITS files.
@@ -396,12 +451,12 @@ def calculate_motion_shifts(files: List[str], object_name: str,
     obs_time_map = {}  # Map file_path to obs_time
     obs_dt_map = {}    # Map file_path to obs_dt
 
-    # First pass: collect all observation times
+    # First pass: collect all observation times (using mid-exposure time for precision)
     for i, file_path in enumerate(files):
-        print(f"Collecting observation time for {i+1}/{len(files)}: {Path(file_path).name}")
-        obs_time = get_observation_time(file_path)
+        print(f"Collecting mid-exposure time for {i+1}/{len(files)}: {Path(file_path).name}")
+        obs_time = get_mid_exposure_time(file_path)
         if not obs_time:
-            print(f"Warning: No observation time for {file_path}, using zero shift")
+            print(f"Warning: No mid-exposure time for {file_path}, using zero shift")
             shifts.append((0.0, 0.0))
             continue
         try:
@@ -413,12 +468,12 @@ def calculate_motion_shifts(files: List[str], object_name: str,
             obs_time_map[file_path] = obs_time
             obs_dt_map[file_path] = obs_dt
         except Exception as e:
-            print(f"Warning: Could not parse observation time for {file_path}: {e}")
+            print(f"Warning: Could not parse mid-exposure time for {file_path}: {e}")
             shifts.append((0.0, 0.0))
             continue
 
     if not observation_times:
-        print("Warning: No valid observation times found")
+        print("Warning: No valid mid-exposure times found")
         return [(0.0, 0.0)] * len(files), None
 
     # Use provided ephemerides data if available, otherwise call FindOrb API
@@ -431,7 +486,7 @@ def calculate_motion_shifts(files: List[str], object_name: str,
                 result[date_obs] = entry
     else:
         print("No ephemerides data provided, calling FindOrb API...")
-        # Call predict_position_findorb ONCE for all observation times
+        # Call predict_position_findorb ONCE for all mid-exposure times
         try:
             result = predict_position_findorb(object_name, observation_times)
         except Exception as e:

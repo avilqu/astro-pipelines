@@ -12,7 +12,7 @@ from astropy.coordinates import Angle
 import astropy.units as u
 from astropy.time import Time
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from scipy.optimize import least_squares
 
@@ -1568,7 +1568,7 @@ class OrbitComputationWorker(QObject):
             predicted_positions = []
             pseudo_mpec_text = ""
             
-            # Collect all observation dates from FITS files
+            # Collect all mid-exposure dates from FITS files
             dates_obs = []
             date_to_file_map = {}  # Map formatted dates back to file paths for debugging
             
@@ -1580,7 +1580,33 @@ class OrbitComputationWorker(QObject):
                     with fits.open(fits_path) as hdul:
                         header = hdul[0].header
                         date_obs = header.get('DATE-OBS')
-                        print(f"[DEBUG] DATE-OBS from header: {date_obs}")
+                        exp_sec = header.get('EXPTIME') or header.get('EXPOSURE') or header.get('EXP TIME') or 0.0
+                        print(f"[DEBUG] DATE-OBS from header: {date_obs}, EXPTIME: {exp_sec}")
+                        
+                        # Calculate mid-exposure time
+                        if date_obs and exp_sec:
+                            try:
+                                exp_sec = float(exp_sec)
+                                # Parse the start time
+                                match = re.match(r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?", date_obs)
+                                if match:
+                                    seconds = match.group(3) if match.group(3) is not None else '00'
+                                    start_time_str = f"{match.group(1)}T{match.group(2)}:{seconds}"
+                                else:
+                                    # Fallback: try to parse and reformat
+                                    try:
+                                        dt = datetime.fromisoformat(date_obs.replace('Z', '+00:00'))
+                                        start_time_str = dt.strftime('%Y-%m-%dT%H:%M:%S')
+                                    except Exception:
+                                        start_time_str = date_obs[:10] + 'T' + date_obs[11:16] + ':00'  # crude fallback
+                                
+                                # Calculate mid-exposure time
+                                start_dt = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                                mid_dt = start_dt + timedelta(seconds=exp_sec / 2.0)
+                                date_obs = mid_dt.strftime('%Y-%m-%dT%H:%M:%S')
+                                print(f"[DEBUG] Calculated mid-exposure time: {date_obs}")
+                            except Exception as e:
+                                print(f"[DEBUG] Failed to calculate mid-exposure time: {e}")
                 except Exception as e:
                     print(f"[DEBUG] Failed to read FITS header for {fits_path}: {e}")
                 
@@ -1595,8 +1621,18 @@ class OrbitComputationWorker(QObject):
                         else:
                             print(f"[DEBUG] No DB entry found for {fits_path}")
                         if db_entry and db_entry.date_obs:
-                            # Convert datetime to ISO string
-                            date_obs = db_entry.date_obs.isoformat(sep='T', timespec='seconds')
+                            # Convert datetime to ISO string and add half exposure time if available
+                            start_time = db_entry.date_obs
+                            if hasattr(db_entry, 'exptime') and db_entry.exptime:
+                                try:
+                                    mid_time = start_time + timedelta(seconds=db_entry.exptime / 2.0)
+                                    date_obs = mid_time.isoformat(sep='T', timespec='seconds')
+                                    print(f"[DEBUG] Calculated mid-exposure time from DB: {date_obs}")
+                                except Exception as e:
+                                    print(f"[DEBUG] Failed to calculate mid-exposure time from DB: {e}")
+                                    date_obs = start_time.isoformat(sep='T', timespec='seconds')
+                            else:
+                                date_obs = start_time.isoformat(sep='T', timespec='seconds')
                     except Exception as e:
                         print(f"[DEBUG] Failed to get date_obs from database for {fits_path}: {e}")
                 
@@ -1614,7 +1650,7 @@ class OrbitComputationWorker(QObject):
                         except Exception:
                             date_obs_fmt = date_obs[:10] + 'T' + date_obs[11:16] + ':00'  # crude fallback
                     
-                    print(f"[DEBUG] Using date_obs for prediction (formatted): {date_obs_fmt}")
+                    print(f"[DEBUG] Using mid-exposure time for prediction (formatted): {date_obs_fmt}")
                     dates_obs.append(date_obs_fmt)
                     date_to_file_map[date_obs_fmt] = fits_path
                 else:
