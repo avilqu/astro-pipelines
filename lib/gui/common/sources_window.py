@@ -16,10 +16,11 @@ class SourcesResultWindow(QDialog):
         
         layout = QVBoxLayout(self)
         table = QTableWidget(self)
-        table.setColumnCount(14)
+        table.setColumnCount(18)
         table.setHorizontalHeaderLabels([
             "ID", "RA (deg)", "Dec (deg)", "X (px)", "Y (px)", "Flux", "SNR", "Area (px^2)",
-            "Eccentricity", "Major (px)", "Minor (px)", "Orientation (deg)", "Peak", "Background"
+            "Eccentricity", "Major (px)", "Minor (px)", "Orientation (deg)", "Peak", "Background", 
+            "HFR (px)", "FWHM (px)", "HFR (arcsec)", "FWHM (arcsec)"
         ])
         table.setRowCount(len(sources))
         table.setFont(QFont("Courier New", 10))
@@ -45,7 +46,11 @@ class SourcesResultWindow(QDialog):
                 QTableWidgetItem(f"{src.semiminor_axis:.2f}"),
                 QTableWidgetItem(f"{src.orientation:.2f}"),
                 QTableWidgetItem(f"{src.peak_value:.2f}"),
-                QTableWidgetItem(f"{src.background:.2f}")
+                QTableWidgetItem(f"{src.background:.2f}"),
+                QTableWidgetItem(f"{src.hfr:.2f}" if src.hfr > 0 else ""),
+                QTableWidgetItem(f"{src.fwhm:.2f}" if src.fwhm > 0 else ""),
+                QTableWidgetItem(f"{src.hfr_arcsec:.2f}" if src.hfr_arcsec > 0 else ""),
+                QTableWidgetItem(f"{src.fwhm_arcsec:.2f}" if src.fwhm_arcsec > 0 else "")
             ]
             for col, item in enumerate(items):
                 table.setItem(i, col, item)

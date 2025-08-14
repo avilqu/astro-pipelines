@@ -311,6 +311,55 @@ class SourceDetectionMixin:
         self.sources_result_window.show()
         
         self.console_window.append_text(f"Detected {len(result.sources)} sources\n")
+        
+        # Calculate and display average HFR and FWHM
+        if result.sources:
+            hfr_values = [s.hfr for s in result.sources if s.hfr > 0]
+            fwhm_values = [s.fwhm for s in result.sources if s.fwhm > 0]
+            hfr_arcsec_values = [s.hfr_arcsec for s in result.sources if s.hfr_arcsec > 0]
+            fwhm_arcsec_values = [s.fwhm_arcsec for s in result.sources if s.fwhm_arcsec > 0]
+            
+            if hfr_values:
+                avg_hfr = sum(hfr_values) / len(hfr_values)
+                self.console_window.append_text(f"Average HFR: {avg_hfr:.2f} pixels")
+                if hfr_arcsec_values:
+                    avg_hfr_arcsec = sum(hfr_arcsec_values) / len(hfr_arcsec_values)
+                    self.console_window.append_text(f" ({avg_hfr_arcsec:.2f} arcsec)\n")
+                else:
+                    self.console_window.append_text("\n")
+            
+            if fwhm_values:
+                avg_fwhm = sum(fwhm_values) / len(fwhm_values)
+                self.console_window.append_text(f"Average FWHM: {avg_fwhm:.2f} pixels")
+                if fwhm_arcsec_values:
+                    avg_fwhm_arcsec = sum(fwhm_arcsec_values) / len(fwhm_arcsec_values)
+                    self.console_window.append_text(f" ({avg_fwhm_arcsec:.2f} arcsec)\n")
+                else:
+                    self.console_window.append_text("\n")
+        
+        # Update status bar with image quality metrics
+        if hasattr(self, 'status_bar') and result.sources:
+            hfr_values = [s.hfr for s in result.sources if s.hfr > 0]
+            fwhm_values = [s.fwhm for s in result.sources if s.fwhm > 0]
+            hfr_arcsec_values = [s.hfr_arcsec for s in result.sources if s.hfr_arcsec > 0]
+            fwhm_arcsec_values = [s.fwhm_arcsec for s in result.sources if s.fwhm_arcsec > 0]
+            
+            status_msg = f"Sources: {len(result.sources)}"
+            if hfr_values:
+                avg_hfr = sum(hfr_values) / len(hfr_values)
+                status_msg += f" | Avg HFR: {avg_hfr:.2f}px"
+                if hfr_arcsec_values:
+                    avg_hfr_arcsec = sum(hfr_arcsec_values) / len(hfr_arcsec_values)
+                    status_msg += f" ({avg_hfr_arcsec:.2f}\")"
+            if fwhm_values:
+                avg_fwhm = sum(fwhm_values) / len(fwhm_values)
+                status_msg += f" | Avg FWHM: {avg_fwhm:.2f}px"
+                if fwhm_arcsec_values:
+                    avg_fwhm_arcsec = sum(fwhm_arcsec_values) / len(fwhm_arcsec_values)
+                    status_msg += f" ({avg_fwhm_arcsec:.2f}\")"
+            
+            self.status_bar.showMessage(status_msg)
+        
         self.console_window.append_text("Results window opened.\n")
         self.console_window.append_text("Click on a row in the results window to highlight the corresponding source on the image.\n")
     

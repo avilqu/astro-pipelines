@@ -36,6 +36,136 @@ def get_memory_usage():
         return 0.0
 
 
+def get_image_scale_from_wcs(wcs):
+    """
+    Extract image scale (arcsec/pixel) from WCS information.
+    
+    Parameters:
+    -----------
+    wcs : WCS object
+        World Coordinate System object
+        
+    Returns:
+    --------
+    float : Image scale in arcseconds per pixel, or None if not available
+    """
+    if wcs is None:
+        return None
+    
+    try:
+        # Check if WCS has a header with SCALE property
+        if hasattr(wcs, 'header') and wcs.header is not None:
+            header = wcs.header
+            if 'SCALE' in header:
+                scale_value = header['SCALE']
+                logger.info(f"Found SCALE header: {scale_value} arcsec/pixel")
+                return float(scale_value)
+        
+        # Fallback: try CDELT if available (degrees per pixel)
+        if hasattr(wcs, 'cdelt') and wcs.cdelt is not None:
+            try:
+                cdelt_deg = wcs.cdelt[0]
+                return abs(cdelt_deg) * 3600.0  # Convert degrees to arcseconds
+            except (ValueError, TypeError, IndexError):
+                pass
+                
+    except Exception as e:
+        logger.debug(f"Could not extract image scale from WCS: {e}")
+    
+    return None
+
+
+def calculate_source_hfr_fwhm(image, segment_map, source_id, background=0.0):
+    """
+    Calculate HFR and FWHM for a specific source using more accurate methods.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        2D image array
+    segment_map : np.ndarray
+        Segmentation map from photutils
+    source_id : int
+        Source ID in the segmentation map
+    background : float
+        Background level to subtract
+        
+    Returns:
+    --------
+    tuple : (hfr, fwhm) in pixels
+    """
+    try:
+        # Create mask for this source
+        source_mask = (segment_map == source_id)
+        
+        if not np.any(source_mask):
+            return 0.0, 0.0
+        
+        # Get source region
+        y_coords, x_coords = np.where(source_mask)
+        y_min, y_max = y_coords.min(), y_coords.max()
+        x_min, x_max = x_coords.min(), x_coords.max()
+        
+        # Extract source region
+        source_region = image[y_min:y_max+1, x_min:x_max+1].copy()
+        source_mask_region = source_mask[y_min:y_max+1, x_min:x_max+1]
+        
+        # Subtract background
+        source_region = source_region - background
+        
+        # Calculate HFR (half flux radius)
+        total_flux = np.sum(source_region * source_mask_region)
+        half_flux = total_flux / 2.0
+        
+        if half_flux <= 0:
+            return 0.0, 0.0
+        
+        # Find radius containing half the flux
+        center_y, center_x = (y_max + y_min) / 2, (x_max + x_min) / 2
+        
+        # Calculate radial profile
+        y_grid, x_grid = np.ogrid[y_min:y_max+1, x_min:x_max+1]
+        r = np.sqrt((x_grid - center_x)**2 + (y_grid - center_y)**2)
+        
+        # Sort by radius and accumulate flux
+        r_flat = r.flatten()
+        flux_flat = source_region.flatten()
+        mask_flat = source_mask_region.flatten()
+        
+        # Only consider pixels in the source
+        valid_indices = mask_flat > 0
+        r_valid = r_flat[valid_indices]
+        flux_valid = flux_flat[valid_indices]
+        
+        if len(r_valid) == 0:
+            return 0.0, 0.0
+        
+        # Sort by radius
+        sort_indices = np.argsort(r_valid)
+        r_sorted = r_valid[sort_indices]
+        flux_sorted = flux_valid[sort_indices]
+        
+        # Find cumulative flux
+        cumulative_flux = np.cumsum(flux_sorted)
+        
+        # Find radius at half flux
+        half_flux_index = np.searchsorted(cumulative_flux, half_flux)
+        if half_flux_index < len(r_sorted):
+            hfr = r_sorted[half_flux_index]
+        else:
+            hfr = r_sorted[-1]
+        
+        # Calculate FWHM (simplified approach)
+        # Use the semimajor axis from photutils if available, otherwise estimate
+        fwhm = 2.355 * np.sqrt(np.var(r_valid))  # Approximate FWHM
+        
+        return hfr, fwhm
+        
+    except Exception as e:
+        logger.warning(f"Error calculating HFR/FWHM for source {source_id}: {e}")
+        return 0.0, 0.0
+
+
 class SourceDetectionError(Exception):
     """Exception raised when source detection fails."""
     pass
@@ -49,7 +179,9 @@ class DetectedSource:
                  area: float = 0.0, eccentricity: float = 0.0, 
                  semimajor_axis: float = 0.0, semiminor_axis: float = 0.0,
                  orientation: float = 0.0, peak_value: float = 0.0,
-                 background: float = 0.0, snr: float = 0.0):
+                 background: float = 0.0, snr: float = 0.0,
+                 hfr: float = 0.0, fwhm: float = 0.0,
+                 hfr_arcsec: float = 0.0, fwhm_arcsec: float = 0.0):
         self.id = id
         self.x = x  # pixel coordinates
         self.y = y  # pixel coordinates
@@ -64,6 +196,10 @@ class DetectedSource:
         self.peak_value = peak_value  # peak pixel value
         self.background = background  # background level
         self.snr = snr  # signal-to-noise ratio
+        self.hfr = hfr  # half flux radius in pixels
+        self.fwhm = fwhm  # full width at half maximum in pixels
+        self.hfr_arcsec = hfr_arcsec  # half flux radius in arcseconds
+        self.fwhm_arcsec = fwhm_arcsec  # full width at half maximum in arcseconds
     
     def __str__(self):
         coord_str = f"({self.x:.2f}, {self.y:.2f})"
@@ -114,7 +250,11 @@ class SourceDetectionResult:
                 'orientation': source.orientation,
                 'peak_value': source.peak_value,
                 'background': source.background,
-                'snr': source.snr
+                'snr': source.snr,
+                'hfr': source.hfr,
+                'fwhm': source.fwhm,
+                'hfr_arcsec': source.hfr_arcsec,
+                'fwhm_arcsec': source.fwhm_arcsec
             }
             sources_data.append(source_dict)
         
@@ -378,6 +518,52 @@ def detect_sources_in_image(image: np.ndarray,
             semiminor_sigma = float(prop.semiminor_sigma.value) if hasattr(prop.semiminor_sigma, 'value') else float(prop.semiminor_sigma)
             orientation = float(prop.orientation.to(u.deg).value)
             
+            # Extract HFR and FWHM if available
+            hfr = 0.0
+            fwhm = 0.0
+            
+            # Try to get HFR (half flux radius)
+            if hasattr(prop, 'half_light_radius'):
+                try:
+                    hfr = float(prop.half_light_radius.value) if hasattr(prop.half_light_radius, 'value') else float(prop.half_light_radius)
+                except:
+                    hfr = 0.0
+            
+            # Try to get FWHM
+            if hasattr(prop, 'fwhm'):
+                try:
+                    fwhm = float(prop.fwhm.value) if hasattr(prop.fwhm, 'value') else float(prop.fwhm)
+                except:
+                    fwhm = 0.0
+            
+            # If HFR is not available, estimate it from the area
+            if hfr == 0.0 and area > 0:
+                hfr = np.sqrt(area / np.pi)  # Approximate HFR from circular area
+            
+            # If FWHM is not available, estimate it from the sigma values
+            if fwhm == 0.0 and semimajor_sigma > 0:
+                fwhm = 2.355 * semimajor_sigma  # FWHM ≈ 2.355 * σ for Gaussian
+            
+            # Calculate arcsecond values from pixel values
+            hfr_arcsec = 0.0
+            fwhm_arcsec = 0.0
+            
+            # Get image scale from WCS if available
+            image_scale = get_image_scale_from_wcs(wcs)
+            
+            # If no WCS scale, use a default value (common for many telescopes)
+            if image_scale is None:
+                # Default to 1 arcsec/pixel (common for many amateur setups)
+                # This can be overridden by the user or extracted from FITS headers
+                image_scale = 1.0
+                logger.info("Using default image scale: 1.0 arcsec/pixel")
+            else:
+                logger.info(f"Using image scale from WCS: {image_scale:.3f} arcsec/pixel")
+            
+            # Convert pixel values to arcseconds
+            hfr_arcsec = hfr * image_scale
+            fwhm_arcsec = fwhm * image_scale
+            
             # Apply filters
             if area < min_area:
                 filtered_count += 1
@@ -421,7 +607,11 @@ def detect_sources_in_image(image: np.ndarray,
                 orientation=orientation,
                 peak_value=max_value,
                 background=background_mean,
-                snr=snr
+                snr=snr,
+                hfr=hfr,
+                fwhm=fwhm,
+                hfr_arcsec=hfr_arcsec,
+                fwhm_arcsec=fwhm_arcsec
             )
             sources.append(source)
         
