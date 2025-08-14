@@ -93,11 +93,19 @@ class DisplayMixin:
         if not keep_zoom:
             self._center_image_in_viewport()
         else:
-            # Restore the viewport center with a small delay to ensure image is loaded
+            # Restore the viewport center with a delay to ensure image is fully loaded and displayed
             if saved_center:
                 def restore_center():
-                    self._set_viewport_center(saved_center[0], saved_center[1])
-                QTimer.singleShot(10, restore_center)
+                    # Double-check that the image is ready before restoring viewport
+                    if (self.image_label.pixmap() is not None and 
+                        self.image_label.width() > 0 and 
+                        self.image_label.height() > 0):
+                        self._set_viewport_center(saved_center[0], saved_center[1])
+                    else:
+                        # If still not ready, try again with a longer delay
+                        QTimer.singleShot(50, restore_center)
+                # Use a longer initial delay to ensure image is fully processed
+                QTimer.singleShot(50, restore_center)
         # If zoom mode is set to fit, update zoom
         if getattr(self, '_pending_zoom_to_fit', False):
             self._pending_zoom_to_fit = False

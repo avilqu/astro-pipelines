@@ -15,7 +15,7 @@ class NavigationMixin:
         super().__init__()
 
     def _get_viewport_center(self):
-        """Returns the center of the viewport in image coordinates (x, y)"""
+        """Get the current viewport center in image coordinates"""
         if self.image_label.pixmap() is None or self.image_data is None:
             return None
             
@@ -44,14 +44,16 @@ class NavigationMixin:
             y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
             
             # Get the center of the viewport in label coordinates
-            center_x = hbar.value() + viewport_w // 2
-            center_y = vbar.value() + viewport_h // 2
+            # Use floating-point division for better precision
+            center_x = hbar.value() + viewport_w / 2.0
+            center_y = vbar.value() + viewport_h / 2.0
             
             # Convert from label coordinates to image coordinates (reverse of overlay conversion)
             pixmap_x = center_x - x_offset
             pixmap_y = center_y - y_offset
             
             if (0 <= pixmap_x < pixmap_w and 0 <= pixmap_y < pixmap_h):
+                # Use precise floating-point division to avoid rounding errors
                 img_cx = pixmap_x / scale
                 img_cy = pixmap_y / scale
                 return (img_cx, img_cy)
@@ -85,14 +87,16 @@ class NavigationMixin:
             y_offset = (label_h - pixmap_h) / 2.0  # Use float division to avoid integer truncation
             
             # Convert image coordinates to label coordinates (same as overlay conversion)
-            center_x = int(img_cx * scale) + x_offset
-            center_y = int(img_cy * scale) + y_offset
+            # Use precise floating-point arithmetic to maintain consistency with _get_viewport_center
+            center_x = img_cx * scale + x_offset
+            center_y = img_cy * scale + y_offset
             
             hbar = self.scroll_area.horizontalScrollBar()
             vbar = self.scroll_area.verticalScrollBar()
             # Allow centering beyond image boundaries by not constraining to minimum values
-            hbar.setValue(int(center_x - viewport_w // 2))
-            vbar.setValue(int(center_y - viewport_h // 2))
+            # Use round() instead of int() to minimize rounding errors
+            hbar.setValue(round(center_x - viewport_w / 2.0))
+            vbar.setValue(round(center_y - viewport_h / 2.0))
 
     def _center_image_in_viewport(self):
         """Center the image in the viewport, accounting for padding"""
@@ -106,18 +110,20 @@ class NavigationMixin:
         
         # Calculate the center of the image within the padded label
         # The image is centered in the label, so its center is at label_w/2, label_h/2
-        image_center_x = label_w // 2
-        image_center_y = label_h // 2
+        # Use floating-point division for better precision
+        image_center_x = label_w / 2.0
+        image_center_y = label_h / 2.0
         
         # Calculate scroll position to center the image in the viewport
         hbar = self.scroll_area.horizontalScrollBar()
         vbar = self.scroll_area.verticalScrollBar()
         
-        scroll_x = image_center_x - viewport_w // 2
-        scroll_y = image_center_y - viewport_h // 2
+        scroll_x = image_center_x - viewport_w / 2.0
+        scroll_y = image_center_y - viewport_h / 2.0
         
-        hbar.setValue(scroll_x)
-        vbar.setValue(scroll_y)
+        # Use round() to minimize rounding errors
+        hbar.setValue(round(scroll_x))
+        vbar.setValue(round(scroll_y))
 
     def reset_zoom(self):
         """Reset zoom to 1.0"""
@@ -162,12 +168,14 @@ class NavigationMixin:
         label_h = self.image_label.height()
         viewport_w = self.scroll_area.viewport().width()
         viewport_h = self.scroll_area.viewport().height()
-        center_x = (label_w - viewport_w) // 2
-        center_y = (label_h - viewport_h) // 2
+        # Use floating-point division for better precision
+        center_x = (label_w - viewport_w) / 2.0
+        center_y = (label_h - viewport_h) / 2.0
         hbar = self.scroll_area.horizontalScrollBar()
         vbar = self.scroll_area.verticalScrollBar()
-        hbar.setValue(center_x)
-        vbar.setValue(center_y)
+        # Use round() to minimize rounding errors
+        hbar.setValue(round(center_x))
+        vbar.setValue(round(center_y))
 
     def zoom_to_region(self, img_x0, img_y0, img_x1, img_y1):
         """Zoom to a specific region defined by image coordinates"""
@@ -228,8 +236,9 @@ class NavigationMixin:
         current_padded_height = current_height + padding
         
         # Calculate the offset to center the image within the padded label
-        current_x_offset = (current_padded_width - current_width) // 2
-        current_y_offset = (current_padded_height - current_height) // 2
+        # Use floating-point division for better precision
+        current_x_offset = (current_padded_width - current_width) / 2.0
+        current_y_offset = (current_padded_height - current_height) / 2.0
         
         # Convert cursor position from label coordinates to image coordinates
         cursor_x_in_image = (cursor_x_in_label - current_x_offset) / self._zoom
@@ -253,8 +262,9 @@ class NavigationMixin:
         label.setPixmap(self._orig_pixmap.scaled(new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         
         # Calculate the new offset to center the image within the padded label
-        new_x_offset = (padded_width - new_width) // 2
-        new_y_offset = (padded_height - new_height) // 2
+        # Use floating-point division for better precision
+        new_x_offset = (padded_width - new_width) / 2.0
+        new_y_offset = (padded_height - new_height) / 2.0
         
         # Calculate where the cursor point should be in the new zoomed image
         new_cursor_x_in_image = cursor_x_in_image * self._zoom
