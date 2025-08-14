@@ -380,6 +380,38 @@ class CalibrationManager:
                     removed_keys.append(key)
             cal.flush()
     
+    def _add_origfile_header(self, calibrated_path: str, original_path: str):
+        """
+        Add ORIGFILE header to calibrated image for database lookup.
+        
+        Args:
+            calibrated_path: Path to the calibrated image
+            original_path: Path to the original raw file
+        """
+        try:
+            with fits.open(calibrated_path, mode='update') as hdul:
+                header = hdul[0].header
+                
+                # Convert to absolute paths for reliability
+                original_path = os.path.abspath(original_path)
+                
+                # Add ORIGFILE header
+                header['ORIGFILE'] = original_path
+                header.comments['ORIGFILE'] = 'Original file path for database lookup'
+                
+                # Also add ORIGPATH as an alternative
+                header['ORIGPATH'] = original_path
+                header.comments['ORIGPATH'] = 'Original file path (alternative keyword)'
+                
+                # Add timestamp of when this was added
+                from datetime import datetime
+                header['ORIGDATE'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                header.comments['ORIGDATE'] = 'Date when ORIGFILE header was added'
+                
+        except Exception as e:
+            print(f"Error adding ORIGFILE header: {e}")
+            raise
+    
     def _extract_fits_metadata(self, file_path: str) -> Optional[FitsFile]:
         """
         Extract FITS metadata directly from file header to create a FitsFile-like object.
@@ -524,6 +556,13 @@ class CalibrationManager:
             print(f"{Style.BRIGHT + Fore.GREEN}Writing calibrated image: {output_path}{Style.RESET_ALL}")
             calibrated_image.write(output_path, overwrite=True)
             
+            # Add ORIGFILE header for database lookup
+            try:
+                self._add_origfile_header(str(output_path), file_path)
+                print(f"{Style.BRIGHT + Fore.GREEN}ORIGFILE header added{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Style.BRIGHT + Fore.YELLOW}Warning: Could not add ORIGFILE header: {e}{Style.RESET_ALL}")
+            
             # Restore WCS header if it exists
             try:
                 self.restore_wcs_header(file_path, str(output_path))
@@ -553,4 +592,25 @@ class CalibrationManager:
         Returns:
             Dictionary containing calibration results
         """
-        return self.calibrate_file(file_path) 
+        return self.calibrate_file(file_path)
+    
+    def add_origfile_header_manually(self, calibrated_path: str, original_path: str) -> bool:
+        """
+        Manually add ORIGFILE header to an existing calibrated image.
+        This is useful for images that were calibrated outside of this system.
+        
+        Args:
+            calibrated_path: Path to the calibrated image
+            original_path: Path to the original raw file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            self._add_origfile_header(calibrated_path, original_path)
+            print(f"{Style.BRIGHT + Fore.GREEN}ORIGFILE header added to: {calibrated_path}{Style.RESET_ALL}")
+            print(f"  Original file: {original_path}")
+            return True
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error adding ORIGFILE header: {e}{Style.RESET_ALL}")
+            return False 

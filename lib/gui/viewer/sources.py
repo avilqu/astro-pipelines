@@ -360,6 +360,9 @@ class SourceDetectionMixin:
             
             self.status_bar.showMessage(status_msg)
         
+        # Update database with HFR and sources count
+        self._update_database_with_source_analysis(result)
+        
         self.console_window.append_text("Results window opened.\n")
         self.console_window.append_text("Click on a row in the results window to highlight the corresponding source on the image.\n")
     
@@ -375,6 +378,172 @@ class SourceDetectionMixin:
         """Handle source row selection for highlighting."""
         self._source_highlight_index = row_index
         self.image_label.update()
+    
+    def _update_database_with_source_analysis(self, result):
+        """Update the database with HFR and sources count from source detection."""
+        try:
+            # Get the current file path
+            if not hasattr(self, 'loaded_files') or not self.loaded_files:
+                return
+            
+            current_file_path = self.loaded_files[self.current_file_index]
+            
+            # Try to find the original file path for database lookup
+            original_file_path = self._get_original_file_path(current_file_path)
+            
+            if not original_file_path:
+                self.console_window.append_text("Note: Could not determine original file path. Database not updated.\n")
+                self.console_window.append_text(f"Current file: {current_file_path}\n")
+                return
+            
+            # Check if original file is in database
+            if not self._is_file_in_database(original_file_path):
+                self.console_window.append_text("Note: Original file not found in database. Run 'Scan Library' first to enable database updates.\n")
+                self.console_window.append_text(f"Original file: {original_file_path}\n")
+                return
+            
+            # Log the file mapping for debugging
+            if original_file_path != current_file_path:
+                self.console_window.append_text(f"Using original file for database update: {original_file_path}\n")
+                logging.info(f"File mapping: {current_file_path} -> {original_file_path}")
+            
+            # Import database manager and models
+            from lib.db.manager import get_db_manager
+            from lib.db.models import FitsFile
+            from datetime import datetime
+            
+            # Get database manager and session
+            db_manager = get_db_manager()
+            session = db_manager.get_session()
+            
+            try:
+                # Find the FITS file in the database using the original file path
+                fits_file = session.query(FitsFile).filter(
+                    FitsFile.path == original_file_path
+                ).first()
+                
+                if fits_file:
+                    # Calculate average HFR in arcseconds
+                    hfr_arcsec_values = [s.hfr_arcsec for s in result.sources if s.hfr_arcsec > 0]
+                    avg_hfr_arcsec = None
+                    if hfr_arcsec_values:
+                        avg_hfr_arcsec = sum(hfr_arcsec_values) / len(hfr_arcsec_values)
+                    
+                    # Update the database record
+                    update_data = {
+                        'hfr': avg_hfr_arcsec,
+                        'sources_count': len(result.sources),
+                        'analysis_status': 'analyzed',
+                        'analysis_date': datetime.now(),
+                        'analysis_method': 'photutils'
+                    }
+                    
+                    # Update the fits_file object
+                    for key, value in update_data.items():
+                        if hasattr(fits_file, key):
+                            setattr(fits_file, key, value)
+                    
+                    # Commit the changes
+                    session.commit()
+                    
+                    self.console_window.append_text(f"Database updated: HFR={avg_hfr_arcsec:.2f}\", Sources={len(result.sources)}\n")
+                    logging.info(f"Database updated for {current_file_path}: HFR={avg_hfr_arcsec:.2f}\", Sources={len(result.sources)}")
+                    
+                else:
+                    self.console_window.append_text("Warning: Current file not found in database. Database not updated.\n")
+                    self.console_window.append_text("Note: Only files that have been imported via the library scanner can be updated.\n")
+                    
+            except Exception as e:
+                session.rollback()
+                self.console_window.append_text(f"Error updating database: {e}\n")
+                logging.error(f"Database update error: {e}")
+                
+            finally:
+                session.close()
+                
+        except Exception as e:
+            self.console_window.append_text(f"Error in database update: {e}\n")
+            logging.error(f"Database update error: {e}")
+    
+    def _is_file_in_database(self, file_path):
+        """Check if a file exists in the database."""
+        try:
+            from lib.db.manager import get_db_manager
+            from lib.db.models import FitsFile
+            
+            db_manager = get_db_manager()
+            session = db_manager.get_session()
+            
+            try:
+                fits_file = session.query(FitsFile).filter(FitsFile.path == file_path).first()
+                return fits_file is not None
+            finally:
+                session.close()
+                
+        except Exception as e:
+            logging.error(f"Error checking database for file {file_path}: {e}")
+            return False
+    
+    def _get_original_file_path(self, current_file_path):
+        """
+        Try to determine the original file path from the current file.
+        This handles cases where the current file is a calibrated version in a temp directory.
+        
+        Returns:
+            str: Original file path if found, None otherwise
+        """
+        try:
+            # Check for ORIGFILE header keyword
+            original_path = self._get_original_path_from_header(current_file_path)
+            if original_path:
+                return original_path
+            
+            # If current file is already in database, use it directly
+            if self._is_file_in_database(current_file_path):
+                return current_file_path
+            
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error determining original file path: {e}")
+            return None
+    
+    def _get_original_path_from_header(self, file_path):
+        """Extract original file path from FITS header keywords."""
+        try:
+            from astropy.io import fits
+            
+            with fits.open(file_path) as hdul:
+                header = hdul[0].header
+                
+                # Check for common header keywords that might contain original file path
+                for keyword in ['ORIGFILE', 'ORIGPATH', 'ORIGINAL', 'SOURCE', 'PARENT']:
+                    if keyword in header:
+                        original_path = header[keyword]
+                        if original_path and isinstance(original_path, str):
+                            # Clean up the path (remove quotes, etc.)
+                            original_path = original_path.strip().strip('"\'')
+                            if os.path.exists(original_path):
+                                logging.info(f"Found original file path in header {keyword}: {original_path}")
+                                return original_path
+                
+                # Check for comment fields that might contain the path
+                for keyword in header:
+                    if 'ORIG' in keyword.upper() or 'SOURCE' in keyword.upper() or 'PARENT' in keyword.upper():
+                        comment = header.comments.get(keyword, '')
+                        if 'path' in comment.lower() or 'file' in comment.lower():
+                            value = header[keyword]
+                            if value and isinstance(value, str) and os.path.exists(value):
+                                logging.info(f"Found original file path in header comment: {value}")
+                                return value
+                
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error reading FITS header for original path: {e}")
+            return None
+    
+    # Method removed - using simple header-based approach instead
 
 
     def detect_gaia_stars_in_image(self):
@@ -573,3 +742,27 @@ class SourceDetectionMixin:
         """Handle Gaia detection row selection for highlighting."""
         self._gaia_detection_highlight_index = row_index
         self.image_label.update()
+    
+    def get_header_setup_instructions(self):
+        """
+        Get instructions for setting up header keywords to enable database updates.
+        This is useful for the calibration process to add ORIGFILE headers.
+        """
+        instructions = """
+        To enable automatic database updates for calibrated images, add one of these header keywords:
+        
+        ORIGFILE = '/path/to/original/raw/file.fits'    # Full path to original file
+        ORIGPATH = '/path/to/original/raw/file.fits'    # Alternative keyword name
+        
+        You can add these headers during the calibration process using:
+        
+        from astropy.io import fits
+        with fits.open('calibrated_image.fits', mode='update') as hdul:
+            hdul[0].header['ORIGFILE'] = '/path/to/original.fits'
+            hdul[0].header.comments['ORIGFILE'] = 'Original file path for database lookup'
+        
+        Or use the fits.header module:
+        from lib.fits.header import set_fits_header_value
+        set_fits_header_value('calibrated_image.fits', 'ORIGFILE', '/path/to/original.fits')
+        """
+        return instructions
