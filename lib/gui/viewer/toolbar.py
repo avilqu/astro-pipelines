@@ -334,10 +334,6 @@ class ToolbarController:
         
         simbad_menu.addSeparator()
         
-        search_gaia_action = QAction("Search Gaia catalog", self.parent)
-        search_gaia_action.triggered.connect(self.parent.open_gaia_search_dialog)
-        simbad_menu.addAction(search_gaia_action)
-        
         self.simbad_button.setMenu(simbad_menu)
         self.simbad_button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         self.toolbar.addWidget(self.simbad_button)
@@ -355,11 +351,15 @@ class ToolbarController:
         
         # Create sources dropdown menu
         sources_menu = QMenu(self.sources_button)
+        load_gaia_catalog_action = QAction("Load Gaia catalog", self.parent)
+        load_gaia_catalog_action.triggered.connect(self.parent.open_gaia_search_dialog)
+        sources_menu.addAction(load_gaia_catalog_action)
+        
+        sources_menu.addSeparator()
+        
         detect_sources_action = QAction("Detect sources", self.parent)
         detect_sources_action.triggered.connect(self.parent.detect_sources_action)
         sources_menu.addAction(detect_sources_action)
-        
-        sources_menu.addSeparator()
         
         detect_gaia_stars_action = QAction("Detect Gaia stars in image", self.parent)
         detect_gaia_stars_action.triggered.connect(self.parent.detect_gaia_stars_in_image)
