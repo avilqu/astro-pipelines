@@ -1,3 +1,14 @@
+"""
+Source detection and analysis module for astro-pipelines.
+Provides functions for detecting and analyzing astronomical sources in images.
+
+IMPORTANT: HFR vs HFD Distinction
+- HFR (Half Flux Radius): The radius containing half the total flux of a source
+- HFD (Half Flux Diameter): The diameter containing half the total flux = 2 × HFR
+
+The HFR values calculated here are RADIUS values, not diameter values.
+"""
+
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -196,9 +207,9 @@ class DetectedSource:
         self.peak_value = peak_value  # peak pixel value
         self.background = background  # background level
         self.snr = snr  # signal-to-noise ratio
-        self.hfr = hfr  # half flux radius in pixels
+        self.hfr = hfr  # half flux radius in pixels (NOT diameter)
         self.fwhm = fwhm  # full width at half maximum in pixels
-        self.hfr_arcsec = hfr_arcsec  # half flux radius in arcseconds
+        self.hfr_arcsec = hfr_arcsec  # half flux radius in arcseconds (NOT diameter)
         self.fwhm_arcsec = fwhm_arcsec  # full width at half maximum in arcseconds
     
     def __str__(self):
@@ -206,6 +217,16 @@ class DetectedSource:
         if self.ra is not None and self.dec is not None:
             coord_str += f" [RA={self.ra:.6f}°, Dec={self.dec:.6f}°]"
         return f"Source {self.id}: {coord_str}, Flux={self.flux:.2f}, SNR={self.snr:.2f}"
+    
+    @property
+    def hfd(self):
+        """Half Flux Diameter (HFD) = 2 × HFR"""
+        return 2.0 * self.hfr if self.hfr > 0 else 0.0
+    
+    @property
+    def hfd_arcsec(self):
+        """Half Flux Diameter in arcseconds = 2 × HFR_arcsec"""
+        return 2.0 * self.hfr_arcsec if self.hfr_arcsec > 0 else 0.0
 
 
 class SourceDetectionResult:
@@ -522,10 +543,12 @@ def detect_sources_in_image(image: np.ndarray,
             hfr = 0.0
             fwhm = 0.0
             
-            # Try to get HFR (half flux radius)
+            # Try to get HFR (half flux radius) from photutils
+            # Note: HFR is the RADIUS containing half the flux, not diameter
             if hasattr(prop, 'half_light_radius'):
                 try:
                     hfr = float(prop.half_light_radius.value) if hasattr(prop.half_light_radius, 'value') else float(prop.half_light_radius)
+                    logger.debug(f"Source {i}: HFR from photutils: {hfr:.3f} pixels")
                 except:
                     hfr = 0.0
             
@@ -538,7 +561,10 @@ def detect_sources_in_image(image: np.ndarray,
             
             # If HFR is not available, estimate it from the area
             if hfr == 0.0 and area > 0:
-                hfr = np.sqrt(area / np.pi)  # Approximate HFR from circular area
+                # More accurate HFR estimation: typically HFR ≈ 0.5 * sqrt(area)
+                # This is based on typical source profiles where HFR is smaller than geometric radius
+                hfr = 0.5 * np.sqrt(area / np.pi)  # Conservative estimate for HFR
+                logger.debug(f"Source {i}: HFR estimated from area: {hfr:.3f} pixels (area={area:.1f})")
             
             # If FWHM is not available, estimate it from the sigma values
             if fwhm == 0.0 and semimajor_sigma > 0:
