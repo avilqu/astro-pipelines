@@ -60,8 +60,8 @@ if __name__ == "__main__":
         help="solve a single FITS file using astrometry.net"
     )
     parser.add_argument(
-        "-C", "--calibrate", metavar="FITS_FILE", 
-        help="calibrate a single FITS file using master bias, dark, and flat"
+        "-C", "--calibrate", nargs="+", metavar="FITS_FILE", 
+        help="calibrate one or more FITS files using master bias, dark, and flat"
     )
     parser.add_argument(
         "--get-obs", metavar="OBJECT_DESIGNATION", help="download and display MPC observations for the given asteroid designation"
@@ -215,40 +215,72 @@ if __name__ == "__main__":
             sys.exit(1)
 
     def calibrate_image():
-        """Calibrate a single FITS image using master bias, dark, and flat"""
+        """Calibrate one or more FITS images using master bias, dark, and flat"""
         try:
             from lib.fits.calibration import CalibrationManager
             import os
             
-            fits_file = args.calibrate
+            fits_files = args.calibrate
             
-            # Check if file exists
-            if not os.path.exists(fits_file):
-                print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+            # Validate all files first
+            valid_files = []
+            for fits_file in fits_files:
+                # Check if file exists
+                if not os.path.exists(fits_file):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                # Check if file has .fits extension
+                if not fits_file.lower().endswith(('.fits', '.fit')):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension): {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                valid_files.append(fits_file)
+            
+            if not valid_files:
+                print(f"{Style.BRIGHT + Fore.RED}No valid FITS files found to calibrate{Style.RESET_ALL}")
                 sys.exit(1)
             
-            # Check if file has .fits extension
-            if not fits_file.lower().endswith(('.fits', '.fit')):
-                print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension){Style.RESET_ALL}")
-                sys.exit(1)
-            
-            print(f"{Style.BRIGHT + Fore.BLUE}Starting calibration for: {fits_file}{Style.RESET_ALL}")
+            print(f"{Style.BRIGHT + Fore.BLUE}Starting calibration for {len(valid_files)} file(s)...{Style.RESET_ALL}")
             
             # Initialize calibration manager
             calib_manager = CalibrationManager()
             
-            # Calibrate the file
-            result = calib_manager.calibrate_file_simple(fits_file)
+            # Track results
+            successful_calibrations = 0
+            failed_calibrations = 0
             
-            if 'error' in result:
-                print(f"{Style.BRIGHT + Fore.RED}Calibration failed: {result['error']}{Style.RESET_ALL}")
+            # Calibrate each file
+            for i, fits_file in enumerate(valid_files, 1):
+                print(f"\n{Style.BRIGHT + Fore.CYAN}[{i}/{len(valid_files)}] Processing: {os.path.basename(fits_file)}{Style.RESET_ALL}")
+                
+                # Calibrate the file
+                result = calib_manager.calibrate_file_simple(fits_file)
+                
+                if 'error' in result:
+                    print(f"{Style.BRIGHT + Fore.RED}Calibration failed: {result['error']}{Style.RESET_ALL}")
+                    failed_calibrations += 1
+                    continue
+                
+                if result['success']:
+                    print(f"{Style.BRIGHT + Fore.GREEN}✓ Calibration completed successfully!{Style.RESET_ALL}")
+                    print(f"  Original file: {result['original_path']}")
+                    print(f"  Calibrated file: {result['calibrated_path']}")
+                    print(f"  Filename: {result['filename']}")
+                    successful_calibrations += 1
+                else:
+                    print(f"{Style.BRIGHT + Fore.RED}✗ Calibration failed for unknown reason{Style.RESET_ALL}")
+                    failed_calibrations += 1
+            
+            # Print summary
+            print(f"\n{Style.BRIGHT + Fore.BLUE}Calibration Summary:{Style.RESET_ALL}")
+            print(f"  Total files processed: {len(valid_files)}")
+            print(f"  Successful calibrations: {Style.BRIGHT + Fore.GREEN}{successful_calibrations}{Style.RESET_ALL}")
+            print(f"  Failed calibrations: {Style.BRIGHT + Fore.RED}{failed_calibrations}{Style.RESET_ALL}")
+            
+            # Exit with error code if any calibrations failed
+            if failed_calibrations > 0:
                 sys.exit(1)
-            
-            if result['success']:
-                print(f"\n{Style.BRIGHT + Fore.GREEN}Calibration completed successfully!{Style.RESET_ALL}")
-                print(f"Original file: {result['original_path']}")
-                print(f"Calibrated file: {result['calibrated_path']}")
-                print(f"Filename: {result['filename']}")
                 
         except ImportError as e:
             print(f"{Style.BRIGHT + Fore.RED}Error: Required modules not found.{Style.RESET_ALL}")

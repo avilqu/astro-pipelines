@@ -282,7 +282,7 @@ class CalibrationManager:
             Path to the temporary directory
         """
         temp_dir = Path("/tmp/astropipes/calibrated")
-        temp_dir.mkdir(exist_ok=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
     
     def subtract_bias(self, image_path: str, bias_master: CalibrationMaster) -> CCDData:

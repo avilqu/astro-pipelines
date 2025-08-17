@@ -66,7 +66,7 @@ def main():
     # Run astropipes.py with the same arguments
     try:
         result = subprocess.run([python_executable, astropipes_path] + args, 
-                              cwd=project_dir, check=True)
+                              check=True)
         sys.exit(result.returncode)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
