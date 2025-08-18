@@ -35,6 +35,7 @@ class CalibrationManager:
         
         For bias frames, we match on binning, filter, gain, offset, and CCD temperature,
         and choose the nearest PREVIOUS available bias (not future dates).
+        Optionally applies age constraint based on MAX_BIAS_AGE config.
         
         Args:
             fits_file: The FitsFile object to find calibration for
@@ -47,29 +48,38 @@ class CalibrationManager:
             # Get tolerance values from config
             ccd_temp_tolerance = 2  # From config.TESTED_FITS_CARDS
             
-            # Get all bias masters that match the constraints with proper tolerances
-            query = session.query(CalibrationMaster).filter(
-                and_(
-                    CalibrationMaster.frame == 'Bias',
-                    CalibrationMaster.binning == fits_file.binning,
-                    CalibrationMaster.filter_name == fits_file.filter_name,
-                    CalibrationMaster.gain == fits_file.gain,
-                    CalibrationMaster.offset == fits_file.offset,
-                    CalibrationMaster.ccd_temp.between(
-                        fits_file.ccd_temp - ccd_temp_tolerance,
-                        fits_file.ccd_temp + ccd_temp_tolerance
-                    ),
-                    CalibrationMaster.date <= fits_file.date_obs.strftime('%Y-%m-%d')
+            # Build base query constraints
+            # Note: Bias frames should NOT be filtered by astronomical filter
+            # since bias is independent of the filter used
+            constraints = [
+                CalibrationMaster.frame == 'Bias',
+                CalibrationMaster.binning == fits_file.binning,
+                CalibrationMaster.gain == fits_file.gain,
+                CalibrationMaster.offset == fits_file.offset,
+                CalibrationMaster.ccd_temp.between(
+                    fits_file.ccd_temp - ccd_temp_tolerance,
+                    fits_file.ccd_temp + ccd_temp_tolerance
                 )
-            ).order_by(CalibrationMaster.date.desc())
+            ]
+            
+            # Apply age constraint if MAX_BIAS_AGE > 0, otherwise no date constraint
+            age_constraint_msg = ""
+            if config.MAX_BIAS_AGE > 0:
+                oldest_allowed_date = fits_file.date_obs - timedelta(days=config.MAX_BIAS_AGE)
+                constraints.append(CalibrationMaster.date >= oldest_allowed_date.strftime('%Y-%m-%d'))
+                age_constraint_msg = f", age <= {config.MAX_BIAS_AGE} days"
+            
+            # Get all bias masters that match the constraints
+            query = session.query(CalibrationMaster).filter(and_(*constraints)).order_by(CalibrationMaster.date.desc())
             
             masters = query.all()
             
             if not masters:
                 print(f"{Style.BRIGHT + Fore.RED}Could not find a suitable master bias.{Style.RESET_ALL}")
-                print(f"  Required: binning={fits_file.binning}, filter={fits_file.filter_name}")
+                print(f"  Required: binning={fits_file.binning}")
                 print(f"  Gain={fits_file.gain}, offset={fits_file.offset}, ccd_temp={fits_file.ccd_temp}±{ccd_temp_tolerance}°C")
-                print(f"  Date constraint: <= {fits_file.date_obs.strftime('%Y-%m-%d')}")
+                if age_constraint_msg:
+                    print(f"  Date constraint: >= {(fits_file.date_obs - timedelta(days=config.MAX_BIAS_AGE)).strftime('%Y-%m-%d')}{age_constraint_msg}")
                 return None
             
             # Return the most recent one (closest previous date)
@@ -90,6 +100,7 @@ class CalibrationManager:
         For dark frames, we match on binning, gain, offset, and CCD temperature,
         and require exposure time >= the target file. If multiple options exist,
         choose the one with closest date_obs.
+        Optionally applies age constraint based on MAX_DARK_AGE config.
         
         Args:
             fits_file: The FitsFile object to find calibration for
@@ -102,20 +113,28 @@ class CalibrationManager:
             # Get tolerance values from config
             ccd_temp_tolerance = 2  # From config.TESTED_FITS_CARDS
             
-            # Get all dark masters that match the constraints with proper tolerances
-            query = session.query(CalibrationMaster).filter(
-                and_(
-                    CalibrationMaster.frame == 'Dark',
-                    CalibrationMaster.binning == fits_file.binning,
-                    CalibrationMaster.gain == fits_file.gain,
-                    CalibrationMaster.offset == fits_file.offset,
-                    CalibrationMaster.ccd_temp.between(
-                        fits_file.ccd_temp - ccd_temp_tolerance,
-                        fits_file.ccd_temp + ccd_temp_tolerance
-                    ),
-                    CalibrationMaster.exptime >= fits_file.exptime
-                )
-            )
+            # Build base query constraints
+            constraints = [
+                CalibrationMaster.frame == 'Dark',
+                CalibrationMaster.binning == fits_file.binning,
+                CalibrationMaster.gain == fits_file.gain,
+                CalibrationMaster.offset == fits_file.offset,
+                CalibrationMaster.ccd_temp.between(
+                    fits_file.ccd_temp - ccd_temp_tolerance,
+                    fits_file.ccd_temp + ccd_temp_tolerance
+                ),
+                CalibrationMaster.exptime >= fits_file.exptime
+            ]
+            
+            # Apply age constraint if MAX_DARK_AGE > 0
+            age_constraint_msg = ""
+            if config.MAX_DARK_AGE > 0:
+                oldest_allowed_date = fits_file.date_obs - timedelta(days=config.MAX_DARK_AGE)
+                constraints.append(CalibrationMaster.date >= oldest_allowed_date.strftime('%Y-%m-%d'))
+                age_constraint_msg = f", age <= {config.MAX_DARK_AGE} days"
+            
+            # Get all dark masters that match the constraints
+            query = session.query(CalibrationMaster).filter(and_(*constraints))
             
             masters = query.all()
             
@@ -124,6 +143,8 @@ class CalibrationManager:
                 print(f"  Required: binning={fits_file.binning}, gain={fits_file.gain}, "
                       f"offset={fits_file.offset}, ccd_temp={fits_file.ccd_temp}±{ccd_temp_tolerance}°C")
                 print(f"  Exposure constraint: >= {fits_file.exptime}s")
+                if age_constraint_msg:
+                    print(f"  Date constraint: >= {(fits_file.date_obs - timedelta(days=config.MAX_DARK_AGE)).strftime('%Y-%m-%d')}{age_constraint_msg}")
                 return None
             
             # Find the one with closest date_obs
@@ -156,6 +177,7 @@ class CalibrationManager:
         
         For flat frames, we match on binning and filter, and choose the nearest
         PREVIOUS available flat (not future dates).
+        Optionally applies age constraint based on MAX_FLAT_AGE config.
         
         Args:
             fits_file: The FitsFile object to find calibration for
@@ -165,22 +187,30 @@ class CalibrationManager:
         """
         session = self.db_manager.get_session()
         try:
-            # Get all flat masters that match binning and filter
-            query = session.query(CalibrationMaster).filter(
-                and_(
-                    CalibrationMaster.frame == 'Flat',
-                    CalibrationMaster.binning == fits_file.binning,
-                    CalibrationMaster.filter_name == fits_file.filter_name,
-                    CalibrationMaster.date <= fits_file.date_obs.strftime('%Y-%m-%d')
-                )
-            ).order_by(CalibrationMaster.date.desc())
+            # Build base query constraints
+            constraints = [
+                CalibrationMaster.frame == 'Flat',
+                CalibrationMaster.binning == fits_file.binning,
+                CalibrationMaster.filter_name == fits_file.filter_name,
+                CalibrationMaster.date <= fits_file.date_obs.strftime('%Y-%m-%d')
+            ]
+            
+            # Apply age constraint if MAX_FLAT_AGE > 0
+            age_constraint_msg = ""
+            if config.MAX_FLAT_AGE > 0:
+                oldest_allowed_date = fits_file.date_obs - timedelta(days=config.MAX_FLAT_AGE)
+                constraints.append(CalibrationMaster.date >= oldest_allowed_date.strftime('%Y-%m-%d'))
+                age_constraint_msg = f", age <= {config.MAX_FLAT_AGE} days"
+            
+            # Get all flat masters that match the constraints
+            query = session.query(CalibrationMaster).filter(and_(*constraints)).order_by(CalibrationMaster.date.desc())
             
             masters = query.all()
             
             if not masters:
                 print(f"{Style.BRIGHT + Fore.RED}Could not find a suitable master flat.{Style.RESET_ALL}")
                 print(f"  Required: binning={fits_file.binning}, filter={fits_file.filter_name}")
-                print(f"  Date constraint: <= {fits_file.date_obs.strftime('%Y-%m-%d')}")
+                print(f"  Date constraint: <= {fits_file.date_obs.strftime('%Y-%m-%d')}{age_constraint_msg}")
                 return None
             
             # Return the most recent one (closest previous date)
@@ -518,17 +548,23 @@ class CalibrationManager:
         # Find calibration masters
         masters = self.find_calibration_masters(fits_file)
         
-        # Check if we have all required masters
+        # Check which masters are missing and warn, but proceed with available ones
         missing_masters = []
+        available_masters = []
         for step, required in steps.items():
             if required and not masters.get(step):
                 missing_masters.append(step)
+            elif required and masters.get(step):
+                available_masters.append(step)
         
         if missing_masters:
-            print(f"{Style.BRIGHT + Fore.RED}Cannot calibrate: missing masters for {', '.join(missing_masters)}{Style.RESET_ALL}")
-            return {'error': f'Missing masters: {missing_masters}'}
+            print(f"{Style.BRIGHT + Fore.YELLOW}Warning: missing masters for {', '.join(missing_masters)}, proceeding with available calibrations{Style.RESET_ALL}")
         
-        print(f"\n{Style.BRIGHT}Calibrating {os.path.basename(file_path)}...{Style.RESET_ALL}")
+        if not available_masters:
+            print(f"{Style.BRIGHT + Fore.RED}Cannot calibrate: no calibration masters found{Style.RESET_ALL}")
+            return {'error': 'No calibration masters found'}
+        
+        print(f"\n{Style.BRIGHT}Calibrating {os.path.basename(file_path)} using: {', '.join(available_masters)}...{Style.RESET_ALL}")
         
         # Create temporary directory
         temp_dir = self._create_temp_dir()
@@ -575,7 +611,9 @@ class CalibrationManager:
                 'original_path': file_path,
                 'calibrated_path': str(output_path),
                 'filename': new_filename,
-                'masters_used': masters
+                'masters_used': masters,
+                'applied_calibrations': available_masters,
+                'missing_masters': missing_masters
             }
             
         except Exception as e:

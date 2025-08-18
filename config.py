@@ -83,6 +83,12 @@ BIAS_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 DARK_CONSTRAINTS = ['GAIN', 'OFFSET', 'CCD-TEMP', 'XBINNING']
 FLAT_CONSTRAINTS = ['FILTER', 'XBINNING']
 
+# Maximum age (in days) for calibration masters. If set to 0, no age limit is applied.
+# These control how old a calibration master can be relative to the science frame.
+MAX_BIAS_AGE = 0   # No age limit for bias frames by default
+MAX_DARK_AGE = 0   # No age limit for dark frames by default  
+MAX_FLAT_AGE = 0  # Flat frames older than 30 days are not considered by default
+
 # Header cards used for the sequence consistency tests and header
 # summary display. Script will issue an error if testing a card
 # that isn't present. Comment them out from this list if you
