@@ -64,8 +64,14 @@ class PlatesolvingResult:
     def __str__(self):
         status = "SUCCESS" if self.success else "FAILED"
         result = f"{status}: {self.message}"
-        if self.success and self.ra_center and self.dec_center:
-            result += f" (RA={self.ra_center:.4f}°, Dec={self.dec_center:.4f}°)"
+        if self.success and self.ra_center is not None and self.dec_center is not None:
+            try:
+                ra_center = float(self.ra_center)
+                dec_center = float(self.dec_center)
+                result += f" (RA={ra_center:.4f}°, Dec={dec_center:.4f}°)"
+            except (ValueError, TypeError):
+                # Skip formatting if values can't be converted to float
+                result += f" (RA={self.ra_center}, Dec={self.dec_center})"
         return result
 
 
@@ -452,16 +458,33 @@ def solve_single_image(fits_file_path: str,
             output_callback(f"{Style.BRIGHT + Fore.GREEN}Successfully solved {fits_file_path}{Style.RESET_ALL}\n")
         else:
             print(f"{Style.BRIGHT + Fore.GREEN}Successfully solved {fits_file_path}{Style.RESET_ALL}")
-        if solve_result.ra_center and solve_result.dec_center:
-            if output_callback:
-                output_callback(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={solve_result.ra_center:.4f}°, Dec={solve_result.dec_center:.4f}°{Style.RESET_ALL}\n")
-            else:
-                print(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={solve_result.ra_center:.4f}°, Dec={solve_result.dec_center:.4f}°{Style.RESET_ALL}")
-        if solve_result.pixel_scale:
-            if output_callback:
-                output_callback(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {solve_result.pixel_scale:.3f} arcsec/pixel{Style.RESET_ALL}\n")
-            else:
-                print(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {solve_result.pixel_scale:.3f} arcsec/pixel{Style.RESET_ALL}")
+        if solve_result.ra_center is not None and solve_result.dec_center is not None:
+            try:
+                ra_center = float(solve_result.ra_center)
+                dec_center = float(solve_result.dec_center)
+                if output_callback:
+                    output_callback(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°{Style.RESET_ALL}\n")
+                else:
+                    print(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°{Style.RESET_ALL}")
+            except (ValueError, TypeError):
+                # Skip formatting if values can't be converted to float
+                if output_callback:
+                    output_callback(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={solve_result.ra_center}, Dec={solve_result.dec_center}{Style.RESET_ALL}\n")
+                else:
+                    print(f"{Style.BRIGHT + Fore.GREEN}   Center: RA={solve_result.ra_center}, Dec={solve_result.dec_center}{Style.RESET_ALL}")
+        if solve_result.pixel_scale is not None:
+            try:
+                pixel_scale = float(solve_result.pixel_scale)
+                if output_callback:
+                    output_callback(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {pixel_scale:.3f} arcsec/pixel{Style.RESET_ALL}\n")
+                else:
+                    print(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {pixel_scale:.3f} arcsec/pixel{Style.RESET_ALL}")
+            except (ValueError, TypeError):
+                # Skip formatting if value can't be converted to float
+                if output_callback:
+                    output_callback(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {solve_result.pixel_scale} arcsec/pixel{Style.RESET_ALL}\n")
+                else:
+                    print(f"{Style.BRIGHT + Fore.GREEN}   Pixel scale: {solve_result.pixel_scale} arcsec/pixel{Style.RESET_ALL}")
         
         # Check if file is in database and update if needed
         if output_callback:
@@ -497,16 +520,33 @@ def solve_single_image(fits_file_path: str,
                                 output_callback(f"   WCS type: {updated_fields['wcs_type']}\n")
                             else:
                                 print(f"   WCS type: {updated_fields['wcs_type']}")
-                            if 'image_scale' in updated_fields and updated_fields['image_scale']:
+                        if 'image_scale' in updated_fields and updated_fields['image_scale'] is not None:
+                            try:
+                                image_scale = float(updated_fields['image_scale'])
                                 if output_callback:
-                                    output_callback(f"   Pixel scale: {updated_fields['image_scale']:.3f} arcsec/pixel\n")
+                                    output_callback(f"   Pixel scale: {image_scale:.3f} arcsec/pixel\n")
                                 else:
-                                    print(f"   Pixel scale: {updated_fields['image_scale']:.3f} arcsec/pixel")
-                            if 'ra_center' in updated_fields and updated_fields['ra_center']:
+                                    print(f"   Pixel scale: {image_scale:.3f} arcsec/pixel")
+                            except (ValueError, TypeError):
+                                # Skip formatting if value can't be converted to float
                                 if output_callback:
-                                    output_callback(f"   Center: RA={updated_fields['ra_center']:.4f}°, Dec={updated_fields['dec_center']:.4f}°\n")
+                                    output_callback(f"   Pixel scale: {updated_fields['image_scale']} arcsec/pixel\n")
                                 else:
-                                    print(f"   Center: RA={updated_fields['ra_center']:.4f}°, Dec={updated_fields['dec_center']:.4f}°")
+                                    print(f"   Pixel scale: {updated_fields['image_scale']} arcsec/pixel")
+                        if 'ra_center' in updated_fields and updated_fields['ra_center'] is not None and 'dec_center' in updated_fields and updated_fields['dec_center'] is not None:
+                            try:
+                                ra_center = float(updated_fields['ra_center'])
+                                dec_center = float(updated_fields['dec_center'])
+                                if output_callback:
+                                    output_callback(f"   Center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°\n")
+                                else:
+                                    print(f"   Center: RA={ra_center:.4f}°, Dec={dec_center:.4f}°")
+                            except (ValueError, TypeError):
+                                # Skip formatting if values can't be converted to float
+                                if output_callback:
+                                    output_callback(f"   Center: RA={updated_fields['ra_center']}, Dec={updated_fields['dec_center']}\n")
+                                else:
+                                    print(f"   Center: RA={updated_fields['ra_center']}, Dec={updated_fields['dec_center']}")
                     else:
                         if output_callback:
                             output_callback(f"   Error updating database: {rescan_result['message']}\n")
