@@ -56,8 +56,8 @@ if __name__ == "__main__":
         "--scan-all", action="store_true", help="scan and import both image and calibration FITS files into database"
     )
     parser.add_argument(
-        "-S", "--solve", metavar="FITS_FILE", 
-        help="solve a single FITS file using astrometry.net"
+        "-S", "--solve", nargs="+", metavar="FITS_FILE", 
+        help="solve one or more FITS files using astrometry.net"
     )
     parser.add_argument(
         "-C", "--calibrate", nargs="+", metavar="FITS_FILE", 
@@ -166,44 +166,73 @@ if __name__ == "__main__":
         print(f"\n{Style.BRIGHT + Fore.CYAN}Full scan completed!{Style.RESET_ALL}")
 
     def solve_image():
-        """Solve a single FITS image using astrometry.net"""
+        """Solve one or more FITS images using astrometry.net"""
         try:
             from lib.sci.platesolving import solve_single_image
             import os
             import logging
             
-            fits_file = args.solve
+            fits_files = args.solve
             
-            # Check if file exists
-            if not os.path.exists(fits_file):
-                print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+            # Validate all files first
+            valid_files = []
+            for fits_file in fits_files:
+                # Check if file exists
+                if not os.path.exists(fits_file):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                # Check if file has .fits extension
+                if not fits_file.lower().endswith(('.fits', '.fit')):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension): {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                valid_files.append(fits_file)
+            
+            if not valid_files:
+                print(f"{Style.BRIGHT + Fore.RED}No valid FITS files found to solve{Style.RESET_ALL}")
                 sys.exit(1)
             
-            # Check if file has .fits extension
-            if not fits_file.lower().endswith(('.fits', '.fit')):
-                print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension){Style.RESET_ALL}")
-                sys.exit(1)
+            print(f"{Style.BRIGHT + Fore.BLUE}Starting platesolving for {len(valid_files)} file(s)...{Style.RESET_ALL}")
             
-            print(f"{Style.BRIGHT + Fore.BLUE}Starting platesolving for: {fits_file}{Style.RESET_ALL}")
+            # Track results
+            successful_solves = 0
+            failed_solves = 0
             
             # Temporarily enable logging for platesolving
             logging.disable(logging.NOTSET)
             
-            # Run the platesolving pipeline
-            result = solve_single_image(
-                fits_file_path=fits_file,
-                solve_field_path="solve-field",
-                output_dir="/tmp/astropipes/solved",
-                timeout=300,
-                apply_solution=True
-            )
+            # Solve each file
+            for i, fits_file in enumerate(valid_files, 1):
+                print(f"\n{Style.BRIGHT + Fore.CYAN}[{i}/{len(valid_files)}] Processing: {os.path.basename(fits_file)}{Style.RESET_ALL}")
+                
+                # Run the platesolving pipeline
+                result = solve_single_image(
+                    fits_file_path=fits_file,
+                    solve_field_path="solve-field",
+                    output_dir="/tmp/astropipes/solved",
+                    timeout=300,
+                    apply_solution=True
+                )
+                
+                if result.success:
+                    print(f"{Style.BRIGHT + Fore.GREEN}✓ Platesolving completed successfully!{Style.RESET_ALL}")
+                    successful_solves += 1
+                else:
+                    print(f"{Style.BRIGHT + Fore.RED}✗ Platesolving failed{Style.RESET_ALL}")
+                    failed_solves += 1
             
             # Disable logging again after platesolving
             logging.disable(sys.maxsize)
             
-            # The solve_single_image function already handles console output
-            # We just need to check the result for exit code
-            if not result.success:
+            # Print summary
+            print(f"\n{Style.BRIGHT + Fore.BLUE}Platesolving Summary:{Style.RESET_ALL}")
+            print(f"  Total files processed: {len(valid_files)}")
+            print(f"  Successful solves: {Style.BRIGHT + Fore.GREEN}{successful_solves}{Style.RESET_ALL}")
+            print(f"  Failed solves: {Style.BRIGHT + Fore.RED}{failed_solves}{Style.RESET_ALL}")
+            
+            # Exit with error code if any solves failed
+            if failed_solves > 0:
                 sys.exit(1)
                 
         except ImportError as e:
