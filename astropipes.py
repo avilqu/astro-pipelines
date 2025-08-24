@@ -68,6 +68,18 @@ if __name__ == "__main__":
         help="align multiple FITS files using the first as reference (supports WCS reprojection & astroalign)"
     )
     parser.add_argument(
+        "-I", "--integrate", nargs="+", metavar="FITS_FILE", 
+        help="integrate multiple FITS files using standard stacking (no motion tracking)"
+    )
+    parser.add_argument(
+        "--integration-method", choices=['average', 'median', 'sum'], default='average',
+        help="integration method for stacking (default: average)"
+    )
+    parser.add_argument(
+        "--sigma-clip", action="store_true",
+        help="apply sigma clipping during integration to reject outliers"
+    )
+    parser.add_argument(
         "--get-obs", metavar="OBJECT_DESIGNATION", help="download and display MPC observations for the given asteroid designation"
     )
     parser.add_argument(
@@ -551,6 +563,130 @@ if __name__ == "__main__":
             print(f"{Style.BRIGHT + Fore.RED}Error during alignment: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
+    def integrate_images_cli():
+        """Integrate multiple FITS images using standard stacking (no motion tracking)."""
+        try:
+            from lib.fits.integration import integrate_standard
+            from lib.fits.align import get_memory_usage
+            from astropy.io import fits
+            import os
+            import tempfile
+            import config
+            
+            fits_files = args.integrate
+            
+            # Validate all files first
+            valid_files = []
+            for fits_file in fits_files:
+                # Check if file exists
+                if not os.path.exists(fits_file):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                # Check if file has .fits extension
+                if not fits_file.lower().endswith(('.fits', '.fit')):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension): {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                valid_files.append(fits_file)
+            
+            if not valid_files:
+                print(f"{Style.BRIGHT + Fore.RED}No valid FITS files found to integrate{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            if len(valid_files) < 2:
+                print(f"{Style.BRIGHT + Fore.RED}At least 2 FITS files are required for integration{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            print(f"{Style.BRIGHT + Fore.BLUE}Starting image integration for {len(valid_files)} file(s)...{Style.RESET_ALL}")
+            
+            # Check image count limit
+            if len(valid_files) > config.MAX_INTEGRATION_IMAGES:
+                print(f"\n{Style.BRIGHT + Fore.YELLOW}Warning: {len(valid_files)} images exceeds the limit of {config.MAX_INTEGRATION_IMAGES}{Style.RESET_ALL}")
+                reply = input("Continue anyway? (y/N): ").strip().lower()
+                if reply not in ['y', 'yes']:
+                    print("Integration cancelled.")
+                    return
+            
+            # Create output directory
+            output_dir = "/tmp/astropipes/integrated"
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Create unique subdirectory for this integration session
+            temp_dir = tempfile.mkdtemp(dir=output_dir, prefix="")
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Output directory: {temp_dir}{Style.RESET_ALL}")
+            
+            # Progress callback for console output
+            def progress_callback(progress):
+                percentage = int(progress * 100)
+                print(f"\r  Progress: {percentage}%", end="", flush=True)
+            
+            # Perform integration using the standard integration function
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Starting integration...{Style.RESET_ALL}")
+            try:
+                # Use the integrate_standard function from the integration module
+                integrated_result = integrate_standard(
+                    files=valid_files,
+                    method=args.integration_method,  # Use command line method
+                    sigma_clip=args.sigma_clip,      # Use command line sigma clip option
+                    output_path=None,  # We'll save manually
+                    progress_callback=progress_callback,
+                    memory_limit=config.INTEGRATION_MEMORY_LIMIT
+                )
+                print(f"\n{Style.BRIGHT + Fore.GREEN}✓ Integration completed successfully!{Style.RESET_ALL}")
+                
+            except Exception as e:
+                print(f"\n{Style.BRIGHT + Fore.RED}✗ Integration failed: {e}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Save integrated image
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Saving integrated image...{Style.RESET_ALL}")
+            
+            # Generate output filename based on input files
+            if len(valid_files) <= 5:
+                # For small numbers of files, include their names in the output filename
+                base_names = [os.path.splitext(os.path.basename(f))[0] for f in valid_files[:3]]
+                if len(valid_files) > 3:
+                    base_names.append(f"+{len(valid_files)-3}_more")
+                output_filename = f"integrated_{'_'.join(base_names)}.fits"
+            else:
+                # For many files, use a generic name
+                output_filename = f"integrated_{len(valid_files)}_images.fits"
+            
+            new_file_path = os.path.join(temp_dir, output_filename)
+            
+            try:
+                # Save the integrated result
+                integrated_result.write(new_file_path, overwrite=True)
+                print(f"  Saved: {output_filename}")
+                
+            except Exception as e:
+                print(f"  Error saving integrated image: {e}")
+                sys.exit(1)
+            
+            # Print summary
+            print(f"\n{Style.BRIGHT + Fore.BLUE}Integration Summary:{Style.RESET_ALL}")
+            print(f"  Total files processed: {len(valid_files)}")
+            print(f"  Method used: Standard Stacking ({args.integration_method})")
+            print(f"  Sigma clipping: {'Enabled' if args.sigma_clip else 'Disabled'}")
+            print(f"  Output directory: {temp_dir}")
+            print(f"  Output file: {output_filename}")
+            
+            if os.path.exists(new_file_path):
+                print(f"\n{Style.BRIGHT + Fore.GREEN}Integrated image saved successfully!{Style.RESET_ALL}")
+                print(f"  File size: {os.path.getsize(new_file_path) / (1024*1024):.1f} MB")
+            else:
+                print(f"\n{Style.BRIGHT + Fore.YELLOW}Integration failed. Check the output above.{Style.RESET_ALL}")
+                sys.exit(1)
+                
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: Required modules not found.{Style.RESET_ALL}")
+            print(f"Error details: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error during integration: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
     def get_observations():
         """Download and display MPC observations for a given asteroid designation using mpcq."""
         try:
@@ -666,6 +802,8 @@ if __name__ == "__main__":
         calibrate_image()
     elif args.align:
         align_images_cli()
+    elif args.integrate:
+        integrate_images_cli()
     elif args.get_obs:
         get_observations()
     elif args.get_neocp_obs:

@@ -70,6 +70,8 @@ SIGMA_HIGH = 3
 INTEGRATION_MEMORY_LIMIT = 6e9  # 6GB memory limit for integration (in bytes)
 INTEGRATION_CHUNK_SIZE = 15     # Number of images to process in each chunk
 INTEGRATION_ENABLE_CHUNKED = True  # Enable chunked processing for large datasets
+INTEGRATION_SAVE_PROGRESSIVE = True  # Save integrated images progressively instead of all at once
+MAX_INTEGRATION_IMAGES = 100    # Maximum number of images to integrate at once
 
 # Motion tracking integration settings
 MOTION_TRACKING_SIGMA_CLIP = False  # Disable sigma clipping by default for motion tracking to avoid border issues

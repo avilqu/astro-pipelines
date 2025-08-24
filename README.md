@@ -11,11 +11,13 @@ Miscellaneous other tools added as the project develops.
 Astro-Pipelines requires Python 3.11 to run as some of its dependencies aren't compatible with the latest versions (namely `astroscrappy`).
 
 The recommended approach is to create a virtual environment:
+
 - `python3.11 -m venv .venv`
 - `source .venv/bin/activate`
 - `pip install -r requirements.txt`
 
 For manual installation, Astro-Pipelines depends on the following pakages:
+
 - `colorama`
 - `astropy`
 - `ccdproc`
@@ -60,6 +62,79 @@ Astro-Pipelines has several executable scripts:
 - `platesolve.py`: Separate wrapper for the Astrometry.Net engine. Use for online platesolving and better control over the platesolving options (although in that last case I would recommend to use `solve-field` directly). See `--help` option for details.
 - `autopipe.py`: Automated pipeline that monitors the observation directory for new FITS files and automatically calibrates and platesolves them.
 
+### Command Line Usage
+
+Astro-Pipelines provides a comprehensive command-line interface for astronomical image processing:
+
+#### Basic Commands
+
+```bash
+# View help
+astropipes --help
+
+# Open GUI
+astropipes -G
+
+# View configuration
+astropipes --config
+```
+
+#### Image Processing
+
+```bash
+# Platesolve images
+astropipes -S image1.fits image2.fits
+
+# Calibrate images
+astropipes -C image1.fits image2.fits
+
+# Align images
+astropipes -A image1.fits image2.fits
+
+# Integrate images (NEW!)
+astropipes -I image1.fits image2.fits
+```
+
+#### Image Integration
+
+The new `-I` option allows you to integrate (stack) multiple FITS images using standard stacking methods:
+
+**Basic Integration:**
+
+```bash
+# Integrate multiple files
+astropipes -I file1.fits file2.fits file3.fits
+
+# Use glob patterns
+astropipes -I *.fits
+astropipes -I L/*.fits
+```
+
+**Advanced Options:**
+
+```bash
+# Choose integration method
+astropipes -I *.fits --integration-method median
+astropipes -I *.fits --integration-method sum
+
+# Enable sigma clipping
+astropipes -I *.fits --sigma-clip
+
+# Combine options
+astropipes -I *.fits --integration-method median --sigma-clip
+```
+
+**Features:**
+
+- Automatic sequence consistency checking
+- Multiple integration methods (average, median, sum)
+- Optional sigma clipping for outlier rejection
+- Progress tracking and memory management
+- WCS coordinate system preservation
+- Output saved to organized temporary directories
+
+See `INTEGRATION_USAGE.md` for detailed integration documentation.
+
 ### GUI Viewer
 
 Astro-Pipelines includes a PyQt6-based GUI viewer for FITS images (located in `lib/gui_pyqt.py`) with the following features:
@@ -88,7 +163,7 @@ python astro-pipelines.py --gui path/to/image.fits
 
 #### GUI Controls
 
-- **Mouse**: 
+- **Mouse**:
   - Left-click and drag to pan
   - Mouse wheel to zoom in/out
 - **Keyboard**:
@@ -109,6 +184,7 @@ python astro-pipelines.py --gui path/to/image.fits
 The GUI includes an enhanced plate solving feature with real-time progress monitoring:
 
 **Features:**
+
 - **Progress Dialog**: A dedicated window shows solving progress with real-time console output
 - **Live Output Capture**: See the actual `solve-field` command output as it happens
 - **Cancel Support**: Ability to cancel solving process at any time
@@ -116,6 +192,7 @@ The GUI includes an enhanced plate solving feature with real-time progress monit
 - **Threaded Processing**: Solving runs in background thread to keep GUI responsive
 
 **Usage:**
+
 1. Load a FITS image (with or without WCS information)
 2. Click the "Solve" button
 3. A progress dialog will open showing:
@@ -126,10 +203,12 @@ The GUI includes an enhanced plate solving feature with real-time progress monit
 6. If successful, the image is automatically reloaded with the new WCS information
 
 **Solving Modes:**
+
 - **Guided Solving**: Uses existing WCS information for faster, more accurate solving
 - **Blind Solving**: Searches the entire sky when no WCS information is available
 
 **Progress Dialog Features:**
+
 - **Dark Theme**: Console output uses dark background with white text for better readability
 - **Auto-scroll**: Output automatically scrolls to show the latest messages
 - **Process Monitoring**: Shows the exact `solve-field` command being executed
@@ -141,23 +220,27 @@ The GUI includes an enhanced plate solving feature with real-time progress monit
 The GUI includes advanced functionality to search for and display solar system objects in astronomical images:
 
 **Requirements:**
+
 - FITS image with valid WCS (World Coordinate System) information
 - Observation date/time in the FITS header (DATE-OBS, TIME-OBS, etc.)
 - Internet connection for Skybot service access
 
 **Features:**
+
 - **Skybot Cone Search**: Uses the IMCCE Skybot service to find solar system objects in the field
 - **Object Information**: Displays name, type, coordinates, magnitude, distance, and velocity
 - **Visual Markers**: Green circles with object names overlaid on the image
 - **Filtered Results**: Only shows objects actually within the image boundaries
 
 **Usage:**
+
 1. Load a FITS image with WCS information
 2. Click "Solar System Objects" button
 3. The system will search for objects and display results in a dialog
 4. Use "Toggle Object Markers" to show/hide green circles on the image
 
 **Object Information Displayed:**
+
 - **Name**: Object identifier (e.g., asteroid number, comet designation)
 - **Type**: Object classification (asteroid, comet, planet, etc.)
 - **RA/Dec**: Right ascension and declination in degrees
@@ -170,23 +253,27 @@ The GUI includes advanced functionality to search for and display solar system o
 The motion tracking integration feature allows you to stack images while keeping moving objects (like asteroids) static in the final result. This is particularly useful for tracking solar system objects that move across the field of view during observations.
 
 **Features:**
+
 - **Dual Stack Output**: By default, creates both median and average stacks for comparison
 - **Ephemeris-based Tracking**: Uses orbital elements to calculate precise object positions
 - **Border Handling**: Proper padding and cropping to avoid edge artifacts
 - **Configurable**: Control stack types and processing parameters via configuration
 
 **Configuration Options:**
+
 - `MOTION_TRACKING_CREATE_BOTH_STACKS`: Set to `True` to create both median and average stacks, `False` for single stack
 - `MOTION_TRACKING_METHOD`: Default method when creating single stack ('average', 'median', 'sum')
 - `MOTION_TRACKING_SIGMA_CLIP`: Enable/disable sigma clipping (default: False to avoid border issues)
 
 **Usage:**
+
 1. Load a sequence of FITS images in the viewer
 2. Compute orbit data for the target object using "Solar System Objects" menu
 3. Use "Stack on ephemeris" from the integration menu
 4. Both median and average stacks will be created and loaded into the viewer
 
 **Output Files:**
+
 - `{basename}_median.fits`: Median stack (better for noise reduction)
 - `{basename}_average.fits`: Average stack (better for signal preservation)
 
