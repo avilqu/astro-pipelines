@@ -64,6 +64,10 @@ if __name__ == "__main__":
         help="calibrate one or more FITS files using master bias, dark, and flat"
     )
     parser.add_argument(
+        "-A", "--align", nargs="+", metavar="FITS_FILE", 
+        help="align multiple FITS files using the first as reference (supports WCS reprojection & astroalign)"
+    )
+    parser.add_argument(
         "--get-obs", metavar="OBJECT_DESIGNATION", help="download and display MPC observations for the given asteroid designation"
     )
     parser.add_argument(
@@ -319,6 +323,234 @@ if __name__ == "__main__":
             print(f"{Style.BRIGHT + Fore.RED}Error during calibration: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
+    def align_images_cli():
+        """Align multiple FITS images using the first as reference with memory protection"""
+        try:
+            from lib.fits.align import (get_alignment_methods, get_memory_usage, 
+                                      check_all_have_wcs, check_pixel_scales_match, 
+                                      check_astroalign_available, align_images_chunked)
+            from astropy.io import fits
+            import os
+            import tempfile
+            import config
+            
+            fits_files = args.align
+            
+            # Validate all files first
+            valid_files = []
+            for fits_file in fits_files:
+                # Check if file exists
+                if not os.path.exists(fits_file):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File not found: {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                # Check if file has .fits extension
+                if not fits_file.lower().endswith(('.fits', '.fit')):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: File must be a FITS file (.fits or .fit extension): {fits_file}{Style.RESET_ALL}")
+                    continue
+                
+                valid_files.append(fits_file)
+            
+            if not valid_files:
+                print(f"{Style.BRIGHT + Fore.RED}No valid FITS files found to align{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            if len(valid_files) < 2:
+                print(f"{Style.BRIGHT + Fore.RED}At least 2 FITS files are required for alignment{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            print(f"{Style.BRIGHT + Fore.BLUE}Starting image alignment for {len(valid_files)} file(s)...{Style.RESET_ALL}")
+            print(f"{Style.BRIGHT + Fore.CYAN}Reference image: {os.path.basename(valid_files[0])}{Style.RESET_ALL}")
+            
+            # Load all images and headers
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Loading FITS files...{Style.RESET_ALL}")
+            image_datas = []
+            headers = []
+            total_memory_estimate = 0
+            
+            for i, fits_file in enumerate(valid_files):
+                print(f"  [{i+1}/{len(valid_files)}] Loading: {os.path.basename(fits_file)}")
+                try:
+                    with fits.open(fits_file) as hdul:
+                        img = hdul[0].data
+                        hdr = hdul[0].header
+                        image_datas.append(img)
+                        headers.append(hdr)
+                        total_memory_estimate += img.nbytes
+                except Exception as e:
+                    print(f"{Style.BRIGHT + Fore.RED}Error loading {fits_file}: {e}{Style.RESET_ALL}")
+                    sys.exit(1)
+            
+            # Memory analysis
+            current_memory = get_memory_usage()
+            estimated_alignment_memory = total_memory_estimate * 2  # Rough estimate for aligned images
+            total_estimated_memory = current_memory + (estimated_alignment_memory / (1024 * 1024))
+            
+            print(f"\n{Style.BRIGHT + Fore.BLUE}Memory Analysis:{Style.RESET_ALL}")
+            print(f"  Current memory usage: {current_memory:.1f} MB")
+            print(f"  Images to align: {len(image_datas)}")
+            print(f"  Total image data size: {total_memory_estimate / (1024*1024):.1f} MB")
+            print(f"  Estimated alignment memory: {estimated_alignment_memory / (1024*1024):.1f} MB")
+            print(f"  Total estimated memory: {total_estimated_memory:.1f} MB")
+            print(f"  Memory limit: {config.ALIGNMENT_MEMORY_LIMIT / (1024*1024):.1f} MB")
+            
+            # Check memory limits
+            if total_estimated_memory > (config.ALIGNMENT_MEMORY_LIMIT / (1024 * 1024)):
+                print(f"\n{Style.BRIGHT + Fore.YELLOW}Warning: Estimated memory usage exceeds limit{Style.RESET_ALL}")
+                if not config.ALIGNMENT_ENABLE_CHUNKED:
+                    print(f"{Style.BRIGHT + Fore.RED}Chunked processing is disabled. Consider enabling it in config.py{Style.RESET_ALL}")
+                    sys.exit(1)
+                print(f"{Style.BRIGHT + Fore.CYAN}Chunked processing will be used to manage memory{Style.RESET_ALL}")
+            
+            # Check image count limit
+            if len(image_datas) > config.MAX_ALIGNMENT_IMAGES:
+                print(f"\n{Style.BRIGHT + Fore.YELLOW}Warning: {len(image_datas)} images exceeds the limit of {config.MAX_ALIGNMENT_IMAGES}{Style.RESET_ALL}")
+                reply = input("Continue anyway? (y/N): ").strip().lower()
+                if reply not in ['y', 'yes']:
+                    print("Alignment cancelled.")
+                    return
+            
+            # Determine alignment method
+            available_methods = get_alignment_methods()
+            method = config.DEFAULT_ALIGNMENT_METHOD
+            
+            # Validate method availability
+            if method not in available_methods:
+                if config.FALLBACK_ALIGNMENT_METHOD in available_methods:
+                    print(f"{Style.BRIGHT + Fore.YELLOW}Warning: Default method '{method}' not available. Using fallback '{config.FALLBACK_ALIGNMENT_METHOD}'{Style.RESET_ALL}")
+                    method = config.FALLBACK_ALIGNMENT_METHOD
+                else:
+                    print(f"{Style.BRIGHT + Fore.RED}Error: No alignment methods available{Style.RESET_ALL}")
+                    sys.exit(1)
+            
+            # Method-specific validation
+            if method == "wcs_reprojection":
+                if not check_all_have_wcs(headers):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: One or more images is not platesolved (missing WCS).{Style.RESET_ALL}")
+                    print(f"Consider using astroalign method instead or platesolve the images first.")
+                    sys.exit(1)
+                
+                if not check_pixel_scales_match(headers):
+                    print(f"{Style.BRIGHT + Fore.RED}Error: Pixel scales do not match between images.{Style.RESET_ALL}")
+                    print(f"Consider using astroalign method instead.")
+                    sys.exit(1)
+            
+            elif method == "astroalign":
+                if not check_astroalign_available():
+                    print(f"{Style.BRIGHT + Fore.RED}Error: astroalign package is not available.{Style.RESET_ALL}")
+                    print(f"Install with: pip install astroalign")
+                    sys.exit(1)
+            
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Alignment Method: {method}{Style.RESET_ALL}")
+            if method == "astroalign":
+                print("  Using fast asterism-based alignment")
+            else:
+                print("  Using precise WCS reprojection")
+            
+            # Create output directory
+            output_dir = "/tmp/astropipes/aligned"
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Create unique subdirectory for this alignment session
+            temp_dir = tempfile.mkdtemp(dir=output_dir, prefix="")
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Output directory: {temp_dir}{Style.RESET_ALL}")
+            
+            # Progress callback for console output
+            def progress_callback(progress):
+                percentage = int(progress * 100)
+                print(f"\r  Progress: {percentage}%", end="", flush=True)
+            
+            # Log callback for detailed output
+            def log_callback(message):
+                print(f"\n  {message}")
+            
+            # Perform alignment
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Starting alignment...{Style.RESET_ALL}")
+            try:
+                aligned_datas, reference_header = align_images_chunked(
+                    image_datas=image_datas,
+                    headers=headers,
+                    method=method,
+                    reference_index=0,
+                    chunk_size=config.ALIGNMENT_CHUNK_SIZE,
+                    memory_limit=config.ALIGNMENT_MEMORY_LIMIT,
+                    progress_callback=progress_callback,
+                    log_callback=log_callback
+                )
+                print(f"\n{Style.BRIGHT + Fore.GREEN}✓ Alignment completed successfully!{Style.RESET_ALL}")
+                
+            except Exception as e:
+                print(f"\n{Style.BRIGHT + Fore.RED}✗ Alignment failed: {e}{Style.RESET_ALL}")
+                sys.exit(1)
+            
+            # Save aligned images
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Saving aligned images...{Style.RESET_ALL}")
+            new_file_paths = []
+            successful_saves = 0
+            
+            for i, (aligned_data, original_path) in enumerate(zip(aligned_datas, valid_files)):
+                try:
+                    # Create updated header
+                    new_header = headers[i].copy()
+                    new_header['NAXIS1'] = aligned_data.shape[1]
+                    new_header['NAXIS2'] = aligned_data.shape[0]
+                    new_header['ALIGN_MTH'] = method
+                    if method == "astroalign":
+                        new_header['COMMENT'] = 'Aligned using astroalign asterism matching'
+                    else:
+                        new_header['COMMENT'] = 'Aligned using WCS reprojection'
+                    
+                    # Create filename
+                    original_filename = os.path.basename(original_path)
+                    name, ext = os.path.splitext(original_filename)
+                    aligned_filename = f"aligned_{name}{ext}"
+                    aligned_path = os.path.join(temp_dir, aligned_filename)
+                    
+                    # Save aligned image
+                    hdu = fits.PrimaryHDU(aligned_data, new_header)
+                    hdu.writeto(aligned_path, overwrite=True)
+                    
+                    new_file_paths.append(aligned_path)
+                    successful_saves += 1
+                    
+                    print(f"  [{i+1}/{len(aligned_datas)}] Saved: {aligned_filename}")
+                    
+                    # Progressive memory cleanup
+                    if config.ALIGNMENT_SAVE_PROGRESSIVE and (i + 1) % 5 == 0:
+                        import gc
+                        gc.collect()
+                        print(f"    Memory cleanup performed")
+                
+                except Exception as e:
+                    print(f"  [{i+1}/{len(aligned_datas)}] Error saving {os.path.basename(original_path)}: {e}")
+            
+            # Final memory cleanup
+            import gc
+            gc.collect()
+            print(f"\n{Style.BRIGHT + Fore.CYAN}Final memory cleanup completed{Style.RESET_ALL}")
+            
+            # Print summary
+            print(f"\n{Style.BRIGHT + Fore.BLUE}Alignment Summary:{Style.RESET_ALL}")
+            print(f"  Total files processed: {len(valid_files)}")
+            print(f"  Successful alignments: {Style.BRIGHT + Fore.GREEN}{successful_saves}{Style.RESET_ALL}")
+            print(f"  Failed alignments: {Style.BRIGHT + Fore.RED}{len(valid_files) - successful_saves}{Style.RESET_ALL}")
+            print(f"  Method used: {method}")
+            print(f"  Output directory: {temp_dir}")
+            
+            if successful_saves == len(valid_files):
+                print(f"\n{Style.BRIGHT + Fore.GREEN}All images aligned successfully!{Style.RESET_ALL}")
+            else:
+                print(f"\n{Style.BRIGHT + Fore.YELLOW}Some images failed to align. Check the output above.{Style.RESET_ALL}")
+                sys.exit(1)
+                
+        except ImportError as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error: Required modules not found.{Style.RESET_ALL}")
+            print(f"Error details: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"{Style.BRIGHT + Fore.RED}Error during alignment: {e}{Style.RESET_ALL}")
+            sys.exit(1)
+
     def get_observations():
         """Download and display MPC observations for a given asteroid designation using mpcq."""
         try:
@@ -432,6 +664,8 @@ if __name__ == "__main__":
         solve_image()
     elif args.calibrate:
         calibrate_image()
+    elif args.align:
+        align_images_cli()
     elif args.get_obs:
         get_observations()
     elif args.get_neocp_obs:
