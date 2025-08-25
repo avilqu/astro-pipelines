@@ -136,8 +136,16 @@ class LeftPanel(QWidget):
                 if ok and new_name and new_name.strip() and new_name.strip() != target_name:
                     result = rename_target_across_database(target_name, new_name.strip())
                     msg = f"Updated {result['files_updated']} files."
+                    
+                    # Add folder renaming information
+                    if result['folder_renamed']:
+                        msg += f"\n\nFolder renamed successfully from '{target_name}' to '{new_name.strip()}'"
+                    elif result['folder_error']:
+                        msg += f"\n\nFolder rename failed: {result['folder_error']}"
+                    
                     if result['errors']:
-                        msg += f"\nErrors:\n" + '\n'.join(f"{e['path']}: {e['error']}" for e in result['errors'])
+                        msg += f"\n\nFile update errors:\n" + '\n'.join(f"{e['path']}: {e['error']}" for e in result['errors'])
+                    
                     QMessageBox.information(self, "Rename Target", msg)
                     self.refresh_counts()
                     self.target_renamed.emit(target_name, new_name.strip())

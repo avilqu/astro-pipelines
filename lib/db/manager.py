@@ -361,7 +361,12 @@ class DatabaseManager:
             # Get all files for this target
             files = session.query(FitsFile).filter(FitsFile.target == target).all()
             
+            print(f"Found {len(files)} files in database for target '{target}'")
+            for i, f in enumerate(files):
+                print(f"  {i+1}. {f.path} (exists: {Path(f.path).exists()})")
+            
             if not files:
+                print("No files found for target, nothing to archive")
                 return results
             
             # Create archive directory structure
@@ -375,8 +380,14 @@ class DatabaseManager:
                 try:
                     # Get the original file path
                     original_path = Path(fits_file.path)
+                    print(f"Processing file: {fits_file.path}")
+                    print(f"  Original path: {original_path}")
+                    print(f"  Path exists: {original_path.exists()}")
+                    print(f"  Path is file: {original_path.is_file()}")
+                    print(f"  Path is dir: {original_path.is_dir()}")
                     
                     if not original_path.exists():
+                        print(f"  File doesn't exist, removing from database only")
                         # File doesn't exist, just remove from database
                         session.delete(fits_file)
                         results['files_removed'] += 1
@@ -397,7 +408,14 @@ class DatabaseManager:
                     archive_file_path.parent.mkdir(parents=True, exist_ok=True)
                     
                     # Move the file to archive
+                    print(f"Moving file: {original_path} -> {archive_file_path}")
                     shutil.move(str(original_path), str(archive_file_path))
+                    
+                    # Verify the move was successful
+                    if original_path.exists():
+                        print(f"ERROR: File still exists at original location: {original_path}")
+                    else:
+                        print(f"SUCCESS: File moved successfully, original location no longer exists")
                     
                     # Remove from database
                     session.delete(fits_file)
@@ -412,20 +430,169 @@ class DatabaseManager:
                     }
                     results['errors'].append(error_info)
             
-            # Clean up empty directories (in reverse order to handle nested dirs)
+            # Clean up empty directories after moving files
             import config
             data_path = Path(config.DATA_PATH)
-            target_dir = data_path / target
+            
+            # Try different variations of the target name to find the actual directory
+            target_variations = [
+                target,  # Original target name (e.g., "NGC 247")
+                target.replace(" ", "_"),  # Replace spaces with underscores (e.g., "NGC_247")
+                target.replace("_", " ")   # Replace underscores with spaces (e.g., "NGC_247" -> "NGC 247")
+            ]
+            
+            # Remove duplicates while preserving order
+            target_variations = list(dict.fromkeys(target_variations))
+            
+            print(f"\n=== DIRECTORY CLEANUP START ===")
+            print(f"Cleaning up empty directories for target: {target}")
+            print(f"Target variations to check: {target_variations}")
+            
+            # Find the actual target directory that exists on disk
+            actual_target_dir = None
+            for target_variant in target_variations:
+                test_dir = data_path / target_variant
+                if test_dir.exists():
+                    actual_target_dir = test_dir
+                    print(f"Found actual target directory: {actual_target_dir}")
+                    break
+            
+            # If no directory found by name, try to find it by looking at where the files actually are
+            if actual_target_dir is None:
+                print(f"No target directory found by name, checking file locations...")
+                
+                # Look at the actual file paths to see where they are located
+                if files:
+                    file_dirs = set()
+                    for fits_file in files:
+                        if fits_file.path:
+                            file_path = Path(fits_file.path)
+                            if file_path.exists():
+                                # Get the directory containing this file
+                                file_dir = file_path.parent
+                                # Check if this directory is under the data path
+                                try:
+                                    relative_path = file_dir.relative_to(data_path)
+                                    # The first part of the relative path should be the target directory
+                                    if len(relative_path.parts) > 0:
+                                        potential_target_dir = data_path / relative_path.parts[0]
+                                        if potential_target_dir.exists():
+                                            file_dirs.add(potential_target_dir)
+                                except ValueError:
+                                    pass
+                    
+                    if file_dirs:
+                        print(f"Found potential target directories from file locations: {[str(d) for d in file_dirs]}")
+                        # Use the first one found
+                        actual_target_dir = list(file_dirs)[0]
+                        print(f"Using target directory from file locations: {actual_target_dir}")
+                    else:
+                        print(f"Could not determine target directory from file locations")
+            
+            if actual_target_dir is None:
+                print(f"Warning: No target directory found for any variation: {target_variations}")
+                print(f"Data path: {data_path}")
+                # List what's actually in the data directory
+                if data_path.exists():
+                    print("Contents of data directory:")
+                    for item in data_path.iterdir():
+                        if item.is_dir():
+                            print(f"  DIR: {item.name}")
+                return results
+            
+            target_dir = actual_target_dir
+            print(f"Using target directory: {target_dir}")
+            print(f"Target directory exists: {target_dir.exists()}")
+            
+            # Show the directory structure before cleanup
+            if target_dir.exists():
+                print(f"\nDirectory structure before cleanup:")
+                for item in target_dir.rglob('*'):
+                    if item.is_file():
+                        print(f"  FILE: {item}")
+                    elif item.is_dir():
+                        print(f"  DIR:  {item}")
             
             if target_dir.exists():
-                # Remove the target directory and all its subdirectories
-                try:
-                    shutil.rmtree(str(target_dir))
-                except Exception as e:
-                    results['errors'].append({
-                        'path': f'cleanup_directory_{target}',
-                        'error': f'Failed to remove empty directory {target_dir}: {str(e)}'
-                    })
+                print("Target directory exists, checking contents...")
+                
+                # Check if there are any remaining files by doing a fresh scan
+                remaining_files = []
+                remaining_dirs = []
+                
+                print("Scanning target directory contents:")
+                for item in target_dir.iterdir():
+                    if item.is_file():
+                        remaining_files.append(item)
+                        print(f"  FILE: {item}")
+                    elif item.is_dir():
+                        remaining_dirs.append(item)
+                        print(f"  DIR:  {item}")
+                        # Check subdirectory contents
+                        for subitem in item.iterdir():
+                            if subitem.is_file():
+                                print(f"    SUBFILE: {subitem}")
+                            elif subitem.is_dir():
+                                print(f"    SUBDIR:  {subitem}")
+                
+                print(f"Found {len(remaining_files)} remaining files and {len(remaining_dirs)} directories")
+                
+                if remaining_files:
+                    print("Warning: Files still exist, cannot safely clean up directories:")
+                    for f in remaining_files:
+                        print(f"  {f}")
+                else:
+                    print("No files remaining - proceeding with directory cleanup")
+                    
+                    # Remove all subdirectories (deepest first)
+                    if remaining_dirs:
+                        # Sort by depth for safe removal
+                        remaining_dirs.sort(key=lambda x: len(list(x.rglob('*'))), reverse=True)
+                        
+                        print(f"Removing {len(remaining_dirs)} subdirectories...")
+                        for subdir in remaining_dirs:
+                            try:
+                                if subdir.exists():
+                                    # Double-check it's empty before removing
+                                    subdir_contents = list(subdir.iterdir())
+                                    if not subdir_contents:
+                                        subdir.rmdir()
+                                        print(f"  Removed empty subdirectory: {subdir}")
+                                    else:
+                                        print(f"  Subdirectory {subdir} has {len(subdir_contents)} items, skipping")
+                                        for item in subdir_contents:
+                                            print(f"    Item: {item}")
+                            except Exception as e:
+                                print(f"  Error removing subdirectory {subdir}: {e}")
+                                results['errors'].append({
+                                    'path': f'cleanup_subdirectory_{subdir}',
+                                    'error': f'Failed to remove subdirectory {subdir}: {str(e)}'
+                                })
+                    else:
+                        print("No subdirectories to remove")
+                    
+                    # Now try to remove the target directory itself
+                    try:
+                        if target_dir.exists():
+                            # Final check - make sure it's really empty
+                            final_contents = list(target_dir.iterdir())
+                            if not final_contents:
+                                target_dir.rmdir()
+                                print(f"Successfully removed target directory: {target_dir}")
+                            else:
+                                print(f"Target directory {target_dir} still has {len(final_contents)} items, cannot remove:")
+                                for item in final_contents:
+                                    print(f"  {item}")
+                        else:
+                            print(f"Target directory {target_dir} no longer exists")
+                    except Exception as e:
+                        print(f"Error removing target directory {target_dir}: {e}")
+                        results['errors'].append({
+                            'path': f'cleanup_target_directory_{target}',
+                            'error': f'Failed to remove target directory {target_dir}: {str(e)}'
+                        })
+            else:
+                print(f"Target directory {target_dir} does not exist")
             
             # Commit all changes
             session.commit()
