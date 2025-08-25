@@ -324,6 +324,122 @@ class DatabaseManager:
             return session.query(CalibrationMaster).filter(CalibrationMaster.path == path).first()
         finally:
             session.close()
+
+    def get_files_by_target(self, target: str) -> list:
+        """Get all FITS files for a specific target.
+        
+        Args:
+            target: Target name to search for
+            
+        Returns:
+            List of FitsFile objects for the target
+        """
+        session = self.get_session()
+        try:
+            return session.query(FitsFile).filter(FitsFile.target == target).all()
+        finally:
+            session.close()
+
+    def move_target_to_archive(self, target: str, archive_path: str) -> dict:
+        """Move all files for a target to the archive and remove from database.
+        
+        Args:
+            target: Target name to archive
+            archive_path: Base path for the archive directory
+            
+        Returns:
+            Dictionary with results: {'files_moved': int, 'files_removed': int, 'errors': list}
+        """
+        import os
+        import shutil
+        from pathlib import Path
+        
+        session = self.get_session()
+        results = {'files_moved': 0, 'files_removed': 0, 'errors': []}
+        
+        try:
+            # Get all files for this target
+            files = session.query(FitsFile).filter(FitsFile.target == target).all()
+            
+            if not files:
+                return results
+            
+            # Create archive directory structure
+            archive_base = Path(archive_path)
+            archive_base.mkdir(parents=True, exist_ok=True)
+            
+            # Track directories that will become empty
+            directories_to_cleanup = set()
+            
+            for fits_file in files:
+                try:
+                    # Get the original file path
+                    original_path = Path(fits_file.path)
+                    
+                    if not original_path.exists():
+                        # File doesn't exist, just remove from database
+                        session.delete(fits_file)
+                        results['files_removed'] += 1
+                        continue
+                    
+                    # Determine archive path (maintain directory structure relative to DATA_PATH)
+                    import config
+                    data_path = Path(config.DATA_PATH)
+                    try:
+                        relative_path = original_path.relative_to(data_path)
+                        # Track the directory for cleanup
+                        directories_to_cleanup.add(original_path.parent)
+                    except ValueError:
+                        # File is not under DATA_PATH, use filename only
+                        relative_path = original_path.name
+                    
+                    archive_file_path = archive_base / relative_path
+                    archive_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Move the file to archive
+                    shutil.move(str(original_path), str(archive_file_path))
+                    
+                    # Remove from database
+                    session.delete(fits_file)
+                    
+                    results['files_moved'] += 1
+                    results['files_removed'] += 1
+                    
+                except Exception as e:
+                    error_info = {
+                        'path': str(fits_file.path),
+                        'error': str(e)
+                    }
+                    results['errors'].append(error_info)
+            
+            # Clean up empty directories (in reverse order to handle nested dirs)
+            import config
+            data_path = Path(config.DATA_PATH)
+            target_dir = data_path / target
+            
+            if target_dir.exists():
+                # Remove the target directory and all its subdirectories
+                try:
+                    shutil.rmtree(str(target_dir))
+                except Exception as e:
+                    results['errors'].append({
+                        'path': f'cleanup_directory_{target}',
+                        'error': f'Failed to remove empty directory {target_dir}: {str(e)}'
+                    })
+            
+            # Commit all changes
+            session.commit()
+            
+        except Exception as e:
+            session.rollback()
+            results['errors'].append({
+                'path': 'database_operation',
+                'error': f'Database error: {str(e)}'
+            })
+        finally:
+            session.close()
+        
+        return results
     
     def close(self):
         """Close the database connection."""

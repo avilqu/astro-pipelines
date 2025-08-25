@@ -78,13 +78,23 @@ def build_empty_menu(parent=None):
     menu.addAction("No actions available (empty menu)")
     return menu 
 
-def build_sidebar_target_menu(parent=None, target_name=None, show_info_callback=None, rename_target_callback=None):
+def build_sidebar_target_menu(parent=None, target_name=None, show_info_callback=None, rename_target_callback=None, move_to_archive_callback=None):
     menu = QMenu(parent)
     # Add rename action
     rename_action = QAction("Rename target", menu)
     if rename_target_callback:
         rename_action.triggered.connect(rename_target_callback)
     menu.addAction(rename_action)
+    
+    # Add separator before archive action
+    menu.addSeparator()
+    
+    # Add move to archive action
+    archive_action = QAction("Move to archive", menu)
+    if move_to_archive_callback:
+        archive_action.triggered.connect(move_to_archive_callback)
+    menu.addAction(archive_action)
+    
     return menu 
 
 def platesolve_multiple_files(parent, files, on_all_finished=None):

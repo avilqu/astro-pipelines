@@ -4,7 +4,7 @@ from PyQt6.QtGui import QFont, QBrush, QColor
 from lib.db import get_db_manager
 from lib.db.edit import rename_target_across_database
 from lib.gui.library.context_dropdown import build_sidebar_target_menu
-from config import TIME_DISPLAY_MODE
+from config import TIME_DISPLAY_MODE, ARCHIVE_PATH
 
 class LeftPanel(QWidget):
     menu_selection_changed = pyqtSignal(str, str)  # (category, value)
@@ -141,7 +141,51 @@ class LeftPanel(QWidget):
                     QMessageBox.information(self, "Rename Target", msg)
                     self.refresh_counts()
                     self.target_renamed.emit(target_name, new_name.strip())
-            menu = build_sidebar_target_menu(self.menu_tree, target_name=target_name, show_info_callback=show_info, rename_target_callback=rename_target)
+            def move_to_archive():
+                # Confirm the action
+                reply = QMessageBox.question(
+                    self, 
+                    "Move to Archive", 
+                    f"Are you sure you want to move all files for target '{target_name}' to the archive?\n\n"
+                    f"This will move the files to {ARCHIVE_PATH} and remove them from the database.\n"
+                    f"This action cannot be undone.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    try:
+                        db = get_db_manager()
+                        result = db.move_target_to_archive(target_name, ARCHIVE_PATH)
+                        
+                        if result['errors']:
+                            error_msg = f"Archived {result['files_moved']} files and removed {result['files_removed']} database entries.\n\n"
+                            error_msg += "Errors occurred:\n" + '\n'.join(f"{e['path']}: {e['error']}" for e in result['errors'])
+                            QMessageBox.warning(self, "Archive Complete with Errors", error_msg)
+                        else:
+                            QMessageBox.information(
+                                self, 
+                                "Archive Complete", 
+                                f"Successfully archived {result['files_moved']} files and removed {result['files_removed']} database entries."
+                            )
+                        
+                        # Refresh the sidebar to reflect the changes
+                        self.repopulate_targets_and_dates()
+                        
+                    except Exception as e:
+                        QMessageBox.critical(
+                            self, 
+                            "Archive Error", 
+                            f"An error occurred while archiving the target:\n{str(e)}"
+                        )
+            
+            menu = build_sidebar_target_menu(
+                self.menu_tree, 
+                target_name=target_name, 
+                show_info_callback=show_info, 
+                rename_target_callback=rename_target,
+                move_to_archive_callback=move_to_archive
+            )
             menu.exec(self.menu_tree.viewport().mapToGlobal(pos))
 
     def set_menu_index(self, index):
